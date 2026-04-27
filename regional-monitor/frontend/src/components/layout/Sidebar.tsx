@@ -19,6 +19,14 @@ import {
 } from 'lucide-react'
 import clsx from 'clsx'
 import { useAuthStore } from '@/store/auth'
+import { useLogout } from '@/hooks/useAuth'
+
+const PLAN_LABEL: Record<string, string> = {
+  free: 'FREE',
+  basic: 'BASIC',
+  pro: 'PRO',
+  enterprise: 'ENTERPRISE',
+}
 
 interface MenuItem {
   to: string
@@ -36,7 +44,8 @@ const MENU: MenuItem[] = [
 
 export function Sidebar() {
   const navigate = useNavigate()
-  const { user, isAuthenticated, openLoginModal, logout } = useAuthStore()
+  const { user, isAuthenticated, openLoginModal } = useAuthStore()
+  const logoutMut = useLogout()
 
   const handleMenuClick = (item: MenuItem, e: React.MouseEvent) => {
     if (item.requireAuth && !isAuthenticated) {
@@ -84,18 +93,29 @@ export function Sidebar() {
                 <div className="text-caption opacity-80 truncate">{user.email}</div>
               </div>
             </div>
+            {user.company && (
+              <div className="flex items-center justify-between pt-2 border-t border-white/15">
+                <span className="text-caption opacity-80">회사</span>
+                <span className="text-caption font-medium truncate max-w-[60%]">
+                  {user.company}
+                  {user.job_title ? ` · ${user.job_title}` : ''}
+                </span>
+              </div>
+            )}
             <div className="flex items-center justify-between pt-2 border-t border-white/15">
               <span className="text-caption opacity-80">플랜</span>
               <span className="text-caption font-bold px-2 py-0.5 rounded-full bg-white/20">
-                {user.plan}
+                {PLAN_LABEL[user.plan] ?? user.plan.toUpperCase()}
               </span>
             </div>
             <button
               onClick={() => {
-                logout()
-                navigate('/')
+                logoutMut.mutate(undefined, {
+                  onSettled: () => navigate('/'),
+                })
               }}
-              className="w-full flex items-center justify-center gap-1.5 py-2 text-caption font-medium rounded-xl bg-white/10 hover:bg-white/20 transition-colors"
+              disabled={logoutMut.isPending}
+              className="w-full flex items-center justify-center gap-1.5 py-2 text-caption font-medium rounded-xl bg-white/10 hover:bg-white/20 transition-colors disabled:opacity-60"
             >
               <LogOut size={14} /> 로그아웃
             </button>

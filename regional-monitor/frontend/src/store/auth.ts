@@ -1,72 +1,99 @@
 /**
- * 인증 상태 (Zustand)
- * - 로그인 / 로그아웃 / 사용자 정보 / 로그인 모달 트리거
- * - 추후 Google OAuth 연동 시 setUser 호출
+ * 인증 스토어 (Zustand + persist)
+ *
+ * 보관 항목:
+ *  - accessToken : 우리 서비스 JWT (/api/v1/auth/google 응답)
+ *  - user        : 사용자 정보 (이름/회사/플랜/프로필 완성 여부)
+ *  - loginModal  : 로그인 / 가입 추가정보 / 약관 동의 UI 상태
+ *
+ * 외부 흐름:
+ *  1) <App /> 마운트 시 client.configureAuth({ getToken, onUnauthorized }) 호출
+ *  2) 토큰이 있으면 authApi.me() 로 검증 → user 갱신 또는 logout
+ *  3) Google 로그인 콜백 → authApi.loginWithGoogle(id_token) → setSession(...)
+ *  4) needs_profile=true 면 modalStep='profile' 로 추가정보 모달 노출
+ *  5) authApi.completeProfile() 성공 시 closeLoginModal()
  */
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 
-export interface User {
-  id: string
-  email: string
-  name: string
-  picture?: string
-  plan: 'FREE' | 'BASIC' | 'PRO'
-}
+import type { User } from '@/api/types'
+
+/** 로그인 모달의 단계 */
+export type LoginModalStep = 'login' | 'profile' | 'closed'
 
 interface AuthState {
+  /* persist 대상 */
+  accessToken: string | null
   user: User | null
-  isAuthenticated: boolean
-  // 로그인 모달
-  loginModalOpen: boolean
-  // 로그인이 필요한 페이지로 이동하려고 했을 때 저장
+
+  /* 메모리 전용 */
+  isAuthenticated: boolean        // = !!user && user.is_profile_complete
+  modalStep: LoginModalStep
   redirectAfterLogin: string | null
 
-  // Actions
-  setUser: (user: User | null) => void
+  /* Actions */
+  setSession: (token: string, user: User) => void
+  setUser: (user: User) => void
   logout: () => void
+
   openLoginModal: (redirectTo?: string | null) => void
+  openProfileModal: () => void
   closeLoginModal: () => void
 }
 
 export const useAuthStore = create<AuthState>()(
   persist(
     (set) => ({
+      accessToken: null,
       user: null,
       isAuthenticated: false,
-      loginModalOpen: false,
+      modalStep: 'closed',
       redirectAfterLogin: null,
 
-      setUser: (user) =>
+      setSession: (token, user) =>
         set({
+          accessToken: token,
           user,
-          isAuthenticated: !!user,
-          loginModalOpen: false,
+          isAuthenticated: user.is_profile_complete,
+          // 신규 가입자(프로필 미완성)는 추가정보 모달, 그 외는 닫기
+          modalStep: user.is_profile_complete ? 'closed' : 'profile',
         }),
+
+      setUser: (user) =>
+        set((state) => ({
+          user,
+          isAuthenticated: !!state.accessToken && user.is_profile_complete,
+          modalStep: user.is_profile_complete ? 'closed' : state.modalStep,
+        })),
 
       logout: () =>
         set({
+          accessToken: null,
           user: null,
           isAuthenticated: false,
+          modalStep: 'closed',
+          redirectAfterLogin: null,
         }),
 
       openLoginModal: (redirectTo = null) =>
-        set({
-          loginModalOpen: true,
-          redirectAfterLogin: redirectTo,
-        }),
+        set({ modalStep: 'login', redirectAfterLogin: redirectTo }),
 
-      closeLoginModal: () =>
-        set({
-          loginModalOpen: false,
-        }),
+      openProfileModal: () => set({ modalStep: 'profile' }),
+
+      closeLoginModal: () => set({ modalStep: 'closed' }),
     }),
     {
-      name: 'auth-storage',
+      name: 'rm-auth-v2',
       partialize: (state) => ({
+        accessToken: state.accessToken,
         user: state.user,
-        isAuthenticated: state.isAuthenticated,
       }),
+      // localStorage → 메모리로 hydrate 시 isAuthenticated 재계산
+      onRehydrateStorage: () => (state) => {
+        if (!state) return
+        state.isAuthenticated =
+          !!state.accessToken && !!state.user && state.user.is_profile_complete
+      },
     },
   ),
 )

@@ -121,3 +121,48 @@ export interface LiveCheckResponse {
   results: VerificationResult[]
   summary: Record<string, number>
 }
+
+/* ─────────── /api/v1/auth/* ─────────── */
+export interface User {
+  id: number
+  email: string
+  name: string
+  picture: string | null
+  phone: string | null
+  company: string | null
+  job_title: string | null
+  plan: string
+  quota_places: number
+  is_profile_complete: boolean
+  agreed_marketing: boolean
+  created_at: string
+}
+
+export interface GoogleLoginRequest {
+  id_token: string
+}
+
+export interface GoogleLoginResponse {
+  access_token: string
+  token_type: string
+  user: User
+  needs_profile: boolean
+}
+
+export interface Agreements {
+  privacy: boolean
+  terms: boolean
+  marketing: boolean
+}
+
+export interface ProfileCompleteRequest {
+  name: string
+  phone: string
+  company: string
+  job_title?: string | null
+  agreements: Agreements
+}
+
+export interface MeResponse {
+  user: User
+}

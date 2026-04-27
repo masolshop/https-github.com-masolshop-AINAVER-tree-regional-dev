@@ -82,6 +82,11 @@
     @apply inline-flex items-center gap-2 px-5 py-2.5 rounded-pill bg-bg-subtle text-ink font-semibold text-body hover:bg-brand-100 transition-colors;
   }
 
+  /* 폼 인풋 (모달 등에서 사용) */
+  .rm-field-input {
+    @apply w-full px-3.5 py-2.5 rounded-xl bg-white border border-bg-subtle text-ink text-body-sm placeholder:text-ink-soft focus:border-brand-400 focus:ring-2 focus:ring-brand-100 focus:outline-none transition-colors;
+  }
+
   /* 사이드바 메뉴 아이템 */
   .sidebar-item {
     @apply flex items-center gap-3 px-4 py-3 rounded-2xl text-body text-ink-muted font-medium cursor-pointer transition-colors;

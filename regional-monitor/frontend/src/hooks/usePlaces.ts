@@ -23,6 +23,7 @@ import type {
   PlaceCreateAuto,
   PlaceUpdate,
 } from '../api/types'
+import { useAuthStore } from '@/store/auth'
 
 /* ─────────── Query keys ─────────── */
 export const placeKeys = {
@@ -32,11 +33,18 @@ export const placeKeys = {
 }
 
 /* ─────────── Queries ─────────── */
+/** 비로그인 상태에선 호출 자체를 비활성화 — 401 콘솔 에러 방지 */
+function useEnabledByAuth(): boolean {
+  return useAuthStore((s) => s.isAuthenticated)
+}
+
 export function usePlaces() {
+  const enabled = useEnabledByAuth()
   return useQuery({
     queryKey: placeKeys.list(),
     queryFn: listPlaces,
     staleTime: 15_000,
+    enabled,
   })
 }
 
@@ -44,11 +52,13 @@ export function usePlaces() {
 export const usePlacesList = usePlaces
 
 export function usePlacesSummary() {
+  const enabled = useEnabledByAuth()
   return useQuery({
     queryKey: placeKeys.summary(),
     queryFn: getPlacesSummary,
     staleTime: 15_000,
-    refetchInterval: 30_000,
+    refetchInterval: enabled ? 30_000 : false,
+    enabled,
   })
 }
 

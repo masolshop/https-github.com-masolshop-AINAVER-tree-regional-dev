@@ -11,7 +11,8 @@ interface ProtectedRouteProps {
 }
 
 export function ProtectedRoute({ children }: ProtectedRouteProps) {
-  const { isAuthenticated, openLoginModal } = useAuthStore()
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated)
+  const openLoginModal = useAuthStore((s) => s.openLoginModal)
   const location = useLocation()
 
   useEffect(() => {

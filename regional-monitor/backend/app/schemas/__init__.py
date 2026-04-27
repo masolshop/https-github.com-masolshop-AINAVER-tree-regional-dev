@@ -15,6 +15,14 @@ from .verification import (
     LiveCheckResponse,
 )
 from .extract import ExtractRequest, ExtractResponse
+from .auth import (
+    UserOut,
+    GoogleLoginRequest,
+    GoogleLoginResponse,
+    AgreementsIn,
+    ProfileCompleteRequest,
+    MeResponse,
+)
 
 __all__ = [
     "VerdictType",
@@ -31,4 +39,10 @@ __all__ = [
     "LiveCheckResponse",
     "ExtractRequest",
     "ExtractResponse",
+    "UserOut",
+    "GoogleLoginRequest",
+    "GoogleLoginResponse",
+    "AgreementsIn",
+    "ProfileCompleteRequest",
+    "MeResponse",
 ]
