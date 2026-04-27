@@ -34,11 +34,40 @@ import {
   CheckSquare,
   Square,
   Trash,
+  FileDown,
 } from 'lucide-react'
+
+/* ─────────── 불일치 판별 ─────────── */
+/**
+ * "불일치"로 간주할 verdict 집합.
+ * - OK / PENDING / CHECKING 은 제외 (정상이거나 아직 미검증)
+ * - PHONE/DONG/NAME_MISMATCH (warning)
+ * - REGION_MISMATCH / DEAD (danger)
+ */
+const MISMATCH_VERDICTS = new Set([
+  'PHONE_MISMATCH',
+  'DONG_MISMATCH',
+  'NAME_MISMATCH',
+  'REGION_MISMATCH',
+  'DEAD',
+])
+
+/* ko-KR 라벨 (xlsx 시트용) */
+const VERDICT_LABEL_KO: Record<string, string> = {
+  OK: '정상 노출',
+  PHONE_MISMATCH: '전화 불일치',
+  DONG_MISMATCH: '동 불일치',
+  NAME_MISMATCH: '상호 불일치',
+  REGION_MISMATCH: '지역 불일치',
+  DEAD: '페이지 삭제',
+  PENDING: '검증 대기',
+  CHECKING: '검증 중',
+}
 
 export default function RegisterTab() {
   const [search, setSearch] = useState('')
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set())
+  const [downloading, setDownloading] = useState(false)
   const { data, isLoading, isError, error, refetch, isFetching } = usePlacesList()
   const deleteMut = useDeletePlace()
   const bulkDeleteMut = useBulkDeletePlaces()
@@ -46,6 +75,12 @@ export default function RegisterTab() {
 
   const summary = data?.summary ?? { total: 0, ok: 0, warning: 0, danger: 0, pending: 0 }
   const places = data?.items ?? []
+
+  /** 불일치 항목만 추출 (warning + danger). OK / PENDING / CHECKING 제외. */
+  const mismatchedPlaces = useMemo(
+    () => places.filter((p) => MISMATCH_VERDICTS.has(p.current_verdict)),
+    [places],
+  )
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase()
@@ -166,6 +201,63 @@ export default function RegisterTab() {
     }
   }
 
+  /** 불일치 명단을 .xlsx 로 다운로드. */
+  const handleDownloadMismatch = async () => {
+    if (mismatchedPlaces.length === 0) {
+      alert('불일치 항목이 없습니다. (OK / 검증 대기 / 검증 중 제외)')
+      return
+    }
+    setDownloading(true)
+    try {
+      // xlsx 라이브러리는 BulkUpload 청크에 이미 포함되어 있으므로
+      // 동일한 청크가 재사용된다(추가 다운로드 거의 없음).
+      const XLSX = await import('xlsx')
+
+      const rows = mismatchedPlaces.map((p, idx) => ({
+        '순번': idx + 1,
+        '070 번호': p.phone,
+        'Place ID': p.place_id,
+        '등록 동': p.registered_dong,
+        '상호': p.business_name,
+        '검증 상태': VERDICT_LABEL_KO[p.current_verdict] ?? p.current_verdict,
+        '검증 코드': p.current_verdict,
+        '최근 점검': p.last_checked_at
+          ? new Date(p.last_checked_at).toLocaleString('ko-KR', {
+              year: 'numeric',
+              month: '2-digit',
+              day: '2-digit',
+              hour: '2-digit',
+              minute: '2-digit',
+            })
+          : '',
+      }))
+
+      const ws = XLSX.utils.json_to_sheet(rows)
+      // 컬럼 폭 자동
+      ws['!cols'] = [
+        { wch: 6 },   // 순번
+        { wch: 16 },  // 070
+        { wch: 14 },  // Place ID
+        { wch: 18 },  // 동
+        { wch: 28 },  // 상호
+        { wch: 14 },  // 상태
+        { wch: 18 },  // 코드
+        { wch: 18 },  // 최근 점검
+      ]
+      const wb = XLSX.utils.book_new()
+      XLSX.utils.book_append_sheet(wb, ws, '불일치 명단')
+
+      const today = new Date().toISOString().slice(0, 10) // YYYY-MM-DD
+      const filename = `RegionWatch_불일치명단_${today}_${mismatchedPlaces.length}건.xlsx`
+      XLSX.writeFile(wb, filename)
+    } catch (e) {
+      alert(`다운로드 실패: ${formatApiError(e)}`)
+    } finally {
+      setDownloading(false)
+    }
+  }
+
+
   const bulkBusy = bulkDeleteMut.isPending
 
   return (
@@ -237,6 +329,31 @@ export default function RegisterTab() {
                 className="w-72 pl-9 pr-3 py-2 rounded-pill bg-bg-subtle/70 border border-transparent text-body-sm text-ink placeholder:text-ink-soft focus:outline-none focus:border-brand-300 focus:bg-white transition-colors"
               />
             </div>
+
+            {/* 불일치 명단 다운로드 (.csv — Excel 호환) */}
+            <button
+              type="button"
+              disabled={mismatchedPlaces.length === 0 || downloading}
+              onClick={handleDownloadMismatch}
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-pill bg-amber-50 text-amber-700 font-semibold text-body-sm hover:bg-amber-100 disabled:opacity-40 disabled:cursor-not-allowed transition-colors whitespace-nowrap"
+              title={
+                mismatchedPlaces.length === 0
+                  ? '다운로드할 불일치 항목이 없습니다'
+                  : `검증 결과 불일치(전화/동/상호/지역 불일치, 페이지 삭제) ${mismatchedPlaces.length}건을 CSV(Excel 호환)로 저장`
+              }
+            >
+              {downloading ? (
+                <Loader2 size={14} className="animate-spin" />
+              ) : (
+                <FileDown size={14} />
+              )}
+              불일치 다운로드
+              {mismatchedPlaces.length > 0 && (
+                <span className="ml-0.5 px-1.5 py-0.5 rounded-full bg-amber-500 text-white text-[10px] font-bold tabular-nums">
+                  {mismatchedPlaces.length}
+                </span>
+              )}
+            </button>
 
             {/* 선택 일괄 삭제 */}
             <button
