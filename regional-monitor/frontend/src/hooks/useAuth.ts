@@ -11,7 +11,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
 import { authApi } from '@/api/auth'
 import { useAuthStore } from '@/store/auth'
-import type { ProfileCompleteRequest } from '@/api/types'
+import type { PasswordLoginRequest, ProfileCompleteRequest } from '@/api/types'
 
 export const authKeys = {
   me: ['auth', 'me'] as const,
@@ -21,6 +21,17 @@ export function useGoogleLogin() {
   const setSession = useAuthStore((s) => s.setSession)
   return useMutation({
     mutationFn: (idToken: string) => authApi.loginWithGoogle({ id_token: idToken }),
+    onSuccess: (data) => {
+      setSession(data.access_token, data.user)
+    },
+  })
+}
+
+/** 어드민/직접가입 사용자용 — 이메일+비밀번호 로그인 */
+export function usePasswordLogin() {
+  const setSession = useAuthStore((s) => s.setSession)
+  return useMutation({
+    mutationFn: (body: PasswordLoginRequest) => authApi.loginWithPassword(body),
     onSuccess: (data) => {
       setSession(data.access_token, data.user)
     },

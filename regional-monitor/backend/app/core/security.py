@@ -1,14 +1,17 @@
-"""인증 코어 — JWT 발급/검증 + Google ID 토큰 검증.
+"""인증 코어 — JWT 발급/검증 + Google ID 토큰 검증 + 비밀번호 해싱.
 
 - create_access_token(sub, extra)  : HS256 JWT 발급
 - decode_token(token)              : 만료/위변조 검증 후 payload 반환 (실패 시 예외)
 - verify_google_id_token(id_token) : Google이 발급한 ID 토큰 검증 → payload (email/sub/name/picture)
+- hash_password(plain)             : bcrypt 해시
+- verify_password(plain, hashed)   : bcrypt 검증
 """
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
+import bcrypt
 from jose import JWTError, jwt
 from google.oauth2 import id_token as google_id_token
 from google.auth.transport import requests as google_requests
@@ -80,3 +83,36 @@ def verify_google_id_token(token: str) -> dict[str, Any]:
     if not claims.get("email") or not claims.get("sub"):
         raise GoogleAuthError("id_token missing email/sub claim")
     return claims
+
+
+# ─────────────────────────── 비밀번호 해싱 ───────────────────────────
+# bcrypt 의 입력 길이 제한(72 byte) 우회 위해 sha256 pre-hash 후 base64 인코딩.
+# 표준 패턴이며 Django/FastAPI Users 등 다수 프레임워크가 동일 방식을 사용.
+
+import base64
+import hashlib
+
+
+def _prehash(plain: str) -> bytes:
+    """bcrypt 72 byte 제한 우회용 SHA-256 + base64 prehash."""
+    digest = hashlib.sha256(plain.encode("utf-8")).digest()
+    return base64.b64encode(digest)  # 44 bytes → bcrypt 안전
+
+
+def hash_password(plain: str) -> str:
+    """평문 비밀번호 → bcrypt 해시 문자열."""
+    if not plain or not isinstance(plain, str):
+        raise ValueError("password must be non-empty str")
+    salt = bcrypt.gensalt(rounds=12)
+    h = bcrypt.hashpw(_prehash(plain), salt)
+    return h.decode("utf-8")
+
+
+def verify_password(plain: str, hashed: str | None) -> bool:
+    """평문 vs bcrypt 해시 검증. hashed 가 None/빈문자면 False."""
+    if not plain or not hashed:
+        return False
+    try:
+        return bcrypt.checkpw(_prehash(plain), hashed.encode("utf-8"))
+    except (ValueError, TypeError):
+        return False

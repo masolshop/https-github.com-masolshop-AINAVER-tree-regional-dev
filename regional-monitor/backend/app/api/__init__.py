@@ -1,6 +1,7 @@
 """API 라우터 패키지."""
 from fastapi import APIRouter
 
+from .admin import router as admin_router
 from .auth import router as auth_router
 from .events import router as events_router
 from .extract import router as extract_router
@@ -16,5 +17,6 @@ api_router.include_router(places_router)
 api_router.include_router(verify_router)
 api_router.include_router(events_router)
 api_router.include_router(settings_router)
+api_router.include_router(admin_router)
 
 __all__ = ["api_router"]

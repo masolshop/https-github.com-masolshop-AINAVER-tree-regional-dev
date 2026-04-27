@@ -29,6 +29,7 @@ from app.core import (
     create_access_token,
     verify_google_id_token,
     GoogleAuthError,
+    verify_password,
 )
 from app.models.user import User
 from app.schemas.auth import (
@@ -37,6 +38,8 @@ from app.schemas.auth import (
     ProfileCompleteRequest,
     MeResponse,
     UserOut,
+    PasswordLoginRequest,
+    PasswordLoginResponse,
 )
 from app.schemas.common import MessageResponse
 from .deps import get_current_user
@@ -66,6 +69,49 @@ def _issue_token(user: User) -> str:
     return create_access_token(
         sub=str(user.id),
         extra={"email": user.email, "plan": user.plan},
+    )
+
+
+# ─────────────────────────── 비밀번호 로그인 (어드민/직접가입) ───────────────────────────
+
+@router.post("/login", response_model=PasswordLoginResponse)
+async def login_with_password(
+    body: PasswordLoginRequest,
+    db: AsyncSession = Depends(get_db),
+) -> PasswordLoginResponse:
+    """이메일 + 비밀번호 로그인.
+
+    슈퍼어드민 계정 또는 직접가입 사용자가 사용. Google OAuth 사용자는 password_hash 가
+    NULL 이라 자동으로 로그인 거부됨.
+
+    실패 시 401 (이메일/비밀번호 어느 쪽이 틀렸는지 알려주지 않음 — enumeration 방지).
+    차단된(is_active=False) 사용자는 403.
+    """
+    email = body.email.strip().lower()
+    result = await db.execute(select(User).where(User.email == email))
+    user = result.scalar_one_or_none()
+
+    # 일정 시간 소비 (timing attack 방지) — 사용자 없을 때도 verify_password 호출
+    is_valid = verify_password(body.password, user.password_hash if user else None)
+    if not user or not is_valid:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="이메일 또는 비밀번호가 올바르지 않습니다.",
+        )
+
+    if not user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"차단된 계정입니다. ({user.blocked_reason or '관리자에게 문의하세요'})",
+        )
+
+    user.last_login_at = datetime.utcnow()
+    await db.commit()
+    await db.refresh(user)
+
+    return PasswordLoginResponse(
+        access_token=_issue_token(user),
+        user=_user_to_out(user),
     )
 
 

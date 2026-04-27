@@ -175,11 +175,24 @@ export interface User {
   is_profile_complete: boolean
   agreed_marketing: boolean
   verify_slot: number              // 0~23 (KST 기준 자동 검증 시각)
+  is_superadmin?: boolean
+  is_active?: boolean
   created_at: string
 }
 
 export interface GoogleLoginRequest {
   id_token: string
+}
+
+export interface PasswordLoginRequest {
+  email: string
+  password: string
+}
+
+export interface PasswordLoginResponse {
+  access_token: string
+  token_type: string
+  user: User
 }
 
 export interface GoogleLoginResponse {

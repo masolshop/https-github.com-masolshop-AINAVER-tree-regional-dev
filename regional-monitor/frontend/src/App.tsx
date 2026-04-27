@@ -4,6 +4,7 @@
  * - configureAuth(): API client에 토큰 게터 + 401 핸들러 주입 (1회)
  * - useMe()       : 토큰이 있으면 자동으로 /auth/me 호출 → 만료 시 logout
  * - ProtectedRoute: isAuthenticated=false 면 로그인 모달 + / 로 리다이렉트
+ * - AdminRoute   : 슈퍼어드민(is_superadmin)만 통과
  */
 import { useEffect } from 'react'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
@@ -18,6 +19,7 @@ import Home from '@/pages/Home'
 import Intro from '@/pages/Intro'
 import Monitor from '@/pages/Monitor'
 import History from '@/pages/History'
+import Admin from '@/pages/Admin'
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -64,6 +66,27 @@ function ProtectedRoute({
   return <>{children}</>
 }
 
+/**
+ * 슈퍼어드민 전용 라우트.
+ *  · 미인증     → 로그인 모달 + / 리다이렉트
+ *  · 비-어드민  → / 리다이렉트 (조용히)
+ */
+function AdminRoute({ children }: { children: React.ReactNode }) {
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated)
+  const isSuperadmin = useAuthStore((s) => !!s.user?.is_superadmin)
+  const openLoginModal = useAuthStore((s) => s.openLoginModal)
+
+  useEffect(() => {
+    if (!isAuthenticated) {
+      openLoginModal('/admin')
+    }
+  }, [isAuthenticated, openLoginModal])
+
+  if (!isAuthenticated) return <Navigate to="/" replace />
+  if (!isSuperadmin) return <Navigate to="/" replace />
+  return <>{children}</>
+}
+
 /** 토큰 검증 자동 실행용 컴포넌트 (앱 마운트 시 1회) */
 function AuthBootstrap() {
   useMe()
@@ -93,6 +116,14 @@ export default function App() {
                 <ProtectedRoute redirectTo="/history">
                   <History />
                 </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/admin"
+              element={
+                <AdminRoute>
+                  <Admin />
+                </AdminRoute>
               }
             />
             <Route path="*" element={<Navigate to="/" replace />} />

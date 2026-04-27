@@ -37,6 +37,14 @@ class User(Base):
     # ── 가입 완료 플래그 ──
     is_profile_complete: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False, index=True)
 
+    # ── 비밀번호 로그인 (어드민/직접가입용, Google OAuth 사용자는 NULL) ──
+    password_hash: Mapped[str | None] = mapped_column(String(255), nullable=True)
+
+    # ── 권한 ──
+    is_superadmin: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False, index=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False, index=True)
+    blocked_reason: Mapped[str | None] = mapped_column(String(500), nullable=True)
+
     # ── 자동 검증 시간 슬롯 (0~23, "매일 N시 검증") ──
     # 사용자 분산을 위해 가입 시 id % 24 로 자동 배정.
     # 1만 명일 때 슬롯당 ~417명 × 5건 = 2,085건/시간 → 0.6 RPS (네이버 안전).

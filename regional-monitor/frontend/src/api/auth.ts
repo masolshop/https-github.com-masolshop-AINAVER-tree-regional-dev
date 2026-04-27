@@ -8,12 +8,18 @@ import type {
   MeResponse,
   MessageResponse,
   ProfileCompleteRequest,
+  PasswordLoginRequest,
+  PasswordLoginResponse,
 } from './types'
 
 export const authApi = {
   /** Google ID 토큰 → 우리 JWT 발급 + User 생성/조회 */
   loginWithGoogle: (body: GoogleLoginRequest) =>
     api.post<GoogleLoginResponse>('/api/v1/auth/google', body),
+
+  /** 이메일 + 비밀번호 로그인 (어드민/직접가입 사용자) */
+  loginWithPassword: (body: PasswordLoginRequest) =>
+    api.post<PasswordLoginResponse>('/api/v1/auth/login', body),
 
   /** 신규 가입자 추가정보 + 약관 동의 저장 */
   completeProfile: (body: ProfileCompleteRequest) =>

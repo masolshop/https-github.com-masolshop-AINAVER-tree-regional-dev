@@ -46,6 +46,14 @@
     @apply text-watermark text-ink-watermark select-none pointer-events-none;
   }
 
+  /* 모달 인풋 (어드민 폼) */
+  .modal-input {
+    @apply w-full px-3 py-2 rounded-md bg-white border border-border
+           text-text placeholder:text-text-muted
+           focus:outline-none focus:border-primary focus:bg-white
+           transition-all;
+  }
+
   /* 카드 기본 */
   .card-base {
     @apply rounded-card shadow-card transition-all duration-200;

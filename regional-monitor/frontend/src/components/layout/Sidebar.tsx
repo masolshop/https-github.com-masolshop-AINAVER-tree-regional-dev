@@ -16,6 +16,7 @@ import {
   LogOut,
   User as UserIcon,
   ShieldCheck,
+  Crown,
 } from 'lucide-react'
 import clsx from 'clsx'
 import { useAuthStore } from '@/store/auth'
@@ -169,6 +170,25 @@ export function Sidebar() {
             </NavLink>
           )
         })}
+
+        {/* 슈퍼어드민 전용 메뉴 */}
+        {isAuthenticated && user?.is_superadmin && (
+          <NavLink
+            to="/admin"
+            className={({ isActive }) =>
+              clsx(
+                'sidebar-item mt-2 border-t border-bg-subtle pt-3',
+                isActive && 'active',
+              )
+            }
+          >
+            <Crown size={18} className="text-amber-500" />
+            <span className="flex-1">관리자 콘솔</span>
+            <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-amber-100 text-amber-800 font-bold">
+              ADMIN
+            </span>
+          </NavLink>
+        )}
       </nav>
 
       {/* 하단 푸터 */}

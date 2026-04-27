@@ -26,6 +26,8 @@ from .auth import (
     AgreementsIn,
     ProfileCompleteRequest,
     MeResponse,
+    PasswordLoginRequest,
+    PasswordLoginResponse,
 )
 
 __all__ = [
@@ -53,4 +55,6 @@ __all__ = [
     "AgreementsIn",
     "ProfileCompleteRequest",
     "MeResponse",
+    "PasswordLoginRequest",
+    "PasswordLoginResponse",
 ]

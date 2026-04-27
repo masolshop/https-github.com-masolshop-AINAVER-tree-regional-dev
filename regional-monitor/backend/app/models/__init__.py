@@ -2,5 +2,6 @@
 from .user import User
 from .place import RegisteredPlace
 from .check import DailyHealthCheck, ChangeEvent
+from .payment import Payment
 
-__all__ = ["User", "RegisteredPlace", "DailyHealthCheck", "ChangeEvent"]
+__all__ = ["User", "RegisteredPlace", "DailyHealthCheck", "ChangeEvent", "Payment"]

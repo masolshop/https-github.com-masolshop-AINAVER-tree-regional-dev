@@ -20,6 +20,8 @@ class UserOut(BaseModel):
     is_profile_complete: bool
     agreed_marketing: bool
     verify_slot: int = 0           # 0~23, 매일 자동 검증되는 시각(시)
+    is_superadmin: bool = False
+    is_active: bool = True
     created_at: datetime
 
     class Config:
@@ -58,4 +60,17 @@ class ProfileCompleteRequest(BaseModel):
 
 
 class MeResponse(BaseModel):
+    user: UserOut
+
+
+# ─────────── 비밀번호 로그인 (어드민/직접가입) ───────────
+
+class PasswordLoginRequest(BaseModel):
+    email: str = Field(..., min_length=3, max_length=255)
+    password: str = Field(..., min_length=4, max_length=200)
+
+
+class PasswordLoginResponse(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
     user: UserOut

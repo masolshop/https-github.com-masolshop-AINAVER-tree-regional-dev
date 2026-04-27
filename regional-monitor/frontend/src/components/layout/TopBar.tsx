@@ -5,8 +5,8 @@
  * 클릭 시: 최근 5건 미리보기 드롭다운 + "모두 보기 → /history"
  */
 import { useEffect, useRef, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
-import { Bell, Search, ArrowRight, AlertTriangle, AlertCircle, CheckCircle2, Clock } from 'lucide-react'
+import { Link, useNavigate } from 'react-router-dom'
+import { Bell, Search, ArrowRight, AlertTriangle, AlertCircle, CheckCircle2, Clock, ShieldCheck } from 'lucide-react'
 import clsx from 'clsx'
 
 import { useAuthStore } from '@/store/auth'
@@ -15,11 +15,12 @@ import type { ChangeEventOut, ChangeEventSeverity } from '@/api/types'
 
 interface TopBarProps {
   title?: string
-  subtitle?: string
+  subtitle?: React.ReactNode
 }
 
 export function TopBar({ title, subtitle }: TopBarProps) {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated)
+  const isSuperadmin = useAuthStore((s) => !!s.user?.is_superadmin)
   const [open, setOpen] = useState(false)
   const wrapRef = useRef<HTMLDivElement>(null)
 
@@ -49,6 +50,18 @@ export function TopBar({ title, subtitle }: TopBarProps) {
         >
           <Search size={18} />
         </button>
+
+        {isSuperadmin && (
+          <Link
+            to="/admin"
+            aria-label="관리자 콘솔"
+            title="관리자 콘솔"
+            className="h-10 px-3 rounded-2xl bg-white shadow-card flex items-center gap-1.5 text-ink-muted hover:text-brand-600 transition-colors"
+          >
+            <ShieldCheck size={16} />
+            <span className="text-caption font-semibold">관리자</span>
+          </Link>
+        )}
 
         {isAuthenticated && (
           <div className="relative" ref={wrapRef}>

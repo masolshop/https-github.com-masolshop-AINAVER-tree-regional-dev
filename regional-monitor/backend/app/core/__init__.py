@@ -7,6 +7,8 @@ from .security import (
     verify_google_id_token,
     TokenError,
     GoogleAuthError,
+    hash_password,
+    verify_password,
 )
 
 __all__ = [
@@ -21,4 +23,6 @@ __all__ = [
     "verify_google_id_token",
     "TokenError",
     "GoogleAuthError",
+    "hash_password",
+    "verify_password",
 ]

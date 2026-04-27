@@ -106,11 +106,31 @@ async def require_complete_profile(
     """추가정보 입력 + 약관 동의를 마친 사용자만 통과.
 
     아직 가입 2단계가 끝나지 않았다면 409 — 프론트는 추가정보 모달을 띄운다.
+    슈퍼어드민은 가입 2단계를 건너뛸 수 있다(관리자 시드 시 미완료일 수 있음).
     """
+    if user.is_superadmin:
+        return user
     if not user.is_profile_complete:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="추가 정보(휴대폰/회사/약관 동의)가 필요합니다.",
+        )
+    return user
+
+
+async def require_superadmin(
+    user: User = Depends(get_current_user),
+) -> User:
+    """슈퍼어드민 권한 검사 — /admin/* 라우트 가드."""
+    if not user.is_superadmin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="관리자 권한이 필요합니다.",
+        )
+    if not user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="비활성화된 관리자 계정입니다.",
         )
     return user
 
