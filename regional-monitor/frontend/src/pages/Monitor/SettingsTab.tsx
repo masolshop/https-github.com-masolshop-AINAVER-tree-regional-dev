@@ -29,6 +29,9 @@ import {
 } from 'lucide-react'
 import { useSettings, useUpdateSettings } from '@/hooks/useSettings'
 import { ApiError } from '@/api/client'
+import { authApi } from '@/api/auth'
+import { useAuthStore } from '@/store/auth'
+import { formatKSTDateTime } from '@/utils/datetime'
 import type { SettingsPatch, ChannelKey, PlanKey } from '@/api/types'
 
 /* ─────────────── 로컬 폼 상태 (서버 응답을 미러링) ─────────────── */
@@ -162,40 +165,12 @@ export default function SettingsTab() {
 
   return (
     <div className="space-y-6 pb-20">
-      {/* ───── 자동 검증 주기 (verify_slot 표시 전용) ───── */}
-      <Card variant="white">
-        <SectionHeader
-          icon={<Clock size={18} />}
-          title="자동 검증 주기"
-          desc="시스템이 자동으로 검증을 수행하는 시각입니다. 사용자별로 매시간 분산 처리됩니다."
-        />
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          <div className="rounded-card p-4 bg-brand-50/50 border-2 border-brand-500">
-            <div className="flex items-center gap-2 mb-2">
-              <Calendar size={14} className="text-brand-600" />
-              <span className="text-caption font-bold text-brand-700">현재 적용</span>
-            </div>
-            <div className="text-h2 font-extrabold text-ink tabular-nums leading-none mb-2">
-              {data.verify_slot_label}
-            </div>
-            <div className="text-caption text-ink-muted">
-              슬롯 #{data.verify_slot} · 가입 시 자동 배정 (24시간 분산)
-            </div>
-          </div>
-          <div className="rounded-card p-4 bg-bg-subtle/50 border border-bg-subtle">
-            <div className="flex items-center gap-2 mb-2">
-              <Lock size={12} className="text-ink-muted" />
-              <span className="text-caption font-bold text-ink-muted uppercase">
-                상위 플랜 (예정)
-              </span>
-            </div>
-            <div className="text-body text-ink-muted leading-snug">
-              · Pro: 일 2회 (12시간 간격)
-              <br />· Enterprise: 시간당 1회
-            </div>
-          </div>
-        </div>
-      </Card>
+      {/* ───── 자동 검증 시각 (사용자가 직접 변경 가능) ───── */}
+      <VerifySlotCard
+        currentSlot={data.verify_slot}
+        currentLabel={data.verify_slot_label}
+        onUpdated={() => settingsQuery.refetch()}
+      />
 
       {/* ───── 알림 채널 ───── */}
       <Card variant="white">
@@ -503,4 +478,178 @@ function formatApiError(e: unknown): string {
     return `${e.status}: ${e.message}`
   }
   return (e as Error)?.message ?? '알 수 없는 오류'
+}
+
+/* ─────────────── 자동 검증 시각 카드 (편집 가능) ─────────────── */
+
+interface VerifySlotCardProps {
+  currentSlot: number
+  currentLabel: string
+  onUpdated: () => void
+}
+
+function VerifySlotCard({ currentSlot, currentLabel, onUpdated }: VerifySlotCardProps) {
+  const setUser = useAuthStore((s) => s.setUser)
+  const user = useAuthStore((s) => s.user)
+  const [selected, setSelected] = useState<number>(currentSlot)
+  const [saving, setSaving] = useState(false)
+  const [err, setErr] = useState<string | null>(null)
+  const [nextRunAt, setNextRunAt] = useState<string | null>(null)
+  const [savedAt, setSavedAt] = useState<number | null>(null)
+
+  // 서버 값이 바뀌면 로컬 선택값도 동기화
+  useEffect(() => {
+    setSelected(currentSlot)
+  }, [currentSlot])
+
+  // 다음 실행 시각을 클라이언트에서도 미리 계산 (서버가 응답으로 다시 줌)
+  useEffect(() => {
+    setNextRunAt(calcNextRunAt(currentSlot))
+  }, [currentSlot])
+
+  const dirty = selected !== currentSlot
+
+  const handleSave = async () => {
+    setSaving(true)
+    setErr(null)
+    try {
+      const res = await authApi.updateVerifySlot({ verify_slot: selected })
+      if (user) {
+        setUser({ ...user, verify_slot: res.user.verify_slot })
+      }
+      setNextRunAt(res.next_run_at)
+      setSavedAt(Date.now())
+      onUpdated()
+    } catch (e) {
+      setErr(formatApiError(e))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <Card variant="white">
+      <SectionHeader
+        icon={<Clock size={18} />}
+        title="내 자동 검증 시각"
+        desc="매일 KST 기준 선택한 시각 정각에 등록한 모든 장소가 자동 검증됩니다. 시스템 부하 분산을 위해 가입 시 0~23시 중 자동 배정되며, 원하는 시간대로 자유롭게 변경할 수 있습니다."
+      />
+
+      {/* 현재 적용 + 다음 실행 */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-4">
+        <div className="rounded-card p-4 bg-brand-50/50 border-2 border-brand-500">
+          <div className="flex items-center gap-2 mb-2">
+            <Calendar size={14} className="text-brand-600" />
+            <span className="text-caption font-bold text-brand-700">현재 적용</span>
+          </div>
+          <div className="text-h2 font-extrabold text-ink tabular-nums leading-none mb-2">
+            {currentLabel}
+          </div>
+          <div className="text-caption text-ink-muted">
+            슬롯 #{currentSlot} · 매일 1회 자동 검증
+          </div>
+        </div>
+        <div className="rounded-card p-4 bg-bg-subtle/50 border border-bg-subtle">
+          <div className="flex items-center gap-2 mb-2">
+            <Clock size={12} className="text-ink-muted" />
+            <span className="text-caption font-bold text-ink-muted uppercase">
+              다음 실행 예정
+            </span>
+          </div>
+          <div className="text-body font-bold text-ink leading-snug">
+            {nextRunAt ? formatKSTDateTime(nextRunAt) : '—'}
+          </div>
+          <div className="text-caption text-ink-muted mt-1">
+            (KST · 한국 표준시)
+          </div>
+        </div>
+      </div>
+
+      {/* 시각 선택 그리드 (0~23) */}
+      <div className="mb-3">
+        <div className="text-body-sm text-ink-muted mb-2">시간 선택 (0~23시 / 24시간제)</div>
+        <div className="grid grid-cols-6 sm:grid-cols-8 md:grid-cols-12 gap-1.5">
+          {Array.from({ length: 24 }).map((_, h) => {
+            const isSelected = selected === h
+            const isCurrent = currentSlot === h
+            return (
+              <button
+                key={h}
+                type="button"
+                onClick={() => setSelected(h)}
+                disabled={saving}
+                className={[
+                  'h-10 rounded-card text-body-sm font-bold tabular-nums transition-all',
+                  isSelected
+                    ? 'bg-brand-600 text-white border-2 border-brand-700 shadow-card scale-105'
+                    : isCurrent
+                      ? 'bg-brand-50 text-brand-700 border-2 border-brand-300 hover:bg-brand-100'
+                      : 'bg-bg-subtle/40 text-ink hover:bg-bg-subtle border border-transparent',
+                  saving ? 'cursor-not-allowed opacity-60' : 'cursor-pointer',
+                ].join(' ')}
+                title={`${String(h).padStart(2, '0')}:00 KST`}
+              >
+                {String(h).padStart(2, '0')}
+              </button>
+            )
+          })}
+        </div>
+      </div>
+
+      {/* 저장 버튼 + 상태 */}
+      <div className="flex items-center justify-between gap-3 pt-3 border-t border-bg-subtle">
+        <div className="text-caption text-ink-muted min-h-[20px]">
+          {err && (
+            <span className="text-error flex items-center gap-1">
+              <AlertTriangle size={12} /> {err}
+            </span>
+          )}
+          {!err && savedAt && (
+            <span className="text-success flex items-center gap-1">
+              <CheckCircle2 size={12} /> 저장되었습니다
+            </span>
+          )}
+          {!err && !savedAt && dirty && (
+            <span>
+              선택한 시각: <b className="text-ink">매일 {String(selected).padStart(2, '0')}:00 (KST)</b>
+            </span>
+          )}
+        </div>
+        <button
+          type="button"
+          onClick={handleSave}
+          disabled={!dirty || saving}
+          className={[
+            'px-4 h-10 rounded-card text-body-sm font-bold flex items-center gap-2 transition-all',
+            !dirty || saving
+              ? 'bg-bg-subtle text-ink-muted cursor-not-allowed'
+              : 'bg-brand-600 text-white hover:bg-brand-700 shadow-card',
+          ].join(' ')}
+        >
+          {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+          {saving ? '저장 중…' : '시각 변경'}
+        </button>
+      </div>
+    </Card>
+  )
+}
+
+/** 클라이언트에서도 다음 실행 시각 추정 (서버 응답이 오기 전 표시용) */
+function calcNextRunAt(slot: number): string {
+  // KST 기준으로 계산 (브라우저 로케일이 어디든 일관성 유지)
+  const now = new Date()
+  // KST = UTC+9
+  const utc = now.getTime() + now.getTimezoneOffset() * 60_000
+  const kst = new Date(utc + 9 * 60 * 60_000)
+  const target = new Date(kst)
+  target.setHours(slot, 0, 0, 0)
+  if (target.getTime() <= kst.getTime()) {
+    target.setDate(target.getDate() + 1)
+  }
+  // KST 시각을 ISO+09:00 으로 직렬화
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return (
+    `${target.getFullYear()}-${pad(target.getMonth() + 1)}-${pad(target.getDate())}` +
+    `T${pad(target.getHours())}:${pad(target.getMinutes())}:00+09:00`
+  )
 }

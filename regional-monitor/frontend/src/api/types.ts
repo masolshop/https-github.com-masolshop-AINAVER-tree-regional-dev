@@ -257,6 +257,16 @@ export interface GoogleLoginResponse {
   needs_profile: boolean
 }
 
+/** PATCH /api/v1/auth/me/verify-slot — 자동 검증 시각 변경 */
+export interface VerifySlotUpdateRequest {
+  verify_slot: number              // 0~23 (KST)
+}
+
+export interface VerifySlotUpdateResponse {
+  user: User
+  next_run_at: string              // ISO datetime (KST, +09:00)
+}
+
 export interface Agreements {
   privacy: boolean
   terms: boolean

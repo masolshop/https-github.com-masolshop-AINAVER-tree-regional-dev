@@ -41,6 +41,8 @@ from app.schemas.auth import (
     UserOut,
     PasswordLoginRequest,
     PasswordLoginResponse,
+    VerifySlotUpdateRequest,
+    VerifySlotUpdateResponse,
 )
 from app.schemas.common import MessageResponse
 from .deps import get_current_user
@@ -244,3 +246,41 @@ async def logout(user: User = Depends(get_current_user)) -> MessageResponse:
     추후 블랙리스트(Redis) 도입 시 여기에 invalidate 로직 추가.
     """
     return MessageResponse(message=f"logged out: {user.email}")
+
+
+# ─────────────────────────── 자동 검증 시각 변경 ───────────────────────────
+
+def _calc_next_run_at(slot: int) -> datetime:
+    """현재 KST 기준 다음 실행 시각 계산 (slot 시 정각).
+
+    예) 지금 KST 14:30, slot=10 → 내일 KST 10:00
+        지금 KST 14:30, slot=18 → 오늘 KST 18:00
+    """
+    from datetime import timedelta
+    now = now_kst()
+    target = now.replace(hour=slot, minute=0, second=0, microsecond=0)
+    if target <= now:
+        target = target + timedelta(days=1)
+    return target
+
+
+@router.patch("/me/verify-slot", response_model=VerifySlotUpdateResponse)
+async def update_verify_slot(
+    body: VerifySlotUpdateRequest,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> VerifySlotUpdateResponse:
+    """내 자동 검증 시각(0~23시) 변경.
+
+    매일 KST 해당 시각 정각에 내 등록 장소 전체가 자동 검증된다.
+    (참고) 시스템 부하 분산을 위해 가입 시 0~23 랜덤 슬롯이 자동 배정되며,
+    사용자가 원하는 시간대로 자유롭게 변경 가능.
+    """
+    user.verify_slot = body.verify_slot
+    await db.commit()
+    await db.refresh(user)
+    next_run = _calc_next_run_at(body.verify_slot)
+    return VerifySlotUpdateResponse(
+        user=_user_to_out(user),
+        next_run_at=next_run,
+    )

@@ -10,6 +10,8 @@ import type {
   ProfileCompleteRequest,
   PasswordLoginRequest,
   PasswordLoginResponse,
+  VerifySlotUpdateRequest,
+  VerifySlotUpdateResponse,
 } from './types'
 
 export const authApi = {
@@ -30,4 +32,8 @@ export const authApi = {
     api.get<MeResponse>('/api/v1/auth/me', { skipUnauthorizedHandler: true }),
 
   logout: () => api.post<MessageResponse>('/api/v1/auth/logout'),
+
+  /** 내 자동 검증 시각(0~23시) 변경 */
+  updateVerifySlot: (body: VerifySlotUpdateRequest) =>
+    api.patch<VerifySlotUpdateResponse>('/api/v1/auth/me/verify-slot', body),
 }

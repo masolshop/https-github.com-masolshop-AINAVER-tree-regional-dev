@@ -74,3 +74,15 @@ class PasswordLoginResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
     user: UserOut
+
+
+# ─────────── 검증 시각 변경 ───────────
+
+class VerifySlotUpdateRequest(BaseModel):
+    """매일 자동 검증되는 시각(0~23시) 변경."""
+    verify_slot: int = Field(..., ge=0, le=23, description="0~23시(KST)")
+
+
+class VerifySlotUpdateResponse(BaseModel):
+    user: UserOut
+    next_run_at: datetime  # KST 기준 다음 실행 시각
