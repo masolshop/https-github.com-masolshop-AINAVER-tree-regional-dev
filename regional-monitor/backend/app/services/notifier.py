@@ -31,6 +31,14 @@ from app.models.check import ChangeEvent
 from app.models.user import User
 
 logger = logging.getLogger("notifier")
+# 개발/테스트 모드에서 콘솔 폴백 로그(`[EMAIL fallback]`)가 보이도록 INFO 레벨 보장.
+# 운영에서는 외부 logging.basicConfig 가 덮어씀.
+if logger.level == logging.NOTSET or logger.level > logging.INFO:
+    logger.setLevel(logging.INFO)
+if not logger.handlers and not logging.getLogger().handlers:
+    _h = logging.StreamHandler()
+    _h.setFormatter(logging.Formatter("%(asctime)s [%(name)s] %(levelname)s: %(message)s"))
+    logger.addHandler(_h)
 
 # 이벤트 타입 → 이모지 + 사람 친화 라벨
 _EVENT_META: dict[str, dict[str, str]] = {
