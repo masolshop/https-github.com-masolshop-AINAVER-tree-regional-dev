@@ -112,17 +112,3 @@ class PlaceBulkDeleteResponse(BaseModel):
     deleted: int       # 실제 삭제된 건수
     not_found: int     # 소유권 없거나 존재하지 않은 건수
     elapsed_ms: int
-
-
-class PlaceBulkDeleteRequest(BaseModel):
-    """일괄 삭제 요청. ids 또는 all=True 둘 중 하나 필수."""
-    ids: list[int] | None = Field(default=None, description="삭제할 Place 내부 id 목록")
-    all: bool = Field(default=False, description="True 면 본인의 모든 등록 삭제")
-
-
-class PlaceBulkDeleteResponse(BaseModel):
-    """일괄 삭제 결과."""
-    requested: int
-    deleted: int
-    not_found: int
-    elapsed_ms: int
