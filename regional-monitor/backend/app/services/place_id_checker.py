@@ -342,29 +342,50 @@ async def check_place(client: httpx.AsyncClient, sample: Dict) -> CheckResult:
     )
 
     url = f"https://m.place.naver.com/place/{pid}/home"
+    headers = {
+        "User-Agent": MOBILE_UA,
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7",
+        "Accept-Encoding": "gzip, deflate, br",
+        "Cache-Control": "no-cache",
+        "Pragma": "no-cache",
+        "Sec-Fetch-Dest": "document",
+        "Sec-Fetch-Mode": "navigate",
+        "Sec-Fetch-Site": "same-site",
+        "Upgrade-Insecure-Requests": "1",
+        "Referer": "https://m.search.naver.com/",
+    }
     t0 = time.perf_counter()
-    try:
-        r = await client.get(
-            url,
-            headers={
-                "User-Agent": MOBILE_UA,
-                "Accept": "text/html,application/json,*/*",
-                "Accept-Language": "ko-KR,ko;q=0.9",
-                "Referer": "https://m.naver.com/",
-            },
-            follow_redirects=True,
-            timeout=10.0,
-        )
-        result.elapsed_ms = round((time.perf_counter() - t0) * 1000, 1)
-        result.http_status = r.status_code
-        html = r.text
-    except Exception as e:
-        result.elapsed_ms = round((time.perf_counter() - t0) * 1000, 1)
-        result.http_status = -1
-        result.error = str(e)[:200]
-        result.verdict = "ERROR"
-        result.severity = "CRITICAL"
-        result.detail = f"HTTP error: {result.error}"
+    r = None
+    html = ""
+    # 429(Rate Limit) 발생 시 backoff 후 1회 재시도
+    for attempt in range(2):
+        try:
+            r = await client.get(url, headers=headers, follow_redirects=True, timeout=12.0)
+            html = r.text
+            if r.status_code != 429:
+                break
+            # 429: 짧은 backoff 후 재시도
+            await asyncio.sleep(1.5 + attempt * 1.5)
+        except Exception as e:
+            result.elapsed_ms = round((time.perf_counter() - t0) * 1000, 1)
+            result.http_status = -1
+            result.error = str(e)[:200]
+            result.verdict = "ERROR"
+            result.severity = "CRITICAL"
+            result.detail = f"HTTP error: {result.error}"
+            return result
+
+    result.elapsed_ms = round((time.perf_counter() - t0) * 1000, 1)
+    result.http_status = r.status_code if r is not None else 0
+
+    # 429: rate-limit → DEAD가 아닌 PENDING (재검증 필요)으로 표기
+    if r is not None and r.status_code == 429:
+        result.place_alive = False
+        result.verdict = "PENDING"
+        result.severity = "WARN"
+        result.error = "rate_limited_429"
+        result.detail = "⏳ 네이버 요청 한도 초과(429) — 잠시 후 재검증 권장"
         return result
 
     info = extract_place_info(html)
@@ -374,16 +395,25 @@ async def check_place(client: httpx.AsyncClient, sample: Dict) -> CheckResult:
     result.actual_phone = info["phone"]
     result.actual_category = info["category"]
 
-    # ① Place alive — place_id 페이지가 HTTP 200으로 응답하면 살아있음
-    #   (네이버 SPA는 본문에 name이 없을 수 있으므로 name 유무를 alive 판단에서 제외)
-    if r.status_code != 200 or info["is_dead_page"]:
+    # ① Place alive — 200 OK + 죽은 페이지 키워드 없음 → 살아있음
+    #   404 / 410 등은 진짜 페이지 삭제
+    if r is None or r.status_code in (404, 410) or info["is_dead_page"]:
         result.place_alive = False
         result.verdict = "DEAD"
         result.severity = "CRITICAL"
         result.detail = (
             f"Place 페이지가 존재하지 않음 "
-            f"(status={r.status_code}, dead={info['is_dead_page']})"
+            f"(status={result.http_status}, dead={info['is_dead_page']})"
         )
+        return result
+
+    # 200이 아닌 기타 상태(5xx 등) → 일시 오류로 PENDING
+    if r.status_code != 200:
+        result.place_alive = False
+        result.verdict = "PENDING"
+        result.severity = "WARN"
+        result.error = f"http_{r.status_code}"
+        result.detail = f"⏳ 일시 오류 (HTTP {r.status_code}) — 재검증 권장"
         return result
 
     result.place_alive = True
