@@ -330,7 +330,7 @@ export default function RegisterTab() {
               />
             </div>
 
-            {/* 불일치 명단 다운로드 (.csv — Excel 호환) */}
+            {/* 불일치 명단 다운로드 (.xlsx) */}
             <button
               type="button"
               disabled={mismatchedPlaces.length === 0 || downloading}
@@ -339,7 +339,7 @@ export default function RegisterTab() {
               title={
                 mismatchedPlaces.length === 0
                   ? '다운로드할 불일치 항목이 없습니다'
-                  : `검증 결과 불일치(전화/동/상호/지역 불일치, 페이지 삭제) ${mismatchedPlaces.length}건을 CSV(Excel 호환)로 저장`
+                  : `검증 결과 불일치(전화/동/상호/지역 불일치, 페이지 삭제) ${mismatchedPlaces.length}건을 .xlsx 로 저장`
               }
             >
               {downloading ? (
