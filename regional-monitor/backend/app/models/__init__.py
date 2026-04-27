@@ -3,5 +3,6 @@ from .user import User
 from .place import RegisteredPlace
 from .check import DailyHealthCheck, ChangeEvent
 from .payment import Payment
+from .verify_job import VerifyJob
 
-__all__ = ["User", "RegisteredPlace", "DailyHealthCheck", "ChangeEvent", "Payment"]
+__all__ = ["User", "RegisteredPlace", "DailyHealthCheck", "ChangeEvent", "Payment", "VerifyJob"]

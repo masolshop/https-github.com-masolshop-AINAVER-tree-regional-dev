@@ -21,6 +21,9 @@ import type {
   PlaceOut,
   PlaceSummary,
   PlaceUpdate,
+  VerifyJob,
+  VerifyJobCancelResponse,
+  VerifyJobCreateRequest,
 } from './types'
 
 /* ─────────── Extract ─────────── */
@@ -60,3 +63,18 @@ export const bulkDeletePlaces = (req: PlaceBulkDeleteRequest) =>
 /* ─────────── Live Verification ─────────── */
 export const runLiveCheck = (req: LiveCheckRequest = {}) =>
   api.post<LiveCheckResponse>('/api/v1/verify/live', req, { timeoutMs: 60_000 })
+
+/* ─────────── Bulk Verification (대용량 청크 작업) ─────────── */
+/** 새 검증 작업 생성 (사용자당 동시 1개). place_ids 비우면 전체. */
+export const createVerifyJob = (req: VerifyJobCreateRequest = {}) =>
+  api.post<VerifyJob>('/api/v1/verify/job', req, { timeoutMs: 15_000 })
+
+export const getVerifyJob = (id: number) =>
+  api.get<VerifyJob>(`/api/v1/verify/job/${id}`)
+
+export const cancelVerifyJob = (id: number) =>
+  api.post<VerifyJobCancelResponse>(`/api/v1/verify/job/${id}/cancel`, {})
+
+/** 작업 완료 후 불일치 명단 .xlsx URL — fetch 로 직접 다운로드. */
+export const verifyJobMismatchesUrl = (id: number) =>
+  `/api/v1/verify/job/${id}/mismatches.xlsx`

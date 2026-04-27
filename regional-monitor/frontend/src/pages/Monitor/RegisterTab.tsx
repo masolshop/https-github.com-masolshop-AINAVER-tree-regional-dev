@@ -24,6 +24,8 @@ import { ApiError } from '@/api/client'
 const BulkUpload = lazy(() =>
   import('./BulkUpload').then((m) => ({ default: m.BulkUpload })),
 )
+// 대용량 검증 진행률 모달
+import { VerifyJobModal } from './VerifyJobModal'
 import {
   FileSpreadsheet,
   Search,
@@ -35,6 +37,7 @@ import {
   Square,
   Trash,
   FileDown,
+  Zap,
 } from 'lucide-react'
 
 /* ─────────── 불일치 판별 ─────────── */
@@ -68,6 +71,9 @@ export default function RegisterTab() {
   const [search, setSearch] = useState('')
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set())
   const [downloading, setDownloading] = useState(false)
+  // 대량 검증 모달
+  const [verifyJobOpen, setVerifyJobOpen] = useState(false)
+  const [verifyJobIds, setVerifyJobIds] = useState<number[] | undefined>(undefined)
   const { data, isLoading, isError, error, refetch, isFetching } = usePlacesList()
   const deleteMut = useDeletePlace()
   const bulkDeleteMut = useBulkDeletePlaces()
@@ -330,6 +336,28 @@ export default function RegisterTab() {
               />
             </div>
 
+            {/* 대량 검증 시작 (전체 또는 선택) */}
+            <button
+              type="button"
+              disabled={places.length === 0}
+              onClick={() => {
+                const ids = selectedIds.size > 0 ? Array.from(selectedIds) : undefined
+                setVerifyJobIds(ids)
+                setVerifyJobOpen(true)
+              }}
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-pill bg-blue-50 text-blue-700 font-semibold text-body-sm hover:bg-blue-100 disabled:opacity-40 disabled:cursor-not-allowed transition-colors whitespace-nowrap"
+              title={
+                selectedIds.size > 0
+                  ? `선택한 ${selectedIds.size}건을 500건 청크로 검증 (사용자당 동시 1개)`
+                  : `등록 전체(${places.length}건)를 500건 청크로 검증 (플랜 한도 적용)`
+              }
+            >
+              <Zap size={14} />
+              {selectedIds.size > 0
+                ? `선택 검증 (${selectedIds.size})`
+                : `전체 검증`}
+            </button>
+
             {/* 불일치 명단 다운로드 (.xlsx) */}
             <button
               type="button"
@@ -525,6 +553,14 @@ export default function RegisterTab() {
           </table>
         </div>
       </Card>
+
+      {/* 대량 검증 진행률 모달 */}
+      <VerifyJobModal
+        open={verifyJobOpen}
+        placeIds={verifyJobIds}
+        onClose={() => setVerifyJobOpen(false)}
+        autoDownload={true}
+      />
     </div>
   )
 }

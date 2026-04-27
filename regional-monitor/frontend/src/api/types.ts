@@ -174,6 +174,48 @@ export interface LiveCheckResponse {
   summary: Record<string, number>
 }
 
+/* ─────────── /api/v1/verify/job (대용량 검증) ─────────── */
+export type VerifyJobStatus =
+  | 'queued'
+  | 'running'
+  | 'completed'
+  | 'cancelled'
+  | 'failed'
+
+export interface VerifyJobCreateRequest {
+  place_ids?: number[] | null
+}
+
+export interface VerifyJob {
+  id: number
+  user_id: number
+  status: VerifyJobStatus
+  cancel_requested: boolean
+  total: number
+  processed: number
+  ok_count: number
+  warning_count: number
+  danger_count: number
+  chunk_size: number
+  chunks_total: number
+  chunks_done: number
+  started_at: string | null
+  finished_at: string | null
+  created_at: string
+  error: string | null
+  progress_pct: number
+  eta_seconds: number | null
+  elapsed_seconds: number | null
+  mismatch_count: number
+}
+
+export interface VerifyJobCancelResponse {
+  id: number
+  status: string
+  cancel_requested: boolean
+  message: string
+}
+
 /* ─────────── /api/v1/auth/* ─────────── */
 export interface User {
   id: number
@@ -302,3 +344,4 @@ export interface SettingsPatch {
   sheet_url?: string | null
   sheet_sync_enabled?: boolean
 }
+

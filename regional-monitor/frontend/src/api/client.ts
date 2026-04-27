@@ -15,7 +15,15 @@
  */
 function resolveApiBase(): string {
   const envBase = import.meta.env.VITE_API_BASE as string | undefined
-  if (envBase) return envBase.replace(/\/$/, '')
+  // 'same-origin' 또는 '' 인 경우 → API 경로는 path 부분만 사용 (nginx 가 /api/* 를 백엔드로 프록시).
+  if (envBase !== undefined) {
+    const trimmed = envBase.replace(/\/$/, '')
+    if (trimmed === '' || trimmed === 'same-origin') return ''
+    // 사용자가 '/api/v1' 같이 prefix 를 넣어두면, path 가 이미 '/api/v1/...' 로 시작하므로
+    // prefix 와 경로가 중복된다. 그런 경우엔 안전하게 '' 로 강등 (same-origin) 한다.
+    if (trimmed.startsWith('/api')) return ''
+    return trimmed
+  }
 
   if (typeof window !== 'undefined') {
     const { hostname, protocol } = window.location
@@ -26,6 +34,8 @@ function resolveApiBase(): string {
     if (hostname === 'localhost' || hostname === '127.0.0.1') {
       return 'http://127.0.0.1:8000'
     }
+    // 운영 빌드에서 호스트가 그 외(예: AWS Lightsail IP, 도메인) 이면 same-origin.
+    return ''
   }
   return 'http://127.0.0.1:8000'
 }

@@ -33,6 +33,11 @@ from .auth import (
     PasswordLoginRequest,
     PasswordLoginResponse,
 )
+from .verify_job import (
+    VerifyJobCreate,
+    VerifyJobOut,
+    VerifyJobCancelResponse,
+)
 
 __all__ = [
     "VerdictType",
@@ -65,4 +70,7 @@ __all__ = [
     "MeResponse",
     "PasswordLoginRequest",
     "PasswordLoginResponse",
+    "VerifyJobCreate",
+    "VerifyJobOut",
+    "VerifyJobCancelResponse",
 ]
