@@ -1,0 +1,55 @@
+# ============================================================
+# Regional Monitor — Git Ignore
+# ============================================================
+
+# ── Legacy / Backups (절대 커밋 금지) ──
+AINAVER_LEGACY/
+AINAVER_BACKUPS/
+ainaver_backup.tar.gz
+ainaver_backup.tar.gz/
+*.tar.gz
+
+# ── Secrets / Keys (절대 커밋 금지) ──
+*.pem
+*.key
+.env
+.env.*
+!.env.example
+
+# ── Legacy 가이드 / 배포 스크립트 ──
+DOWNLOAD_GUIDE_FINAL.md
+NEW_SERVER_DEPLOY_GUIDE.md
+QUICK_DEPLOY_COMMANDS.md
+SUBSCRIPTION_SERVICE_PLAN.md
+WINDOWS_DOWNLOAD_GUIDE.md
+deploy_to_new_server.sh
+download_backup.sh
+download_backup_guide.md
+
+# ── PoC / Server Check (개발 임시) ──
+poc/
+server_check/
+
+# ── Node ──
+node_modules/
+dist/
+.vite/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# ── Python ──
+__pycache__/
+*.pyc
+*.pyo
+venv/
+.venv/
+
+# ── OS / Editor ──
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo

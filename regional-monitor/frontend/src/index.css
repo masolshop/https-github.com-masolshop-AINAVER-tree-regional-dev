@@ -1,0 +1,95 @@
+/* ============================================================
+   타지역서비스 실시간 노출 관리 솔루션 — 글로벌 스타일
+   디자인 토큰: tailwind.config.js
+   ============================================================ */
+
+/* Pretendard 한글 웹폰트 (CDN) */
+@import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable.min.css');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html, body {
+    background-color: #F4F6FA;
+    color: #1F2D4D;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+  }
+
+  body {
+    @apply font-sans;
+  }
+
+  /* 스크롤바 (모던, 미니멀) */
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: #C9D2E6;
+    border-radius: 999px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: #8FA0D6;
+  }
+}
+
+@layer components {
+  /* 워터마크 번호 (01, 02, 03 …) */
+  .watermark-number {
+    @apply text-watermark text-ink-watermark select-none pointer-events-none;
+  }
+
+  /* 카드 기본 */
+  .card-base {
+    @apply rounded-card shadow-card transition-all duration-200;
+  }
+
+  .card-white {
+    @apply card-base bg-bg-panel;
+  }
+
+  .card-subtle {
+    @apply card-base bg-bg-subtle;
+  }
+
+  .card-dark {
+    @apply card-base bg-brand-800 text-white shadow-card-dark;
+  }
+
+  .card-cta {
+    @apply card-base bg-brand-500 text-white;
+  }
+
+  /* CTA 버튼 (흰 바탕, 블루 텍스트) */
+  .btn-cta-white {
+    @apply inline-flex items-center gap-2 px-5 py-2.5 rounded-pill bg-white text-brand-700 font-semibold text-body shadow-sm hover:shadow-md transition-all;
+  }
+
+  /* 프라이머리 버튼 */
+  .btn-primary {
+    @apply inline-flex items-center gap-2 px-5 py-2.5 rounded-pill bg-brand-500 text-white font-semibold text-body hover:bg-brand-600 transition-colors;
+  }
+
+  /* 보조 버튼 */
+  .btn-secondary {
+    @apply inline-flex items-center gap-2 px-5 py-2.5 rounded-pill bg-bg-subtle text-ink font-semibold text-body hover:bg-brand-100 transition-colors;
+  }
+
+  /* 사이드바 메뉴 아이템 */
+  .sidebar-item {
+    @apply flex items-center gap-3 px-4 py-3 rounded-2xl text-body text-ink-muted font-medium cursor-pointer transition-colors;
+  }
+  .sidebar-item:hover {
+    @apply bg-bg-subtle text-ink;
+  }
+  .sidebar-item.active {
+    @apply bg-brand-500 text-white shadow-card;
+  }
+}
