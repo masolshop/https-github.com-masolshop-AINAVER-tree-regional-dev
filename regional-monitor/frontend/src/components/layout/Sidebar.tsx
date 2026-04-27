@@ -64,8 +64,8 @@ export function Sidebar() {
             <ShieldCheck className="text-white" size={20} />
           </div>
           <div className="leading-tight">
-            <div className="text-h3 font-extrabold text-ink">RegionWatch</div>
-            <div className="text-caption text-ink-muted">실시간 노출 관리</div>
+            <div className="text-h3 font-extrabold text-ink">타지역서비스</div>
+            <div className="text-caption text-ink-muted">네이버 실시간 노출 관리</div>
           </div>
         </div>
       </div>
