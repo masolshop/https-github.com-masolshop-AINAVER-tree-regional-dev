@@ -1,0 +1,10 @@
+[Unit]
+Description=타지역서비스 — DB 백업 매일 KST 01:00
+
+[Timer]
+OnCalendar=*-*-* 01:00:00 Asia/Seoul
+Persistent=true
+Unit=regionwatch-backup-db.service
+
+[Install]
+WantedBy=timers.target

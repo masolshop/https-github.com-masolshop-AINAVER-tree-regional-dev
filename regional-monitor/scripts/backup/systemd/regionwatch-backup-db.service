@@ -1,0 +1,16 @@
+[Unit]
+Description=타지역서비스 — DB 핫 백업 (SQLite .backup + gzip + S3 stub)
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=ubuntu
+Group=ubuntu
+Environment=TZ=Asia/Seoul
+ExecStart=/bin/bash /opt/regionwatch/regional-monitor/scripts/backup/backup_db.sh
+StandardOutput=journal
+StandardError=journal
+TimeoutStartSec=10min
+
+[Install]
+WantedBy=multi-user.target

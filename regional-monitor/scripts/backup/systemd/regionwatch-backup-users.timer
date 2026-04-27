@@ -1,0 +1,10 @@
+[Unit]
+Description=타지역서비스 — 사용자별 export 매일 KST 01:30
+
+[Timer]
+OnCalendar=*-*-* 01:30:00 Asia/Seoul
+Persistent=true
+Unit=regionwatch-backup-users.service
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,14 @@
+# 타지역서비스 — 슈퍼어드민 UI에서 "지금 실행" 버튼이 systemctl을 호출할 수 있도록
+# ubuntu 사용자에게 backup 관련 systemctl 실행 권한만 부여한다.
+#
+# 설치: sudo install -m 0440 -o root -g root \
+#   /opt/regionwatch/regional-monitor/scripts/backup/sudoers.d/regionwatch-backup \
+#   /etc/sudoers.d/regionwatch-backup
+# (install_timers.sh 가 자동으로 처리함)
+
+ubuntu ALL=(root) NOPASSWD: /bin/systemctl start regionwatch-backup-db.service
+ubuntu ALL=(root) NOPASSWD: /bin/systemctl start regionwatch-backup-users.service
+ubuntu ALL=(root) NOPASSWD: /bin/systemctl start regionwatch-backup-code.service
+ubuntu ALL=(root) NOPASSWD: /bin/systemctl start --no-block regionwatch-backup-db.service
+ubuntu ALL=(root) NOPASSWD: /bin/systemctl start --no-block regionwatch-backup-users.service
+ubuntu ALL=(root) NOPASSWD: /bin/systemctl start --no-block regionwatch-backup-code.service

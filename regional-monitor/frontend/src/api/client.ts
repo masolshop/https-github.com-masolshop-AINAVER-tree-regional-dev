@@ -42,6 +42,11 @@ function resolveApiBase(): string {
 
 export const API_BASE: string = resolveApiBase()
 
+/** 외부에서 absolute URL 만들 때 사용 (e.g. file download). */
+export function getApiBase(): string {
+  return API_BASE
+}
+
 /* ─────────── 인증 토큰 게터 (auth store 와 연결) ─────────── */
 // auth store가 client를 import 하면 순환참조가 생기므로 setter로 주입한다.
 type TokenGetter = () => string | null
@@ -49,6 +54,12 @@ type UnauthorizedHandler = () => void
 
 let getToken: TokenGetter = () => null
 let onUnauthorized: UnauthorizedHandler = () => {}
+
+/** 현재 토큰이 있으면 Bearer 헤더를 반환 (fetch 직접 호출 시 사용). */
+export function getAuthHeaders(): Record<string, string> {
+  const token = getToken()
+  return token ? { Authorization: `Bearer ${token}` } : {}
+}
 
 export function configureAuth(opts: {
   getToken: TokenGetter

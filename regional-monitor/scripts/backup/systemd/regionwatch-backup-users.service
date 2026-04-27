@@ -1,0 +1,16 @@
+[Unit]
+Description=타지역서비스 — 사용자별 데이터 export (JSON + gzip + S3 stub)
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=ubuntu
+Group=ubuntu
+Environment=TZ=Asia/Seoul
+ExecStart=/usr/bin/python3 /opt/regionwatch/regional-monitor/scripts/backup/backup_users.py
+StandardOutput=journal
+StandardError=journal
+TimeoutStartSec=15min
+
+[Install]
+WantedBy=multi-user.target
