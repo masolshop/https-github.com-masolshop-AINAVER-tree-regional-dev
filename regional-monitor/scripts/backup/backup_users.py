@@ -128,7 +128,8 @@ async def _async_export_all() -> tuple[int, int, int]:
     engine = create_async_engine(db_url, future=True)
 
     today = now_kst().strftime("%Y-%m-%d")
-    cutoff_iso = (now_kst() - timedelta(days=HEALTH_CHECK_DAYS)).isoformat()
+    # asyncpg/SQLAlchemy needs a datetime instance, not a string.
+    cutoff_dt = now_kst() - timedelta(days=HEALTH_CHECK_DAYS)
 
     success = 0
     failure = 0
@@ -147,7 +148,7 @@ async def _async_export_all() -> tuple[int, int, int]:
             fname = f"user_{uid}_{safe_email(email)}_{today}.json.gz"
             out_path = USERS_DIR / fname
             try:
-                data = await _export_one(conn, uid, cutoff_iso, text)
+                data = await _export_one(conn, uid, cutoff_dt, text)
                 size = _write_gz_json(out_path, data)
                 total_bytes += size
                 success += 1
@@ -171,7 +172,7 @@ async def _async_export_all() -> tuple[int, int, int]:
     return success, failure, total_bytes
 
 
-async def _export_one(conn, user_id: int, cutoff_iso: str, text) -> dict[str, Any]:
+async def _export_one(conn, user_id: int, cutoff_dt: datetime, text) -> dict[str, Any]:
     """단일 사용자 데이터 export."""
     # users (1행, hashed_password 제외)
     user_row = (await conn.execute(
@@ -203,7 +204,7 @@ async def _export_one(conn, user_id: int, cutoff_iso: str, text) -> dict[str, An
             "ORDER BY checked_at DESC"
         ).bindparams(bindparam("pids", expanding=True))
         rows = (await conn.execute(
-            dh_stmt, {"pids": place_ids, "cut": cutoff_iso}
+            dh_stmt, {"pids": place_ids, "cut": cutoff_dt}
         )).fetchall()
         daily_checks = [_row_to_dict(r) for r in rows]
 
@@ -213,7 +214,7 @@ async def _export_one(conn, user_id: int, cutoff_iso: str, text) -> dict[str, An
             "ORDER BY detected_at DESC"
         ).bindparams(bindparam("pids", expanding=True))
         rows = (await conn.execute(
-            ce_stmt, {"pids": place_ids, "cut": cutoff_iso}
+            ce_stmt, {"pids": place_ids, "cut": cutoff_dt}
         )).fetchall()
         change_events = [_row_to_dict(r) for r in rows]
 
