@@ -125,10 +125,40 @@ export async function request<T>(path: string, opts: RequestOpts = {}): Promise<
       } catch {
         detail = await res.text().catch(() => '')
       }
-      const msg =
-        (typeof detail === 'object' && detail !== null && 'detail' in detail
-          ? String((detail as { detail: unknown }).detail)
-          : null) ?? `${res.status} ${res.statusText}`
+      // FastAPI Pydantic 검증 오류는 detail 이 [{loc, msg, type}, ...] 배열
+      // 일반 HTTPException 은 detail 이 문자열
+      // 둘 다 사람이 읽을 수 있는 한 줄로 변환
+      const formatDetail = (d: unknown): string => {
+        if (typeof d === 'string') return d
+        if (Array.isArray(d)) {
+          return d
+            .map((item) => {
+              if (item && typeof item === 'object') {
+                const it = item as { msg?: string; loc?: unknown[]; type?: string }
+                const where = Array.isArray(it.loc) ? it.loc.slice(1).join('.') : ''
+                return where ? `[${where}] ${it.msg ?? ''}` : (it.msg ?? JSON.stringify(item))
+              }
+              return String(item)
+            })
+            .join('; ')
+        }
+        if (d && typeof d === 'object') {
+          // {detail: ...} wrapper 또는 임의 객체
+          const obj = d as Record<string, unknown>
+          if ('msg' in obj && typeof obj.msg === 'string') return obj.msg
+          try {
+            return JSON.stringify(obj)
+          } catch {
+            return '(unparseable error)'
+          }
+        }
+        return String(d ?? '')
+      }
+      const rawDetail =
+        typeof detail === 'object' && detail !== null && 'detail' in detail
+          ? (detail as { detail: unknown }).detail
+          : detail
+      const msg = formatDetail(rawDetail) || `${res.status} ${res.statusText}`
 
       // 401: 토큰 만료/무효 → 자동 로그아웃 + 로그인 모달
       if (res.status === 401 && !skipUnauthorizedHandler) {
