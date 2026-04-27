@@ -41,6 +41,10 @@ class ExtractedPlace:
     category: Optional[str] = None
     response_ms: int = 0
     error: Optional[str] = None      # 실패 시 사유
+    # 신뢰도 평가 (PoC에서 발견: 네이버는 정확한 매칭이 없으면 유사 결과를 보여주므로
+    # 검색 결과 HTML 안에 등록 070이 실제로 노출되는지가 강한 매칭 신호임)
+    phone_in_html: bool = False      # 검색 결과 HTML 안에 등록 070이 들어있는가
+    confidence: float = 0.0          # 0.0~1.0 (사용자에게 'suspicious' 표기 기준)
 
 
 # ────────────────────────────────────────────────────────────
@@ -71,6 +75,64 @@ def normalize_phone(phone: str) -> str:
         # 070-XXX-XXXX (구형) 케이스 — 거의 없음
         return f"{digits[:3]}-{digits[3:6]}-{digits[6:]}"
     return phone  # 비정형은 그대로
+
+
+def _phone_present_near_place_id(html: str, phone: str, place_id: Optional[str]) -> bool:
+    """검색 결과 HTML에서 추출된 place_id 주변에 등록 070이 노출되는지 확인.
+
+    네이버 검색 결과 페이지는 사용자 쿼리(070)를 자동으로 여러 곳에 박지만
+    (title, meta, JS 변수, input, 탭 링크 querystring 등) 그건 모두 결과와 무관함.
+
+    가장 강한 신호는:
+      ① JSON 안의 "phone":"070-..." 필드 (Apollo state)
+      ② 추출된 place_id 주변 ±2KB 텍스트 안에 등록 070이 노출
+    """
+    if not html or not phone or not place_id:
+        return False
+
+    digits = _RE_PHONE_NORMALIZE.sub("", phone)
+    if len(digits) < 7:
+        return False
+
+    # 다양한 표기 변형
+    if len(digits) == 11:
+        variants = [
+            phone,
+            f"{digits[:3]}-{digits[3:7]}-{digits[7:]}",
+            f"{digits[:3]} {digits[3:7]} {digits[7:]}",
+            digits,
+        ]
+    else:
+        variants = [phone, digits]
+    variants = [v for v in variants if v]
+
+    # ① JSON-스타일 phone 필드 (가장 강한 신호)
+    for v in variants:
+        if re.search(
+            r'"(?:phone|virtualPhone|tel|telephone)"\s*:\s*"' + re.escape(v) + r'"',
+            html,
+        ):
+            return True
+
+    # ② place_id 주변 ±2000자 영역에서 검색
+    #    단, 링크 querystring(bk_query=, query=, q= 등)에 박힌 검색어는 무시
+    #    href/url/querystring 자동 삽입 영역을 모두 제거한 뒤 검색
+    def _strip_query_strings(s: str) -> str:
+        # ?query=…&… / ?q=… / &bk_query=… / ?keyword=… 안의 값 제거
+        s = re.sub(r'(?:\?|&|&amp;)(?:bk_query|query|q|keyword|hint|sm)=[^"&\s<>]*', "", s, flags=re.IGNORECASE)
+        # value="…" / data-…="…" 안에서 phone-like 패턴 제거
+        s = re.sub(r'(?:value|data-[a-z-]+)=("|\\")[^"]*?\b\d{3,4}-?\d{3,4}-?\d{4}\b[^"]*?\1', "", s, flags=re.IGNORECASE)
+        return s
+
+    for m in re.finditer(re.escape(place_id), html):
+        start = max(0, m.start() - 2000)
+        end = min(len(html), m.end() + 2000)
+        window = _strip_query_strings(html[start:end])
+        for v in variants:
+            if v in window:
+                return True
+
+    return False
 
 
 def extract_dong_from_address(address: str) -> Optional[str]:
@@ -165,8 +227,45 @@ async def extract_place_from_phone(
         # 5) 동 추출
         dong = extract_dong_from_address(address) if address else None
 
+        # 6) 검색 결과 HTML의 place_id 주변에 등록 070이 실제 들어있는지
+        #    (네이버 자동 삽입 영역이 아닌 '결과 카드' 영역에서만 매칭)
+        phone_in_html = _phone_present_near_place_id(html, norm_phone, place_id)
+
+        # 7) 신뢰도 산정
+        #   - 070 매칭 ○ + 메타 모두 ○ → 1.00
+        #   - 070 매칭 × + 메타 모두 ○ → 0.45 (suspicious)
+        #   - 메타 일부 누락                 → 더 낮음
+        score = 0.0
+        if phone_in_html:
+            score += 0.55       # 가장 강한 신호
+        if place_id:
+            score += 0.20
+        if name:
+            score += 0.10
+        if dong:
+            score += 0.10
+        if category:
+            score += 0.05
+        confidence = round(min(score, 1.0), 2)
+
+        # success 판정: 핵심 메타 (place_id + name) 추출이 핵심
+        # phone_in_html은 신뢰도 가중치로만 사용 — 네이버가 모든 링크 querystring에
+        # 검색어를 자동 삽입하므로 100% 신뢰할 수 없음. 사용자 확인 단계에서 다시 검증.
+        is_success = bool(place_id and name)
+        err: Optional[str] = None
+        if not is_success:
+            if not place_id:
+                err = "place_id_not_found"
+            elif not name:
+                err = "name_not_found"
+            else:
+                err = "partial"
+        elif not phone_in_html:
+            # 성공이지만 신뢰도 낮음 — 사용자 확인 권장
+            err = "needs_user_review"
+
         return ExtractedPlace(
-            success=bool(place_id and name),
+            success=is_success,
             phone=norm_phone,
             place_id=place_id,
             name=name,
@@ -174,7 +273,9 @@ async def extract_place_from_phone(
             dong=dong,
             category=category,
             response_ms=elapsed_ms,
-            error=None if (place_id and name) else "partial",
+            error=err,
+            phone_in_html=phone_in_html,
+            confidence=confidence,
         )
 
     finally:
@@ -211,10 +312,65 @@ async def extract_batch(
 
 # ────────────────────────────────────────────────────────────
 # CLI 실행 시 간단 테스트
+# ────────────────────────────────────────────────────────────
+# 오프라인 단위 테스트 (네트워크 호출 없음)
+def _run_unit_tests() -> None:
+    """주요 헬퍼 함수의 동작을 정규식 레벨에서 검증."""
+    # normalize_phone
+    assert normalize_phone("07012345678") == "070-1234-5678"
+    assert normalize_phone("070-1234-5678") == "070-1234-5678"
+    assert normalize_phone("070 1234 5678") == "070-1234-5678"
+    assert normalize_phone("invalid") == "invalid"
+    print("  ✓ normalize_phone")
+
+    # extract_dong_from_address
+    cases = [
+        ("서울 종로구 홍지동 12-3", "홍지동"),
+        ("서울 종로구 종로1가 25", "종로1가"),
+        ("경기 수원시 영통구 인계동", "인계동"),
+        ("강원 원주시 단계동", "단계동"),
+        ("", None),
+        (None, None),
+    ]
+    for raw, expected in cases:
+        got = extract_dong_from_address(raw or "")
+        assert got == expected, f"{raw!r} → {got!r}, 기대={expected!r}"
+    print(f"  ✓ extract_dong_from_address ({len(cases)}건)")
+
+    # _phone_present_near_place_id
+    # ① 정상: place_id 주변 텍스트에 070이 들어있음
+    html_ok = (
+        '<a href="/place/1234567890">대구방충망</a>'
+        '<span class="phone">전화번호 070-4534-7941</span>'
+        '<span>place_id 1234567890 정보</span>'
+    )
+    assert _phone_present_near_place_id(html_ok, "070-4534-7941", "1234567890")
+    # ② JSON phone 필드
+    html_json = '<script>{"phone":"070-1234-5678","place_id":"9999"}</script>'
+    assert _phone_present_near_place_id(html_json, "070-1234-5678", "9999")
+    # ③ querystring 자동 삽입은 무시
+    html_qs = (
+        '<a href="?bk_query=070-9999-9999">유라기획 1020172861</a>'
+        '<span>전화 02-555-1234</span>'  # 다른 번호
+    )
+    assert not _phone_present_near_place_id(html_qs, "070-9999-9999", "1020172861"), \
+        "querystring의 검색어가 잘못 매칭됨"
+    # ④ place_id 없으면 False
+    assert not _phone_present_near_place_id("어떤 텍스트", "070-1234", None)
+    print("  ✓ _phone_present_near_place_id (4건)")
+
+
 if __name__ == "__main__":
     import json
     import sys
     from dataclasses import asdict
+
+    # --test 플래그가 있으면 단위 테스트만 실행
+    if "--test" in sys.argv:
+        print("== Offline unit tests ==")
+        _run_unit_tests()
+        print("All unit tests passed.\n")
+        sys.exit(0)
 
     samples = sys.argv[1:] or [
         "070-4534-9862",
@@ -230,12 +386,14 @@ if __name__ == "__main__":
         total_ms = int((time.perf_counter() - t0) * 1000)
 
         for r in results:
-            badge = "✅" if r.success else "❌"
+            badge = "✅" if r.success else ("⚠️ " if r.confidence >= 0.4 else "❌")
+            phone_flag = "📞✓" if r.phone_in_html else "📞✗"
             print(
                 f"{badge} {r.phone}  "
                 f"id={r.place_id or '—':<12s}  "
                 f"name={(r.name or '—')[:24]:24s}  "
                 f"dong={r.dong or '—':<10s}  "
+                f"{phone_flag} conf={r.confidence:.2f}  "
                 f"{r.response_ms}ms  "
                 f"{('[' + r.error + ']') if r.error else ''}"
             )
