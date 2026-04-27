@@ -18,7 +18,7 @@ class Base(DeclarativeBase):
 # 비동기 엔진 (SQLite 또는 PostgreSQL)
 engine = create_async_engine(
     settings.DATABASE_URL,
-    echo=settings.DEBUG,
+    echo=settings.SQL_ECHO,
     future=True,
 )
 

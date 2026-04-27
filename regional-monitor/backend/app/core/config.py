@@ -14,6 +14,8 @@ class Settings(BaseSettings):
     APP_NAME: str = "Regional Monitor API"
     APP_VERSION: str = "0.1.0"
     DEBUG: bool = True
+    # SQLAlchemy 쿼리 로그 (개발 시에만 켤 것)
+    SQL_ECHO: bool = False
 
     # ── DB ──
     # 개발: SQLite (파일 기반), 운영: PostgreSQL (asyncpg)

@@ -6,7 +6,7 @@
  */
 
 const DEFAULT_API_BASE =
-  'https://8001-inw0qfytlerazc1omo3uw-5634da27.sandbox.novita.ai'
+  'https://8000-inw0qfytlerazc1omo3uw-5634da27.sandbox.novita.ai'
 
 export const API_BASE: string =
   // Vite 환경변수 (build 시 주입)

@@ -19,9 +19,14 @@ build/
 
 # Python
 backend/__pycache__/
+backend/**/__pycache__/
 backend/.venv/
 backend/venv/
 *.pyc
+
+# DB files (dev SQLite)
+backend/*.db
+backend/*.db-journal
 
 # Logs
 *.log
