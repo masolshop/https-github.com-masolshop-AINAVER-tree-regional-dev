@@ -255,8 +255,9 @@ async def bulk_create_places(
         })
         rows_status.append(BulkRowStatus(phone=norm, status="pending"))
 
-    # 2차 패스: 추출 (동시성 5)
-    sem = asyncio.Semaphore(5)
+    # 2차 패스: 추출 (동시성 10 — 500건 청크 기준 ~50초)
+    # 네이버 부하 분산을 위해 클라이언트는 500건씩 청크로 끊어 호출 권장
+    sem = asyncio.Semaphore(10)
 
     async def _extract(item: dict):
         async with sem:

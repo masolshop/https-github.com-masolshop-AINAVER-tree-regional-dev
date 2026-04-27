@@ -70,8 +70,13 @@ class PlaceBulkRow(BaseModel):
 
 
 class PlaceBulkRequest(BaseModel):
-    """일괄 등록 요청. 한 번에 최대 100건."""
-    rows: list[PlaceBulkRow] = Field(..., min_length=1, max_length=100)
+    """일괄 등록 요청.
+
+    한 번의 API 호출에서 처리하는 청크 크기 — 권장 500건.
+    - 클라이언트가 1만 행짜리 엑셀을 올려도 프론트에서 500건씩 청크로 나눠 호출.
+    - 서버 상한은 안전망으로 1000건(이론상). 실 운용은 500건 청크.
+    """
+    rows: list[PlaceBulkRow] = Field(..., min_length=1, max_length=1000)
 
 
 class BulkRowStatus(BaseModel):

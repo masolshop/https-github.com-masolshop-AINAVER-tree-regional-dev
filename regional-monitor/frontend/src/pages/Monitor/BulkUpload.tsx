@@ -10,7 +10,12 @@
  *   4) "업로드 시작" → POST /api/v1/places/bulk
  *   5) 행별 결과 테이블 (status: created/duplicate/invalid_phone/extract_failed/quota_exceeded)
  *
- * 백엔드 제한: rows 1~100건. 100건 초과 시 클라이언트에서 자동 분할(미구현 — 100건 안내).
+ * 업로드 동작:
+ *   - 한 파일에 최대 10,000건까지 허용
+ *   - 클라이언트가 500건씩 청크로 나눠 POST /api/v1/places/bulk 를 순차 호출
+ *   - 각 청크 결과를 누적 합산해 최종 결과 패널 표시
+ *   - 진행률 (현재 청크 / 총 청크) 실시간 노출
+ *   - 청크 사이 짧은 휴식(150ms)으로 네이버 부하 분산
  */
 import { useRef, useState } from 'react'
 import {
@@ -32,7 +37,9 @@ import { useBulkCreatePlaces } from '@/hooks/usePlaces'
 import { ApiError } from '@/api/client'
 import type { PlaceBulkResponse, BulkRowStatusKey } from '@/api/types'
 
-const MAX_ROWS = 100
+const MAX_ROWS = 10000              // 한 파일 업로드 상한
+const CHUNK_SIZE = 500              // 한 번 API 호출당 행 수 (네이버 부하 분산)
+const CHUNK_DELAY_MS = 150          // 청크 사이 짧은 휴식
 const HEADER_PHONE_KEYS = ['phone', '070', '전화', '전화번호', '번호']
 const HEADER_DONG_KEYS = ['dong', '동', '등록동', '주소', 'address']
 const HEADER_NAME_KEYS = ['name', '상호', '상호명', '업체명', 'business']
@@ -44,6 +51,13 @@ interface ParsedRow {
   source_row: number              // 1-based 원본 엑셀 행 번호
 }
 
+interface ChunkProgress {
+  chunkIndex: number       // 0-based
+  totalChunks: number
+  processedRows: number    // 현재까지 서버로 전송 완료한 행수
+  totalRows: number
+}
+
 export function BulkUpload() {
   const inputRef = useRef<HTMLInputElement>(null)
   const [file, setFile] = useState<File | null>(null)
@@ -52,6 +66,8 @@ export function BulkUpload() {
   const [response, setResponse] = useState<PlaceBulkResponse | null>(null)
   const [submitError, setSubmitError] = useState<string | null>(null)
   const [dragOver, setDragOver] = useState(false)
+  const [progress, setProgress] = useState<ChunkProgress | null>(null)
+  const [isSubmitting, setIsSubmitting] = useState(false)
 
   const bulkMut = useBulkCreatePlaces()
 
@@ -83,18 +99,94 @@ export function BulkUpload() {
   const handleSubmit = async () => {
     setSubmitError(null)
     if (rows.length === 0) return
+
+    // 500건 청크로 분할
+    const chunks: ParsedRow[][] = []
+    for (let i = 0; i < rows.length; i += CHUNK_SIZE) {
+      chunks.push(rows.slice(i, i + CHUNK_SIZE))
+    }
+
+    setIsSubmitting(true)
+    setProgress({
+      chunkIndex: 0,
+      totalChunks: chunks.length,
+      processedRows: 0,
+      totalRows: rows.length,
+    })
+
+    // 결과 누적 합산
+    const merged: PlaceBulkResponse = {
+      requested: 0,
+      created: 0,
+      duplicate: 0,
+      invalid_phone: 0,
+      extract_failed: 0,
+      quota_exceeded: 0,
+      elapsed_ms: 0,
+      quota_remaining: 0,
+      rows: [],
+    }
+
     try {
-      const res = await bulkMut.mutateAsync({
-        rows: rows.map((r) => ({
-          phone: r.phone,
-          registered_dong_override: r.dong || null,
-          business_name_override: r.name || null,
-        })),
+      for (let i = 0; i < chunks.length; i++) {
+        setProgress({
+          chunkIndex: i,
+          totalChunks: chunks.length,
+          processedRows: i * CHUNK_SIZE,
+          totalRows: rows.length,
+        })
+
+        const chunk = chunks[i]
+        const res = await bulkMut.mutateAsync({
+          rows: chunk.map((r) => ({
+            phone: r.phone,
+            registered_dong_override: r.dong || null,
+            business_name_override: r.name || null,
+          })),
+        })
+
+        // 합산
+        merged.requested += res.requested
+        merged.created += res.created
+        merged.duplicate += res.duplicate
+        merged.invalid_phone += res.invalid_phone
+        merged.extract_failed += res.extract_failed
+        merged.quota_exceeded += res.quota_exceeded
+        merged.elapsed_ms += res.elapsed_ms
+        merged.quota_remaining = res.quota_remaining // 마지막 청크 값이 진실
+        merged.rows.push(...res.rows)
+
+        // 부분 결과 라이브 업데이트
+        setResponse({ ...merged })
+
+        // 한도 초과 다수 발생 시 — 더 보낼 의미 없음 (남은 쿼터 0)
+        if (res.quota_remaining <= 0 && i < chunks.length - 1) {
+          setSubmitError(
+            `등록 한도 도달 — ${i + 1}/${chunks.length} 청크에서 중단되었습니다. 남은 ${rows.length - (i + 1) * CHUNK_SIZE}건은 한도 부족으로 미처리.`,
+          )
+          break
+        }
+
+        // 청크 사이 짧은 휴식
+        if (i < chunks.length - 1) {
+          await new Promise((resolve) => setTimeout(resolve, CHUNK_DELAY_MS))
+        }
+      }
+
+      setProgress({
+        chunkIndex: chunks.length,
+        totalChunks: chunks.length,
+        processedRows: rows.length,
+        totalRows: rows.length,
       })
-      setResponse(res)
+      setResponse(merged)
     } catch (e) {
       if (e instanceof ApiError) setSubmitError(`${e.status}: ${e.message}`)
       else setSubmitError((e as Error).message)
+      // 에러여도 지금까지 누적된 결과는 보여주기
+      if (merged.rows.length > 0) setResponse(merged)
+    } finally {
+      setIsSubmitting(false)
     }
   }
 
@@ -104,13 +196,15 @@ export function BulkUpload() {
     setParseError(null)
     setResponse(null)
     setSubmitError(null)
+    setProgress(null)
+    setIsSubmitting(false)
     if (inputRef.current) inputRef.current.value = ''
   }
 
   // ─────────────── 렌더 ───────────────
 
-  // 결과 화면
-  if (response) {
+  // 결과 화면 — 모든 청크 처리 완료 후에만 (제출 중에는 진행률 + 부분 누적은 내부 표시만)
+  if (response && !isSubmitting) {
     return <BulkResultPanel response={response} onClose={reset} />
   }
 
@@ -155,7 +249,10 @@ export function BulkUpload() {
             엑셀(.xlsx / .xls) 또는 CSV 파일을 드롭하거나 클릭
           </div>
           <div className="text-caption text-ink-muted mt-1">
-            phone(070) 컬럼 필수 · 등록동/상호 컬럼은 선택 · 최대 {MAX_ROWS}건
+            phone(070) 컬럼 필수 · 등록동/상호 컬럼은 선택 · 최대 {MAX_ROWS.toLocaleString()}건
+          </div>
+          <div className="text-caption text-ink-muted mt-0.5 opacity-80">
+            대용량 파일은 자동으로 {CHUNK_SIZE}건씩 청크로 나눠 검증·등록됩니다
           </div>
         </div>
       )}
@@ -235,20 +332,48 @@ export function BulkUpload() {
                 </div>
               )}
 
+              {/* 진행률 표시 */}
+              {progress && isSubmitting && (
+                <div className="mb-3 px-3 py-2.5 rounded-xl bg-brand-50 border border-brand-200">
+                  <div className="flex items-center justify-between gap-2 mb-1.5">
+                    <div className="text-caption font-semibold text-brand-700">
+                      청크 {progress.chunkIndex + 1}/{progress.totalChunks} 처리 중
+                    </div>
+                    <div className="text-caption tabular-nums text-brand-700">
+                      {progress.processedRows.toLocaleString()} / {progress.totalRows.toLocaleString()}건
+                    </div>
+                  </div>
+                  <div className="h-1.5 rounded-full bg-brand-100 overflow-hidden">
+                    <div
+                      className="h-full bg-brand-500 transition-all duration-300"
+                      style={{
+                        width: `${(progress.processedRows / Math.max(progress.totalRows, 1)) * 100}%`,
+                      }}
+                    />
+                  </div>
+                </div>
+              )}
+
               <button
                 type="button"
                 onClick={handleSubmit}
-                disabled={bulkMut.isPending}
+                disabled={isSubmitting}
                 className="w-full btn-primary justify-center disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                {bulkMut.isPending ? (
+                {isSubmitting ? (
                   <>
                     <Loader2 size={14} className="animate-spin" />
-                    {rows.length}건 처리 중… (예상 {Math.ceil(rows.length * 0.4)}초)
+                    {progress
+                      ? `청크 ${progress.chunkIndex + 1}/${progress.totalChunks} 처리 중…`
+                      : `${rows.length.toLocaleString()}건 처리 시작…`}
                   </>
                 ) : (
                   <>
-                    <Upload size={14} /> {rows.length}건 일괄 등록 시작
+                    <Upload size={14} />
+                    {rows.length.toLocaleString()}건 일괄 등록 시작
+                    {rows.length > CHUNK_SIZE
+                      ? ` (${Math.ceil(rows.length / CHUNK_SIZE)}개 청크 × ${CHUNK_SIZE}건)`
+                      : ''}
                   </>
                 )}
               </button>
