@@ -17,6 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.check import ChangeEvent, DailyHealthCheck
 from app.models.place import RegisteredPlace
+from app.models.user import User
 
 
 # ──────────────────────────────────────────────────────────────
@@ -95,17 +96,24 @@ async def persist_results(
     """검증 결과를 DB에 반영.
 
     Returns:
-        {"updated": N, "events": M, "history": K}  통계
+        {
+          "updated": N, "events": M, "history": K,
+          "new_events": [ChangeEvent, ...],   # ← notifier 가 사용 (commit 후에도 attach 상태)
+          "place_lookup": {place_id_ref: RegisteredPlace},
+        }
     """
     updated = 0
-    new_events = 0
     history_rows = 0
     now = datetime.utcnow()
+    new_event_objs: list[ChangeEvent] = []
 
     # place_id_ref → RegisteredPlace 매핑 (1번 쿼리)
     refs = [r["place_id_ref"] for r in results]
     if not refs:
-        return {"updated": 0, "events": 0, "history": 0}
+        return {
+            "updated": 0, "events": 0, "history": 0,
+            "new_events": [], "place_lookup": {},
+        }
 
     q = await db.execute(select(RegisteredPlace).where(RegisteredPlace.id.in_(refs)))
     places = {p.id: p for p in q.scalars().all()}
@@ -142,15 +150,16 @@ async def persist_results(
         evt = classify_event(prev, new, detail)
         if evt:
             event_type, summary = evt
-            db.add(ChangeEvent(
+            ce = ChangeEvent(
                 place_id_ref=place.id,
                 event_type=event_type,
                 prev_verdict=prev,
                 new_verdict=new,
                 summary=summary,
                 detected_at=now,
-            ))
-            new_events += 1
+            )
+            db.add(ce)
+            new_event_objs.append(ce)
 
         # 3) RegisteredPlace 갱신
         place.current_verdict = new
@@ -158,7 +167,15 @@ async def persist_results(
         updated += 1
 
     await db.commit()
-    return {"updated": updated, "events": new_events, "history": history_rows}
+    # commit 후에도 notifier 가 ChangeEvent 의 notified_email/notified_slack 를
+    # 갱신할 수 있도록 같은 세션에 attach 된 상태로 반환.
+    return {
+        "updated": updated,
+        "events": len(new_event_objs),
+        "history": history_rows,
+        "new_events": new_event_objs,
+        "place_lookup": places,
+    }
 
 
 __all__ = ["persist_results", "classify_event"]

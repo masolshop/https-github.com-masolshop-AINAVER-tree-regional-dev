@@ -30,11 +30,13 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 from sqlalchemy import select
 
+from app.core.config import settings
 from app.core.database import AsyncSessionLocal
 from app.models.user import User
 from app.models.place import RegisteredPlace
 from app.services.verifier import verify_batch
 from app.services.persist import persist_results
+from app.services.notifier import notify_user_events
 
 
 log = logging.getLogger("scheduler")
@@ -95,6 +97,23 @@ async def _verify_user_places(
 
             results = await verify_batch(places, concurrency=PER_USER_CONCURRENCY)
             stats = await persist_results(db, results)
+
+            # ── 알림 발송 (best-effort, ChangeEvent 가 있을 때만) ──
+            new_events = stats.pop("new_events", []) or []
+            place_lookup = stats.pop("place_lookup", {}) or {}
+            if settings.NOTIFY_ENABLED and new_events:
+                try:
+                    user = await db.get(User, user_id)
+                    if user is not None:
+                        notif_stats = await notify_user_events(
+                            db, user, new_events, place_lookup=place_lookup,
+                        )
+                        stats["email_sent"] = notif_stats.get("email_sent", 0)
+                        stats["slack_sent"] = notif_stats.get("slack_sent", 0)
+                except Exception as e:                                          # noqa: BLE001
+                    # 알림 실패가 검증 결과 자체를 망치지 않도록.
+                    log.warning("notify failed user=%d err=%s", user_id, e)
+
             stats["user_id"] = user_id
             stats["places"] = len(places)
             return stats

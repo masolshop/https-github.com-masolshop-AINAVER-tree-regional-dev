@@ -15,8 +15,10 @@ from app.schemas import (
     VerificationResult,
     VerificationDetail,
 )
+from app.core.config import settings
 from app.services import verify_batch, summarize_results
 from app.services.persist import persist_results
+from app.services.notifier import notify_user_events
 from .deps import get_current_user
 
 router = APIRouter(prefix="/verify", tags=["verify"])
@@ -60,6 +62,17 @@ async def run_live_check(
             if addr:
                 place.full_address = addr
     await db.commit()
+
+    # ── 변경 이벤트가 발생했을 때만 알림 발송 (best-effort) ──
+    # 즉시 검증에서도 변경이 감지되면 사용자에게 Email/Slack 알림을 즉시 전송.
+    new_events = persist_stats.pop("new_events", []) or []
+    place_lookup = persist_stats.pop("place_lookup", {}) or place_by_id
+    if settings.NOTIFY_ENABLED and new_events:
+        try:
+            await notify_user_events(db, user, new_events, place_lookup=place_lookup)
+        except Exception:                                                        # noqa: BLE001
+            # 알림 실패가 검증 응답을 망치지 않도록 조용히 무시 (notifier 내부에서 로깅).
+            pass
 
     # 응답 변환
     summary = summarize_results(raw_results)

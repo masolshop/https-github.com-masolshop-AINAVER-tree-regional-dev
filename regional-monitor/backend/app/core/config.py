@@ -38,6 +38,18 @@ class Settings(BaseSettings):
     # 테스트/개발 시 끄려면 SCHEDULER_ENABLED=false
     SCHEDULER_ENABLED: bool = True
 
+    # ── 알림 (SMTP) ──
+    # 미설정 시 notifier 가 콘솔 로그 폴백 — 개발/테스트 안전.
+    # 운영에서는 SES / SendGrid / Gmail SMTP 등을 환경변수로 주입.
+    SMTP_HOST: str = ""
+    SMTP_PORT: int = 587
+    SMTP_USER: str = ""
+    SMTP_PASSWORD: str = ""
+    SMTP_FROM: str = ""                       # 비우면 SMTP_USER 사용
+    SMTP_FROM_NAME: str = "RegionWatch"
+    # 알림 자체를 완전히 끄려면 (테스트 시) NOTIFY_ENABLED=false
+    NOTIFY_ENABLED: bool = True
+
     # ── CORS ──
     CORS_ALLOW_ORIGINS: list[str] = [
         "http://localhost:5173",
