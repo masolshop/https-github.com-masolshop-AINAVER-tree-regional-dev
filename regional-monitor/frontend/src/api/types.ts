@@ -211,3 +211,29 @@ export interface SchedulerStatusOut {
   verify_slot_label: string       // "매일 03:00 (KST)"
   timezone: string                // "Asia/Seoul (KST, UTC+9)"
 }
+
+/* ─────────────── /settings ─────────────── */
+
+export type ChannelKey = 'email_alerts' | 'sheet_sync' | 'kakao_number' | 'slack_webhook'
+export type PlanKey = 'free' | 'basic' | 'pro' | 'enterprise'
+
+export interface SettingsOut {
+  email_alerts: boolean
+  email_address: string
+  kakao_number: string | null
+  slack_webhook: string | null
+  sheet_url: string | null
+  sheet_sync_enabled: boolean
+  verify_slot: number
+  verify_slot_label: string
+  plan: PlanKey
+  available_channels: ChannelKey[]
+}
+
+export interface SettingsPatch {
+  email_alerts?: boolean
+  kakao_number?: string | null
+  slack_webhook?: string | null
+  sheet_url?: string | null
+  sheet_sync_enabled?: boolean
+}
