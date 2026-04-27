@@ -24,27 +24,86 @@ async def verify_one(
 ) -> dict:
     """단일 Place 검증.
 
+    place.place_id 가 NULL 인 경우 (등록 직후, 미추출 상태):
+      1) phone → place_id 추출을 먼저 시도
+      2) 추출 성공 → 추출된 정보로 4중 검증
+      3) 추출 실패 → DEAD verdict 로 즉시 반환 (네이버에서 노출 못 찾음)
+
     Returns:
-        dict: {
-            "place_id_ref": int,            # registered_places.id
-            "phone": str,
-            "place_id": str,
-            "registered_dong": str,
-            "business_name": str,
-            "detail": {alive, phone_match, dong_match, name_match,
-                       actual_phone, actual_dong, actual_name, actual_address},
-            "verdict": Verdict,
-            "response_ms": int,
-            "http_status": int,
-            "error": str|None,
-            "checked_at": datetime
-        }
+        dict: 표준 검증 결과 dict (run_live_check 응답에 사용).
     """
+    # ── place_id 가 비어있으면 먼저 phone→place 추출 시도 ──
+    if not place.place_id:
+        try:
+            from app.extractors.phone_to_place import (
+                extract_place_from_phone,
+                extract_dong_from_address,
+            )
+            ext = await extract_place_from_phone(place.phone)
+            if ext and ext.success and ext.place_id:
+                # DB 객체에 채워 넣기 (caller 가 commit)
+                place.place_id = ext.place_id
+                if not place.business_name:
+                    place.business_name = ext.name or ""
+                if not place.registered_dong and ext.address:
+                    place.registered_dong = extract_dong_from_address(ext.address) or ""
+                if not place.full_address and ext.address:
+                    place.full_address = ext.address
+                if not place.category and ext.category:
+                    place.category = ext.category
+            else:
+                # 추출 실패 → 노출 못 찾음 = DEAD
+                return {
+                    "place_id_ref": place.id,
+                    "phone": place.phone,
+                    "place_id": None,
+                    "registered_dong": place.registered_dong,
+                    "business_name": place.business_name,
+                    "detail": {
+                        "alive": False,
+                        "phone_match": False,
+                        "dong_match": False,
+                        "name_match": False,
+                        "actual_phone": None,
+                        "actual_dong": None,
+                        "actual_name": None,
+                        "actual_address": None,
+                    },
+                    "verdict": "DEAD",
+                    "response_ms": 0,
+                    "http_status": getattr(ext, "http_status", 0) if ext else 0,
+                    "error": (getattr(ext, "error", None) if ext else None) or "extract_failed",
+                    "checked_at": now_kst(),
+                }
+        except Exception as e:                                                            # noqa: BLE001
+            return {
+                "place_id_ref": place.id,
+                "phone": place.phone,
+                "place_id": None,
+                "registered_dong": place.registered_dong,
+                "business_name": place.business_name,
+                "detail": {
+                    "alive": False,
+                    "phone_match": False,
+                    "dong_match": False,
+                    "name_match": False,
+                    "actual_phone": None,
+                    "actual_dong": None,
+                    "actual_name": None,
+                    "actual_address": None,
+                },
+                "verdict": "DEAD",
+                "response_ms": 0,
+                "http_status": 0,
+                "error": f"extract_exception: {type(e).__name__}",
+                "checked_at": now_kst(),
+            }
+
     sample = {
         "place_id": place.place_id,
         "phone": place.phone,
-        "expected_dong": place.registered_dong,
-        "expected_biz": place.business_name,
+        "expected_dong": place.registered_dong or "",
+        "expected_biz": place.business_name or "",
     }
     cr = await check_place(client, sample)
 

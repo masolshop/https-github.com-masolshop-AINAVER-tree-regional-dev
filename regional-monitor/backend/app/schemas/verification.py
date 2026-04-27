@@ -17,14 +17,18 @@ class VerificationDetail(BaseModel):
 
 
 class VerificationResult(BaseModel):
-    """검증 결과 + 등록 정보."""
+    """검증 결과 + 등록 정보.
+
+    place_id / registered_dong / business_name 은 등록 직후(추출 전) 검증을
+    수행하는 경우 NULL 일 수 있음. 추출 실패 시에도 NULL 그대로 반환.
+    """
     model_config = ConfigDict(from_attributes=True)
 
     place_id_ref: int             # registered_places.id
     phone: str
-    place_id: str                 # 네이버 Place ID
-    registered_dong: str
-    business_name: str
+    place_id: str | None = None   # 네이버 Place ID (등록 직후 NULL 가능)
+    registered_dong: str | None = None
+    business_name: str | None = None
 
     detail: VerificationDetail
     verdict: VerdictType
