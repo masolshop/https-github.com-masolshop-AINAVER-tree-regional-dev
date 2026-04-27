@@ -358,7 +358,8 @@ async def check_place(client: httpx.AsyncClient, sample: Dict) -> CheckResult:
         "User-Agent": MOBILE_UA,
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
         "Accept-Language": "ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7",
-        "Accept-Encoding": "gzip, deflate, br",
+        # NOTE: 'br' (Brotli) 명시 시 httpx가 디코드 못해 본문이 깨짐 → gzip/deflate만 허용
+        "Accept-Encoding": "gzip, deflate",
         "Cache-Control": "no-cache",
         "Pragma": "no-cache",
         "Sec-Fetch-Dest": "document",
