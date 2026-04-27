@@ -49,6 +49,8 @@ __all__ = [
     "PlaceBulkResponse",
     "PlaceBulkDeleteRequest",
     "PlaceBulkDeleteResponse",
+    "PlaceBulkDeleteRequest",
+    "PlaceBulkDeleteResponse",
     "VerificationDetail",
     "VerificationResult",
     "LiveCheckRequest",

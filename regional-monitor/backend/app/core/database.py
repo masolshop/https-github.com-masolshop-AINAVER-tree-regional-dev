@@ -1,5 +1,6 @@
 """SQLAlchemy 비동기 DB 엔진/세션."""
 from collections.abc import AsyncGenerator
+from sqlalchemy import event
 from sqlalchemy.ext.asyncio import (
     AsyncSession,
     async_sessionmaker,
@@ -21,6 +22,17 @@ engine = create_async_engine(
     echo=settings.SQL_ECHO,
     future=True,
 )
+
+
+# SQLite 의 경우 FK 제약(특히 ON DELETE CASCADE) 을 사용하려면
+# 매 connection 마다 PRAGMA foreign_keys=ON 이 필요하다.
+# (PostgreSQL 등에서는 무시된다.)
+if settings.DATABASE_URL.startswith("sqlite"):
+    @event.listens_for(engine.sync_engine, "connect")
+    def _enable_sqlite_fk(dbapi_connection, _):  # noqa: ANN001
+        cursor = dbapi_connection.cursor()
+        cursor.execute("PRAGMA foreign_keys=ON")
+        cursor.close()
 
 AsyncSessionLocal = async_sessionmaker(
     engine,

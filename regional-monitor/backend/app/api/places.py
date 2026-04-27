@@ -362,6 +362,61 @@ async def update_place(
 
 
 # ────────────────────────────────────────────────────────────
+@router.post("/bulk-delete", response_model=PlaceBulkDeleteResponse)
+async def bulk_delete_places(
+    req: PlaceBulkDeleteRequest,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> PlaceBulkDeleteResponse:
+    """등록 일괄 삭제.
+
+    · ids 가 비어있고 all=True 면 사용자의 모든 등록을 삭제.
+    · ids 가 주어지면 해당 id 들만 삭제 (소유권 검증 — 다른 유저 것은 not_found 로 처리).
+    · 관련 자식 레코드(DailyHealthCheck, ChangeEvent)는 cascade='all, delete-orphan' 으로 함께 제거.
+    """
+    started = time.time()
+
+    # 1) 대상 조회 (소유권 검증)
+    if req.all and not req.ids:
+        result = await db.execute(
+            select(RegisteredPlace).where(RegisteredPlace.user_id == user.id)
+        )
+        targets = list(result.scalars().all())
+        requested = len(targets)
+        not_found = 0
+    else:
+        if not req.ids:
+            raise HTTPException(
+                status_code=400,
+                detail="ids 가 비어있고 all=False 입니다. 삭제할 항목이 없습니다.",
+            )
+        result = await db.execute(
+            select(RegisteredPlace).where(
+                RegisteredPlace.id.in_(req.ids),
+                RegisteredPlace.user_id == user.id,
+            )
+        )
+        targets = list(result.scalars().all())
+        requested = len(req.ids)
+        not_found = requested - len(targets)
+
+    # 2) 삭제 (cascade로 자식 레코드도 함께 삭제됨)
+    deleted = 0
+    for place in targets:
+        await db.delete(place)
+        deleted += 1
+    await db.commit()
+
+    elapsed_ms = int((time.time() - started) * 1000)
+    return PlaceBulkDeleteResponse(
+        requested=requested,
+        deleted=deleted,
+        not_found=not_found,
+        elapsed_ms=elapsed_ms,
+    )
+
+
+# ────────────────────────────────────────────────────────────
 @router.delete("/{place_id}", response_model=MessageResponse)
 async def delete_place(
     place_id: int,

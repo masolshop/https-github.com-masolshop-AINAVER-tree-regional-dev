@@ -1,21 +1,24 @@
 /**
  * Monitor — Tab 1: 등록 관리 (실 API 연동)
- *  ┌─ 상: 엑셀/CSV 일괄 업로드 (메인 등록 방식)
- *  │       POST /api/v1/places/bulk · 동시 5건 추출 · 1회 100건
- *  └─ 하: 등록 리스트 테이블 (체크박스 다중 선택 → 선택 삭제 / 모두 삭제 / 재검증)
  *
- *  ※ 단건 등록 폼은 v2 에서 제거됨 (대량 등록 워크플로우로 일원화)
+ *  ┌─ 메인: 엑셀/CSV 일괄 업로드 (POST /api/v1/places/bulk, 동시 5건 추출, 1회 100건)
+ *  └─ 하단: 등록 리스트 테이블
+ *           · 검색 / 재검증 / 단건 삭제
+ *           · 체크박스 다중 선택 + 선택 일괄 삭제 + 전체 삭제
+ *
+ * 단건 등록 폼은 제거됨 (대량 등록 워크플로우가 메인).
  */
-import { lazy, Suspense, useMemo, useState } from 'react'
+import { lazy, Suspense, useEffect, useMemo, useState } from 'react'
 import { Card } from '@/components/ui/Card'
 import { VerdictBadge } from './VerdictBadge'
 import type { RegisteredPlace } from './types'
 import {
-  useBulkDeletePlaces,
   useDeletePlace,
+  useBulkDeletePlaces,
   usePlacesList,
 } from '@/hooks/usePlaces'
 import { useLiveCheck } from '@/hooks/useLiveCheck'
+import { ApiError } from '@/api/client'
 
 // xlsx 라이브러리(~370KB)를 지연 로드해서 초기 번들 크기 절감
 const BulkUpload = lazy(() =>
@@ -30,12 +33,12 @@ import {
   Loader2,
   CheckSquare,
   Square,
-  XCircle,
+  Trash,
 } from 'lucide-react'
 
 export default function RegisterTab() {
   const [search, setSearch] = useState('')
-  const [selected, setSelected] = useState<Set<number>>(new Set())
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set())
   const { data, isLoading, isError, error, refetch, isFetching } = usePlacesList()
   const deleteMut = useDeletePlace()
   const bulkDeleteMut = useBulkDeletePlaces()
@@ -56,13 +59,26 @@ export default function RegisterTab() {
     )
   }, [places, search])
 
+  // 데이터가 바뀌었을 때 더 이상 존재하지 않는 id 는 선택 해제
+  useEffect(() => {
+    setSelectedIds((prev) => {
+      const validIds = new Set(places.map((p) => p.id))
+      const next = new Set<number>()
+      prev.forEach((id) => {
+        if (validIds.has(id)) next.add(id)
+      })
+      return next.size === prev.size ? prev : next
+    })
+  }, [places])
+
+  const filteredIds = useMemo(() => filtered.map((p) => p.id), [filtered])
   const allFilteredSelected =
-    filtered.length > 0 && filtered.every((p) => selected.has(p.id))
+    filteredIds.length > 0 && filteredIds.every((id) => selectedIds.has(id))
   const someFilteredSelected =
-    !allFilteredSelected && filtered.some((p) => selected.has(p.id))
+    !allFilteredSelected && filteredIds.some((id) => selectedIds.has(id))
 
   const toggleOne = (id: number) => {
-    setSelected((prev) => {
+    setSelectedIds((prev) => {
       const next = new Set(prev)
       if (next.has(id)) next.delete(id)
       else next.add(id)
@@ -70,83 +86,28 @@ export default function RegisterTab() {
     })
   }
 
-  const toggleAllFiltered = () => {
-    setSelected((prev) => {
+  const toggleAllVisible = () => {
+    setSelectedIds((prev) => {
       const next = new Set(prev)
       if (allFilteredSelected) {
-        // 현재 보이는 것만 모두 해제
-        filtered.forEach((p) => next.delete(p.id))
+        // 현재 보이는 항목 모두 해제
+        filteredIds.forEach((id) => next.delete(id))
       } else {
-        // 현재 보이는 것 모두 선택
-        filtered.forEach((p) => next.add(p.id))
+        // 현재 보이는 항목 모두 선택
+        filteredIds.forEach((id) => next.add(id))
       }
       return next
     })
   }
 
-  const clearSelection = () => setSelected(new Set())
+  const clearSelection = () => setSelectedIds(new Set())
 
   const handleDelete = async (id: number, phone: string) => {
     if (!confirm(`${phone} 등록을 삭제하시겠습니까?`)) return
     try {
       await deleteMut.mutateAsync(id)
-      setSelected((prev) => {
-        const next = new Set(prev)
-        next.delete(id)
-        return next
-      })
     } catch (e) {
-      alert(`삭제 실패: ${(e as Error).message}`)
-    }
-  }
-
-  const handleBulkDeleteSelected = async () => {
-    const ids = Array.from(selected)
-    if (ids.length === 0) return
-    if (
-      !confirm(
-        `선택한 ${ids.length}건을 삭제하시겠습니까?\n이 작업은 되돌릴 수 없습니다.`,
-      )
-    )
-      return
-    try {
-      const res = await bulkDeleteMut.mutateAsync({ ids })
-      clearSelection()
-      alert(
-        `✅ 일괄 삭제 완료\n` +
-          `요청: ${res.requested}건\n` +
-          `삭제: ${res.deleted}건` +
-          (res.not_found ? `\n찾을 수 없음: ${res.not_found}건` : '') +
-          `\n소요: ${res.elapsed_ms}ms`,
-      )
-    } catch (e) {
-      alert(`일괄 삭제 실패: ${(e as Error).message}`)
-    }
-  }
-
-  const handleDeleteAll = async () => {
-    const total = places.length
-    if (total === 0) return
-    const first = confirm(
-      `⚠️ 등록된 모든 070 번호 ${total}건을 삭제합니다.\n이 작업은 되돌릴 수 없습니다.\n\n계속하시겠습니까?`,
-    )
-    if (!first) return
-    const text = prompt(
-      `최종 확인을 위해 "DELETE ALL" 을 정확히 입력해주세요.`,
-      '',
-    )
-    if (text !== 'DELETE ALL') {
-      if (text !== null) alert('확인 문구가 일치하지 않아 취소되었습니다.')
-      return
-    }
-    try {
-      const res = await bulkDeleteMut.mutateAsync({ all: true })
-      clearSelection()
-      alert(
-        `✅ 모두 삭제 완료\n삭제: ${res.deleted}건\n소요: ${res.elapsed_ms}ms`,
-      )
-    } catch (e) {
-      alert(`전체 삭제 실패: ${(e as Error).message}`)
+      alert(`삭제 실패: ${formatApiError(e)}`)
     }
   }
 
@@ -156,9 +117,56 @@ export default function RegisterTab() {
       const r = res.results[0]
       if (r) alert(`${phone} 재검증 완료: ${r.verdict} (${r.response_ms}ms)`)
     } catch (e) {
-      alert(`재검증 실패: ${(e as Error).message}`)
+      alert(`재검증 실패: ${formatApiError(e)}`)
     }
   }
+
+  const handleBulkDeleteSelected = async () => {
+    const ids = Array.from(selectedIds)
+    if (ids.length === 0) return
+    if (
+      !confirm(
+        `선택된 ${ids.length}건의 등록을 삭제하시겠습니까?\n\n삭제된 데이터는 복구할 수 없습니다 (관련 검증 이력·변경 이벤트 포함).`,
+      )
+    )
+      return
+    try {
+      const res = await bulkDeleteMut.mutateAsync({ ids, all: false })
+      alert(
+        `삭제 완료: ${res.deleted}건${
+          res.not_found > 0 ? ` (찾을 수 없음 ${res.not_found}건)` : ''
+        } · ${res.elapsed_ms}ms`,
+      )
+      clearSelection()
+    } catch (e) {
+      alert(`일괄 삭제 실패: ${formatApiError(e)}`)
+    }
+  }
+
+  const handleDeleteAll = async () => {
+    if (places.length === 0) return
+    if (
+      !confirm(
+        `등록된 ${places.length}건 전체를 삭제하시겠습니까?\n\n⚠️ 모든 070 등록과 관련된 검증 이력·변경 이벤트가 함께 삭제됩니다. 복구할 수 없습니다.`,
+      )
+    )
+      return
+    if (
+      !confirm(
+        `정말 전체 삭제할까요? 이 작업은 되돌릴 수 없습니다.\n\n계속하려면 "확인"을 누르세요.`,
+      )
+    )
+      return
+    try {
+      const res = await bulkDeleteMut.mutateAsync({ ids: [], all: true })
+      alert(`전체 삭제 완료: ${res.deleted}건 · ${res.elapsed_ms}ms`)
+      clearSelection()
+    } catch (e) {
+      alert(`전체 삭제 실패: ${formatApiError(e)}`)
+    }
+  }
+
+  const bulkBusy = bulkDeleteMut.isPending
 
   return (
     <div className="space-y-6">
@@ -170,24 +178,25 @@ export default function RegisterTab() {
         <SummaryPill label="심각 (지역/삭제)" value={summary.danger} tone="danger" />
       </div>
 
-      {/* ───── 등록 패널 (엑셀/CSV 일괄 업로드 — 메인) ───── */}
+      {/* ───── 메인 등록 패널 — 엑셀/CSV 일괄 업로드 ───── */}
       <Card variant="white">
-        <div className="flex items-center gap-3 mb-5">
+        <div className="flex items-center gap-3 mb-4">
           <div className="w-11 h-11 rounded-2xl bg-brand-50 text-brand-600 flex items-center justify-center">
-            <FileSpreadsheet size={20} />
+            <FileSpreadsheet size={22} />
           </div>
-          <div className="flex-1 min-w-0">
+          <div className="flex-1">
             <h3 className="text-h3 text-ink">엑셀 / CSV 대량 등록</h3>
             <p className="text-caption text-ink-muted mt-0.5">
-              엑셀에서 070 번호 열을 복사·붙여넣기 하거나 CSV·TXT 파일을 업로드하세요. 한 번에
-              최대 100건 · 동시 5건 자동 추출(Place ID/동/상호) → 일괄 저장.
+              엑셀에서 070 번호 열을 복사·붙여넣기 하거나 CSV·TXT 파일을 업로드하세요.
+              <span className="text-brand-600 font-semibold"> 1회 최대 100건</span>,
+              백엔드가 동시 5건씩 자동으로 Place ID·동·상호를 추출합니다.
             </p>
           </div>
         </div>
 
         <Suspense
           fallback={
-            <div className="rounded-card border-2 border-dashed border-ink-watermark/40 bg-bg-subtle/40 p-8 text-center text-caption text-ink-muted">
+            <div className="rounded-card border-2 border-dashed border-ink-watermark/40 bg-bg-subtle p-8 text-center text-body-sm text-ink-muted">
               <Loader2 size={20} className="inline animate-spin mr-2" />
               업로드 모듈 로드 중…
             </div>
@@ -204,9 +213,9 @@ export default function RegisterTab() {
             <h3 className="text-h3 text-ink">등록된 070 번호</h3>
             <p className="text-caption text-ink-muted mt-0.5">
               총 {places.length}건 등록 · 검색 결과 {filtered.length}건
-              {selected.size > 0 && (
-                <span className="text-brand-700 ml-2 font-semibold">
-                  · {selected.size}건 선택됨
+              {selectedIds.size > 0 && (
+                <span className="text-brand-600 font-semibold ml-2">
+                  · 선택 {selectedIds.size}건
                 </span>
               )}
               {isFetching && !isLoading && (
@@ -214,48 +223,7 @@ export default function RegisterTab() {
               )}
             </p>
           </div>
-
-          <div className="flex items-center gap-2 flex-wrap">
-            {/* 일괄 삭제 액션 (선택 있음 / 없음에 따라 노출) */}
-            {selected.size > 0 ? (
-              <>
-                <button
-                  type="button"
-                  onClick={clearSelection}
-                  className="inline-flex items-center gap-1.5 px-3 py-2 rounded-pill bg-bg-subtle text-ink-muted hover:text-ink hover:bg-bg-subtle/80 text-caption font-semibold transition-colors"
-                >
-                  <XCircle size={14} />
-                  선택 해제
-                </button>
-                <button
-                  type="button"
-                  onClick={handleBulkDeleteSelected}
-                  disabled={bulkDeleteMut.isPending}
-                  className="inline-flex items-center gap-1.5 px-3 py-2 rounded-pill bg-red-50 text-status-danger hover:bg-red-100 disabled:opacity-50 text-caption font-bold transition-colors"
-                >
-                  {bulkDeleteMut.isPending ? (
-                    <Loader2 size={14} className="animate-spin" />
-                  ) : (
-                    <Trash2 size={14} />
-                  )}
-                  선택 {selected.size}건 삭제
-                </button>
-              </>
-            ) : (
-              places.length > 0 && (
-                <button
-                  type="button"
-                  onClick={handleDeleteAll}
-                  disabled={bulkDeleteMut.isPending}
-                  className="inline-flex items-center gap-1.5 px-3 py-2 rounded-pill bg-bg-subtle text-ink-muted hover:bg-red-50 hover:text-status-danger disabled:opacity-50 text-caption font-semibold transition-colors"
-                  title="등록된 모든 070 번호를 삭제합니다 (확인 다이얼로그 포함)"
-                >
-                  <Trash2 size={14} />
-                  전체 삭제
-                </button>
-              )
-            )}
-
+          <div className="flex items-center gap-2">
             <div className="relative">
               <Search
                 size={14}
@@ -269,6 +237,39 @@ export default function RegisterTab() {
                 className="w-72 pl-9 pr-3 py-2 rounded-pill bg-bg-subtle/70 border border-transparent text-body-sm text-ink placeholder:text-ink-soft focus:outline-none focus:border-brand-300 focus:bg-white transition-colors"
               />
             </div>
+
+            {/* 선택 일괄 삭제 */}
+            <button
+              type="button"
+              disabled={selectedIds.size === 0 || bulkBusy}
+              onClick={handleBulkDeleteSelected}
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-pill bg-red-50 text-status-danger font-semibold text-body-sm hover:bg-red-100 disabled:opacity-40 disabled:cursor-not-allowed transition-colors whitespace-nowrap"
+              title="체크박스로 선택한 항목 일괄 삭제"
+            >
+              {bulkBusy ? (
+                <Loader2 size={14} className="animate-spin" />
+              ) : (
+                <Trash2 size={14} />
+              )}
+              선택 삭제
+              {selectedIds.size > 0 && (
+                <span className="ml-0.5 px-1.5 py-0.5 rounded-full bg-status-danger text-white text-[10px] font-bold tabular-nums">
+                  {selectedIds.size}
+                </span>
+              )}
+            </button>
+
+            {/* 전체 삭제 */}
+            <button
+              type="button"
+              disabled={places.length === 0 || bulkBusy}
+              onClick={handleDeleteAll}
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-pill bg-white border border-red-200 text-status-danger font-semibold text-body-sm hover:bg-red-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors whitespace-nowrap"
+              title="등록된 모든 070 번호 삭제"
+            >
+              <Trash size={14} />
+              전체 삭제
+            </button>
           </div>
         </div>
 
@@ -276,26 +277,21 @@ export default function RegisterTab() {
           <table className="w-full text-body-sm">
             <thead>
               <tr className="text-left text-caption text-ink-muted uppercase tracking-wider border-b border-bg-subtle">
-                <th className="pl-card-sm pr-2 py-3 font-semibold w-10">
-                  <button
-                    type="button"
-                    onClick={toggleAllFiltered}
-                    disabled={filtered.length === 0}
-                    className="text-ink-muted hover:text-brand-600 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-                    title={
-                      allFilteredSelected ? '현재 목록 모두 해제' : '현재 목록 모두 선택'
+                <th className="pl-card-sm pr-2 py-3 w-10">
+                  <CheckboxButton
+                    state={
+                      allFilteredSelected
+                        ? 'checked'
+                        : someFilteredSelected
+                        ? 'indeterminate'
+                        : 'unchecked'
                     }
-                  >
-                    {allFilteredSelected ? (
-                      <CheckSquare size={16} className="text-brand-600" />
-                    ) : someFilteredSelected ? (
-                      <CheckSquare size={16} className="text-brand-300" />
-                    ) : (
-                      <Square size={16} />
-                    )}
-                  </button>
+                    onClick={toggleAllVisible}
+                    disabled={filteredIds.length === 0}
+                    title={allFilteredSelected ? '전체 해제' : '현재 보이는 항목 전체 선택'}
+                  />
                 </th>
-                <th className="px-2 py-3 font-semibold">070 번호</th>
+                <th className="px-3 py-3 font-semibold">070 번호</th>
                 <th className="px-3 py-3 font-semibold">Place ID</th>
                 <th className="px-3 py-3 font-semibold">등록 동</th>
                 <th className="px-3 py-3 font-semibold">상호</th>
@@ -335,36 +331,26 @@ export default function RegisterTab() {
                   <td colSpan={8} className="text-center py-12 text-ink-muted text-body-sm">
                     {search
                       ? '검색 결과가 없습니다.'
-                      : '등록된 번호가 없습니다. 위에서 엑셀/CSV로 대량 등록해 보세요.'}
+                      : '등록된 번호가 없습니다. 위에서 엑셀·CSV로 일괄 등록해 보세요.'}
                   </td>
                 </tr>
               )}
               {filtered.map((p: RegisteredPlace) => {
-                const checked = selected.has(p.id)
+                const checked = selectedIds.has(p.id)
                 return (
                   <tr
                     key={p.id}
-                    onClick={() => toggleOne(p.id)}
-                    className={`border-b border-bg-subtle/60 cursor-pointer transition-colors ${
-                      checked
-                        ? 'bg-brand-50/60 hover:bg-brand-50'
-                        : 'hover:bg-bg-subtle/40'
+                    className={`border-b border-bg-subtle/60 transition-colors ${
+                      checked ? 'bg-brand-50/40' : 'hover:bg-bg-subtle/40'
                     }`}
                   >
-                    <td className="pl-card-sm pr-2 py-3" onClick={(e) => e.stopPropagation()}>
-                      <button
-                        type="button"
+                    <td className="pl-card-sm pr-2 py-3">
+                      <CheckboxButton
+                        state={checked ? 'checked' : 'unchecked'}
                         onClick={() => toggleOne(p.id)}
-                        className="text-ink-muted hover:text-brand-600 transition-colors"
-                      >
-                        {checked ? (
-                          <CheckSquare size={16} className="text-brand-600" />
-                        ) : (
-                          <Square size={16} />
-                        )}
-                      </button>
+                      />
                     </td>
-                    <td className="px-2 py-3 text-ink font-semibold tabular-nums">
+                    <td className="px-3 py-3 text-ink font-semibold tabular-nums">
                       {p.phone}
                     </td>
                     <td className="px-3 py-3 text-ink-muted tabular-nums font-mono text-caption">
@@ -390,10 +376,7 @@ export default function RegisterTab() {
                           })
                         : '—'}
                     </td>
-                    <td
-                      className="px-card-sm py-3 text-right"
-                      onClick={(e) => e.stopPropagation()}
-                    >
+                    <td className="px-card-sm py-3 text-right">
                       <div className="inline-flex items-center gap-1">
                         <button
                           type="button"
@@ -456,4 +439,49 @@ function SummaryPill({ label, value, tone }: SummaryPillProps) {
       </div>
     </Card>
   )
+}
+
+/** 3‑state 체크박스 버튼 — checked / indeterminate / unchecked. */
+interface CheckboxButtonProps {
+  state: 'checked' | 'indeterminate' | 'unchecked'
+  onClick: () => void
+  disabled?: boolean
+  title?: string
+}
+
+function CheckboxButton({ state, onClick, disabled, title }: CheckboxButtonProps) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      title={title}
+      className={`w-7 h-7 rounded-lg flex items-center justify-center transition-colors ${
+        disabled
+          ? 'opacity-30 cursor-not-allowed'
+          : 'hover:bg-brand-50 cursor-pointer'
+      } ${state === 'checked' ? 'text-brand-600' : 'text-ink-muted'}`}
+      aria-checked={state === 'checked'}
+      role="checkbox"
+    >
+      {state === 'checked' ? (
+        <CheckSquare size={18} strokeWidth={2.2} />
+      ) : state === 'indeterminate' ? (
+        <span className="relative inline-flex w-[18px] h-[18px] items-center justify-center">
+          <Square size={18} strokeWidth={2.2} />
+          <span className="absolute w-2.5 h-0.5 bg-brand-600 rounded-full" />
+        </span>
+      ) : (
+        <Square size={18} strokeWidth={1.8} />
+      )}
+    </button>
+  )
+}
+
+function formatApiError(e: unknown): string {
+  if (e instanceof ApiError) {
+    if (e.status === 0) return `네트워크 오류 (백엔드 연결 확인): ${e.message}`
+    return `API ${e.status}: ${e.message}`
+  }
+  return (e as Error).message ?? '알 수 없는 오류'
 }
