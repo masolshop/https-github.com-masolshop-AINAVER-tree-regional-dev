@@ -1,5 +1,5 @@
 /**
- * History — 실시간 노출 이력 페이지
+ * History — 자동 노출 검증 관리 페이지
  *
  * 구성:
  *   1. 상단 KPI: 총 변경 건수 / 위험 / 경고 / 정상복귀 / 다음 자동 검증 시각
@@ -86,7 +86,7 @@ export default function History() {
   return (
     <div className="space-y-5">
       <TopBar
-        title="실시간 노출 이력"
+        title="자동 노출 검증 관리"
         subtitle="자동 검증으로 감지된 노출 변경 이벤트를 시간순으로 확인합니다"
       />
 

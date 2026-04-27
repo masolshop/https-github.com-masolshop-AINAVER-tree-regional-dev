@@ -4,7 +4,7 @@
  * - 1번: 홈
  * - 2번: 솔루션 소개
  * - 3번: 실시간 노출 관리   ← 로그인 필요
- * - 4번: 실시간 노출 이력   ← 로그인 필요
+ * - 4번: 자동 노출 검증 관리   ← 로그인 필요
  */
 import { NavLink, useNavigate } from 'react-router-dom'
 import {
@@ -40,7 +40,7 @@ const MENU: MenuItem[] = [
   { to: '/',         label: '홈',                  icon: LayoutDashboard, requireAuth: false },
   { to: '/intro',    label: '솔루션 소개',          icon: BookOpen,        requireAuth: false },
   { to: '/monitor',  label: '실시간 노출 관리',     icon: Radio,           requireAuth: true  },
-  { to: '/history',  label: '실시간 노출 이력',     icon: History,         requireAuth: true  },
+  { to: '/history',  label: '자동 노출 검증 관리', icon: History,         requireAuth: true  },
 ]
 
 export function Sidebar() {
