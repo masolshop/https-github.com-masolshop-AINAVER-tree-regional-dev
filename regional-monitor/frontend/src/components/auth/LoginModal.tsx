@@ -234,7 +234,7 @@ function LoginStep() {
         <div className="inline-flex w-12 h-12 rounded-2xl bg-brand-500 items-center justify-center mb-4 shadow-card">
           <ShieldCheck className="text-white" size={24} />
         </div>
-        <h2 className="text-h2 text-ink mb-2">RegionWatch에 로그인</h2>
+        <h2 className="text-h2 text-ink mb-2">타지역서비스에 로그인</h2>
         <p className="text-body-sm text-ink-muted">
           {tab === 'google'
             ? 'Google 계정으로 1초 안에 시작하세요'
@@ -563,7 +563,7 @@ function ProfileStep() {
               checked={agTerms}
               onChange={setAgTerms}
               label="서비스 이용약관 동의"
-              detail="RegionWatch 실시간 노출 관리 솔루션 이용에 관한 권리·의무·책임 사항"
+              detail="타지역서비스 네이버 실시간 노출 관리 솔루션 이용에 관한 권리·의무·책임 사항"
             />
             <ConsentRow
               required={false}

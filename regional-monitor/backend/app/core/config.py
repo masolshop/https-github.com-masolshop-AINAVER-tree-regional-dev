@@ -46,7 +46,7 @@ class Settings(BaseSettings):
     SMTP_USER: str = ""
     SMTP_PASSWORD: str = ""
     SMTP_FROM: str = ""                       # 비우면 SMTP_USER 사용
-    SMTP_FROM_NAME: str = "RegionWatch"
+    SMTP_FROM_NAME: str = "타지역서비스"
     # 알림 자체를 완전히 끄려면 (테스트 시) NOTIFY_ENABLED=false
     NOTIFY_ENABLED: bool = True
 

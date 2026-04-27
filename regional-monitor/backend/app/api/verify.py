@@ -341,7 +341,7 @@ async def download_job_mismatches(
     wb.save(buf)
     buf.seek(0)
 
-    filename = f"RegionWatch_불일치명단_job{job.id}_{len(rows)}건.xlsx"
+    filename = f"타지역서비스_불일치명단_job{job.id}_{len(rows)}건.xlsx"
     # RFC 5987 인코딩으로 한글 파일명 헤더 안전화
     from urllib.parse import quote
     encoded = quote(filename)

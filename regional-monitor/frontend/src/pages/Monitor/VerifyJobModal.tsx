@@ -312,7 +312,7 @@ async function downloadMismatches(jobId: number, token: string | null) {
   const blob = await resp.blob()
   // 파일명 추출 (Content-Disposition: attachment; filename*=UTF-8''xxx)
   const cd = resp.headers.get('content-disposition') || ''
-  let filename = `RegionWatch_불일치명단_job${jobId}.xlsx`
+  let filename = `타지역서비스_불일치명단_job${jobId}.xlsx`
   const m = cd.match(/filename\*=UTF-8''([^;]+)/i)
   if (m) {
     try {

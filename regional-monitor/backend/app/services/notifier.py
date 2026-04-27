@@ -138,7 +138,7 @@ def _send_email(
     smtp_user = getattr(settings, "SMTP_USER", "") or ""
     smtp_pass = getattr(settings, "SMTP_PASSWORD", "") or ""
     sender = getattr(settings, "SMTP_FROM", smtp_user) or "no-reply@regionwatch.kr"
-    sender_name = getattr(settings, "SMTP_FROM_NAME", "RegionWatch")
+    sender_name = getattr(settings, "SMTP_FROM_NAME", "타지역서비스")
 
     msg = MIMEMultipart("alternative")
     msg["Subject"] = _build_subject(events)
@@ -171,10 +171,10 @@ def _build_subject(events: list[ChangeEvent]) -> str:
     n = len(events)
     danger = sum(1 for e in events if _meta(e.event_type)["severity"] == "danger")
     if danger:
-        return f"[RegionWatch] ⚠️ 노출 변경 {n}건 감지 (위험 {danger}건)"
+        return f"[타지역서비스] ⚠️ 노출 변경 {n}건 감지 (위험 {danger}건)"
     if any(_meta(e.event_type)["severity"] == "warning" for e in events):
-        return f"[RegionWatch] 노출 변경 {n}건 감지"
-    return f"[RegionWatch] ✅ 변경 알림 {n}건"
+        return f"[타지역서비스] 노출 변경 {n}건 감지"
+    return f"[타지역서비스] ✅ 변경 알림 {n}건"
 
 
 def _build_email_body(
@@ -189,7 +189,7 @@ def _build_email_body(
     when = datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")
     if plain:
         lines = [
-            f"{name}님, RegionWatch 자동 검증에서 변경 {n}건이 감지되었습니다.",
+            f"{name}님, 타지역서비스 자동 검증에서 변경 {n}건이 감지되었습니다.",
             f"감지 시각: {when}",
             "",
         ]
@@ -201,7 +201,7 @@ def _build_email_body(
             lines.append(f"  {meta['emoji']} [{meta['label']}] {biz} ({phone})")
             lines.append(f"     {e.summary}  ({e.prev_verdict} → {e.new_verdict})")
             lines.append("")
-        lines.append("자세한 내용은 RegionWatch 대시보드에서 확인하세요.")
+        lines.append("자세한 내용은 타지역서비스 대시보드에서 확인하세요.")
         lines.append("")
         lines.append("이 알림이 불필요하면 설정에서 [이메일 알림] 을 끌 수 있습니다.")
         return "\n".join(lines)
@@ -233,7 +233,7 @@ def _build_email_body(
 <html lang="ko"><body style="margin:0;padding:0;background:#F4F6FA;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;">
   <div style="max-width:560px;margin:24px auto;background:white;border-radius:16px;overflow:hidden;box-shadow:0 4px 24px rgba(31,45,77,.06);">
     <div style="background:#1F2D4D;color:white;padding:24px 28px;">
-      <div style="font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:rgba(255,255,255,.7);font-weight:600;">RegionWatch · 자동 검증 알림</div>
+      <div style="font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:rgba(255,255,255,.7);font-weight:600;">타지역서비스 · 자동 검증 알림</div>
       <h1 style="margin:6px 0 0;font-size:22px;font-weight:800;">{_html_escape(name)}님, 변경 {n}건이 감지되었습니다</h1>
       <div style="margin-top:6px;font-size:13px;color:rgba(255,255,255,.7);">감지 시각: {when}</div>
     </div>
@@ -242,7 +242,7 @@ def _build_email_body(
     </table>
     <div style="padding:18px 28px;background:#F4F6FA;font-size:12px;color:#6B7280;text-align:center;">
       이 알림이 불필요하면 설정 페이지에서 [이메일 알림] 을 끌 수 있습니다.<br>
-      © RegionWatch
+      © 타지역서비스
     </div>
   </div>
 </body></html>"""
@@ -284,7 +284,7 @@ async def _send_slack(
         {
             "type": "context",
             "elements": [
-                {"type": "mrkdwn", "text": f"*RegionWatch* · {user.name or user.email} · {when}"},
+                {"type": "mrkdwn", "text": f"*타지역서비스* · {user.name or user.email} · {when}"},
             ],
         },
         {"type": "divider"},

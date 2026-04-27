@@ -83,7 +83,7 @@ export async function downloadJobMismatches(jobId: number, accessToken: string |
   const blob = await res.blob()
   // Content-Disposition 헤더에서 파일명 추출
   const cd = res.headers.get('content-disposition') || ''
-  let filename = `RegionWatch_불일치명단_job${jobId}.xlsx`
+  let filename = `타지역서비스_불일치명단_job${jobId}.xlsx`
   const m = cd.match(/filename\*=UTF-8''([^;]+)/i) || cd.match(/filename="?([^";]+)"?/i)
   if (m && m[1]) {
     try {

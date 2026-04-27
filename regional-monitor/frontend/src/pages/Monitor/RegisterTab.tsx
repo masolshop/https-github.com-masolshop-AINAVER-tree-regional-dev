@@ -254,7 +254,7 @@ export default function RegisterTab() {
       XLSX.utils.book_append_sheet(wb, ws, '불일치 명단')
 
       const today = new Date().toISOString().slice(0, 10) // YYYY-MM-DD
-      const filename = `RegionWatch_불일치명단_${today}_${mismatchedPlaces.length}건.xlsx`
+      const filename = `타지역서비스_불일치명단_${today}_${mismatchedPlaces.length}건.xlsx`
       XLSX.writeFile(wb, filename)
     } catch (e) {
       alert(`다운로드 실패: ${formatApiError(e)}`)

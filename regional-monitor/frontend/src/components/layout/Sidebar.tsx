@@ -193,7 +193,7 @@ export function Sidebar() {
 
       {/* 하단 푸터 */}
       <div className="mt-auto px-3 py-2 text-caption text-ink-soft">
-        <div>© 2026 RegionWatch</div>
+        <div>© 2026 타지역서비스</div>
         <div className="mt-1">v0.1.0 · 검증 정확도 97.2%</div>
       </div>
     </aside>
