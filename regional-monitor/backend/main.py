@@ -36,14 +36,26 @@ app = FastAPI(
     redoc_url="/redoc",
 )
 
-# CORS
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=settings.CORS_ALLOW_ORIGINS + ["*"] if settings.DEBUG else settings.CORS_ALLOW_ORIGINS,
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# CORS — credentials=True 와 origins="*" 는 브라우저가 거부하므로 분리
+# DEBUG 모드: 모든 출처 허용 (credentials 없이)
+# 운영 모드: 명시 도메인 + 정규식(sandbox.novita.ai 와일드카드)
+if settings.DEBUG:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],
+        allow_credentials=False,  # credentials 없이만 wildcard 허용
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+else:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=settings.CORS_ALLOW_ORIGINS,
+        allow_origin_regex=r"https://.*\.sandbox\.novita\.ai",
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
 
 # 라우터
 app.include_router(api_router)

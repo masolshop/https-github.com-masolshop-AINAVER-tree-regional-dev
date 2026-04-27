@@ -1,37 +1,25 @@
 /**
- * Monitor 페이지 공통 타입 정의
- * 백엔드 연동 시 그대로 API 스키마로 사용 예정
+ * Monitor 페이지 공통 타입 + UI 매핑
+ * 백엔드 스키마(VerdictType, PlaceOut 등)와 1:1 호환되도록 정의.
  */
+import type { ApiVerdict, PlaceOut } from '@/api/types'
 
-export type Verdict =
-  | 'OK'                  // 4중 검증 모두 통과 (정상 노출)
-  | 'PHONE_MISMATCH'      // 등록 070과 실제 표시 전화 불일치
-  | 'DONG_MISMATCH'       // 등록 동과 실제 동 불일치
-  | 'NAME_MISMATCH'       // 등록 상호와 실제 상호 불일치
-  | 'REGION_MISMATCH'     // 시/도 단위 불일치 (가장 심각한 동 오류)
-  | 'DEAD'                // 플레이스 페이지 자체가 사라짐 (404)
-  | 'PENDING'             // 아직 검증 전
-  | 'CHECKING'            // 검증 진행 중
+/* 백엔드 ApiVerdict을 그대로 재노출 (이전 코드 호환) */
+export type Verdict = ApiVerdict
 
-export interface RegisteredPlace {
-  id: string
-  phone: string                  // 070-XXXX-XXXX
-  placeId: string                // 네이버 플레이스 ID
-  registeredDong: string         // 등록 시점 동 (예: '서울 종로구 종로1가')
-  businessName: string           // 등록 상호
-  currentVerdict: Verdict
-  lastCheckedAt: string | null   // ISO datetime
-  createdAt: string
-}
+/* 등록 정보 = 백엔드 PlaceOut 전체. 컴포넌트 내부에서 직접 사용 */
+export type RegisteredPlace = PlaceOut
 
+/* 4중 검증 상세 (UI에서만 사용 — 별도 컴포넌트로 변환 시 활용) */
 export interface VerdictDetail {
-  alive: boolean        // 페이지 살아있음
-  phoneMatch: boolean   // 전화 일치
-  dongMatch: boolean    // 동 일치
-  nameMatch: boolean    // 상호 일치
-  actualPhone?: string
-  actualDong?: string
-  actualName?: string
+  alive: boolean
+  phoneMatch: boolean
+  dongMatch: boolean
+  nameMatch: boolean
+  actualPhone?: string | null
+  actualDong?: string | null
+  actualName?: string | null
+  actualAddress?: string | null
 }
 
 /* ─────────── UI 표기 매핑 ─────────── */
@@ -46,7 +34,10 @@ export const VERDICT_LABEL: Record<Verdict, string> = {
   CHECKING: '검증 중',
 }
 
-export const VERDICT_TONE: Record<Verdict, 'success' | 'warning' | 'danger' | 'neutral' | 'info'> = {
+export const VERDICT_TONE: Record<
+  Verdict,
+  'success' | 'warning' | 'danger' | 'neutral' | 'info'
+> = {
   OK: 'success',
   PHONE_MISMATCH: 'warning',
   DONG_MISMATCH: 'warning',

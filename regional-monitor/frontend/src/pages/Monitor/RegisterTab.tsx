@@ -1,14 +1,21 @@
 /**
- * Monitor — Tab 1: 등록 관리
- *  ┌─ 좌: 070 단건 등록 폼 (필수: 070, 등록 동, 상호) + 자동 추출 트리거
- *  ├─ 우: 엑셀 일괄 업로드 (드래그 영역, 샘플 다운로드)
+ * Monitor — Tab 1: 등록 관리 (실 API 연동)
+ *  ┌─ 좌: 070 단건 등록 폼 (자동 추출 → 등록)
+ *  ├─ 우: 엑셀 일괄 업로드 (UI만; 백엔드 일괄 엔드포인트는 추후)
  *  └─ 하: 등록 리스트 테이블 (검색·필터·삭제·재검증)
  */
 import { useMemo, useState } from 'react'
 import { Card } from '@/components/ui/Card'
 import { VerdictBadge } from './VerdictBadge'
-import { MOCK_PLACES, summarizePlaces } from './mockData'
 import type { RegisteredPlace } from './types'
+import {
+  useCreatePlaceAuto,
+  useDeletePlace,
+  usePlacesList,
+} from '@/hooks/usePlaces'
+import { useExtractPhone } from '@/hooks/useExtract'
+import { useLiveCheck } from '@/hooks/useLiveCheck'
+import { ApiError } from '@/api/client'
 import {
   Phone,
   MapPin,
@@ -21,12 +28,18 @@ import {
   RefreshCw,
   Plus,
   Download,
+  AlertTriangle,
+  Loader2,
 } from 'lucide-react'
 
 export default function RegisterTab() {
-  const [places, setPlaces] = useState<RegisteredPlace[]>(MOCK_PLACES)
   const [search, setSearch] = useState('')
-  const summary = useMemo(() => summarizePlaces(places), [places])
+  const { data, isLoading, isError, error, refetch, isFetching } = usePlacesList()
+  const deleteMut = useDeletePlace()
+  const liveCheck = useLiveCheck()
+
+  const summary = data?.summary ?? { total: 0, ok: 0, warning: 0, danger: 0, pending: 0 }
+  const places = data?.items ?? []
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase()
@@ -34,15 +47,29 @@ export default function RegisterTab() {
     return places.filter(
       (p) =>
         p.phone.toLowerCase().includes(q) ||
-        p.businessName.toLowerCase().includes(q) ||
-        p.registeredDong.toLowerCase().includes(q) ||
-        p.placeId.includes(q),
+        p.business_name.toLowerCase().includes(q) ||
+        p.registered_dong.toLowerCase().includes(q) ||
+        p.place_id.includes(q),
     )
   }, [places, search])
 
-  const handleDelete = (id: string) => {
-    if (!confirm('이 등록을 삭제하시겠습니까?')) return
-    setPlaces((prev) => prev.filter((p) => p.id !== id))
+  const handleDelete = async (id: number, phone: string) => {
+    if (!confirm(`${phone} 등록을 삭제하시겠습니까?`)) return
+    try {
+      await deleteMut.mutateAsync(id)
+    } catch (e) {
+      alert(`삭제 실패: ${(e as Error).message}`)
+    }
+  }
+
+  const handleReverify = async (id: number, phone: string) => {
+    try {
+      const res = await liveCheck.mutateAsync({ place_ids: [id] })
+      const r = res.results[0]
+      if (r) alert(`${phone} 재검증 완료: ${r.verdict} (${r.response_ms}ms)`)
+    } catch (e) {
+      alert(`재검증 실패: ${(e as Error).message}`)
+    }
   }
 
   return (
@@ -57,7 +84,6 @@ export default function RegisterTab() {
 
       {/* ───── 등록 패널 (단건 + 일괄) ───── */}
       <div className="grid grid-cols-12 gap-4">
-        {/* 단건 등록 */}
         <Card variant="white" className="col-span-12 lg:col-span-7">
           <div className="flex items-center gap-2 mb-4">
             <div className="w-9 h-9 rounded-2xl bg-brand-50 text-brand-600 flex items-center justify-center">
@@ -66,17 +92,14 @@ export default function RegisterTab() {
             <div>
               <h3 className="text-h3 text-ink">단건 등록</h3>
               <p className="text-caption text-ink-muted">
-                070 번호 입력 후 자동 추출 → 등록 동·상호 확인 후 저장
+                070 입력 → 자동 추출(Place ID/동/상호) → 확인 후 저장
               </p>
             </div>
           </div>
 
-          <SingleRegisterForm
-            onAdd={(p) => setPlaces((prev) => [p, ...prev])}
-          />
+          <SingleRegisterForm />
         </Card>
 
-        {/* 엑셀 업로드 */}
         <Card variant="subtle" className="col-span-12 lg:col-span-5">
           <div className="flex items-center gap-2 mb-4">
             <div className="w-9 h-9 rounded-2xl bg-white text-brand-600 flex items-center justify-center">
@@ -85,7 +108,7 @@ export default function RegisterTab() {
             <div>
               <h3 className="text-h3 text-ink">엑셀 일괄 업로드</h3>
               <p className="text-caption text-ink-muted">
-                여러 070 번호를 한 번에 등록
+                여러 070 번호를 한 번에 등록 (백엔드 엔드포인트 추가 예정)
               </p>
             </div>
           </div>
@@ -99,7 +122,7 @@ export default function RegisterTab() {
             <button
               type="button"
               className="inline-flex items-center gap-1.5 text-brand-600 font-semibold hover:underline"
-              onClick={() => alert('샘플 엑셀 다운로드 (백엔드 연동 시 구현)')}
+              onClick={() => alert('샘플 엑셀 다운로드 (백엔드 일괄 API 추가 시 구현)')}
             >
               <Download size={12} /> 샘플 다운로드
             </button>
@@ -114,6 +137,9 @@ export default function RegisterTab() {
             <h3 className="text-h3 text-ink">등록된 070 번호</h3>
             <p className="text-caption text-ink-muted mt-0.5">
               총 {places.length}건 등록 · 검색 결과 {filtered.length}건
+              {isFetching && !isLoading && (
+                <span className="text-brand-600 ml-2">(갱신 중…)</span>
+              )}
             </p>
           </div>
           <div className="relative">
@@ -145,17 +171,41 @@ export default function RegisterTab() {
               </tr>
             </thead>
             <tbody>
-              {filtered.length === 0 && (
+              {isLoading && (
                 <tr>
-                  <td
-                    colSpan={7}
-                    className="text-center py-12 text-ink-muted text-body-sm"
-                  >
-                    {search ? '검색 결과가 없습니다.' : '등록된 번호가 없습니다.'}
+                  <td colSpan={7} className="text-center py-12 text-ink-muted">
+                    <Loader2 size={18} className="inline animate-spin mr-2" />
+                    등록 목록 로드 중…
                   </td>
                 </tr>
               )}
-              {filtered.map((p) => (
+              {isError && (
+                <tr>
+                  <td colSpan={7} className="text-center py-12">
+                    <div className="inline-flex items-center gap-2 px-4 py-2 rounded-card bg-red-50 text-status-danger">
+                      <AlertTriangle size={14} />
+                      백엔드 연결 실패: {(error as Error).message}
+                      <button
+                        type="button"
+                        className="ml-2 underline font-semibold"
+                        onClick={() => refetch()}
+                      >
+                        다시 시도
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              )}
+              {!isLoading && !isError && filtered.length === 0 && (
+                <tr>
+                  <td colSpan={7} className="text-center py-12 text-ink-muted text-body-sm">
+                    {search
+                      ? '검색 결과가 없습니다.'
+                      : '등록된 번호가 없습니다. 위에서 070을 등록해 보세요.'}
+                  </td>
+                </tr>
+              )}
+              {filtered.map((p: RegisteredPlace) => (
                 <tr
                   key={p.id}
                   className="border-b border-bg-subtle/60 hover:bg-bg-subtle/40 transition-colors"
@@ -164,16 +214,21 @@ export default function RegisterTab() {
                     {p.phone}
                   </td>
                   <td className="px-3 py-3 text-ink-muted tabular-nums font-mono text-caption">
-                    {p.placeId}
+                    {p.place_id}
                   </td>
-                  <td className="px-3 py-3 text-ink">{p.registeredDong}</td>
-                  <td className="px-3 py-3 text-ink">{p.businessName}</td>
+                  <td className="px-3 py-3 text-ink">{p.registered_dong}</td>
+                  <td
+                    className="px-3 py-3 text-ink truncate max-w-[200px]"
+                    title={p.business_name}
+                  >
+                    {p.business_name}
+                  </td>
                   <td className="px-3 py-3">
-                    <VerdictBadge verdict={p.currentVerdict} />
+                    <VerdictBadge verdict={p.current_verdict} />
                   </td>
                   <td className="px-3 py-3 text-caption text-ink-muted">
-                    {p.lastCheckedAt
-                      ? new Date(p.lastCheckedAt).toLocaleString('ko-KR', {
+                    {p.last_checked_at
+                      ? new Date(p.last_checked_at).toLocaleString('ko-KR', {
                           month: '2-digit',
                           day: '2-digit',
                           hour: '2-digit',
@@ -186,16 +241,21 @@ export default function RegisterTab() {
                       <button
                         type="button"
                         title="재검증"
-                        className="w-8 h-8 rounded-xl text-ink-muted hover:bg-brand-50 hover:text-brand-600 transition-colors flex items-center justify-center"
-                        onClick={() => alert(`${p.phone} 재검증 (백엔드 연동 시 동작)`)}
+                        disabled={liveCheck.isPending}
+                        className="w-8 h-8 rounded-xl text-ink-muted hover:bg-brand-50 hover:text-brand-600 disabled:opacity-40 transition-colors flex items-center justify-center"
+                        onClick={() => handleReverify(p.id, p.phone)}
                       >
-                        <RefreshCw size={14} />
+                        <RefreshCw
+                          size={14}
+                          className={liveCheck.isPending ? 'animate-spin' : ''}
+                        />
                       </button>
                       <button
                         type="button"
                         title="삭제"
-                        className="w-8 h-8 rounded-xl text-ink-muted hover:bg-red-50 hover:text-status-danger transition-colors flex items-center justify-center"
-                        onClick={() => handleDelete(p.id)}
+                        disabled={deleteMut.isPending}
+                        className="w-8 h-8 rounded-xl text-ink-muted hover:bg-red-50 hover:text-status-danger disabled:opacity-40 transition-colors flex items-center justify-center"
+                        onClick={() => handleDelete(p.id, p.phone)}
                       >
                         <Trash2 size={14} />
                       </button>
@@ -240,53 +300,68 @@ function SummaryPill({ label, value, tone }: SummaryPillProps) {
   )
 }
 
-interface SingleRegisterFormProps {
-  onAdd: (place: RegisteredPlace) => void
-}
-
-function SingleRegisterForm({ onAdd }: SingleRegisterFormProps) {
+/**
+ * 단건 등록 폼 — 070 → 자동 추출 → 확인 후 저장
+ */
+function SingleRegisterForm() {
   const [phone, setPhone] = useState('')
   const [dong, setDong] = useState('')
   const [name, setName] = useState('')
   const [placeId, setPlaceId] = useState('')
-  const [extracting, setExtracting] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [extractMs, setExtractMs] = useState<number | null>(null)
 
-  // 070 입력 후 자동 추출 시뮬레이션 (백엔드 Step B에서 실제 구현)
+  const extractMut = useExtractPhone()
+  const createMut = useCreatePlaceAuto()
+
   const handleAutoExtract = async () => {
+    setError(null)
     if (!phone.match(/^070-?\d{3,4}-?\d{4}$/)) {
-      alert('올바른 070 번호 형식이 아닙니다. 예: 070-1234-5678')
+      setError('올바른 070 형식이 아닙니다. 예: 070-1234-5678')
       return
     }
-    setExtracting(true)
-    // mock 지연
-    await new Promise((r) => setTimeout(r, 800))
-    setPlaceId('1234567890')
-    setDong((prev) => prev || '서울 강남구 역삼동')
-    setName((prev) => prev || '자동추출예시업체')
-    setExtracting(false)
+    try {
+      const res = await extractMut.mutateAsync({ phone })
+      setExtractMs(res.response_ms)
+      if (!res.success) {
+        setError(`추출 실패: ${res.error ?? '알 수 없는 오류'}`)
+        return
+      }
+      setPlaceId(res.place_id ?? '')
+      // 사용자가 미리 입력한 값이 없을 때만 자동 채움
+      setDong((prev) => prev || res.address || res.dong || '')
+      setName((prev) => prev || res.name || '')
+    } catch (e) {
+      setError(formatApiError(e))
+    }
   }
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!phone || !dong || !name) {
-      alert('070, 등록 동, 상호는 필수입니다.')
+    setError(null)
+    if (!phone) {
+      setError('070 번호는 필수입니다.')
       return
     }
-    onAdd({
-      id: `p_${Date.now()}`,
-      phone,
-      placeId: placeId || '미추출',
-      registeredDong: dong,
-      businessName: name,
-      currentVerdict: 'PENDING',
-      lastCheckedAt: null,
-      createdAt: new Date().toISOString(),
-    })
-    setPhone('')
-    setDong('')
-    setName('')
-    setPlaceId('')
+    try {
+      await createMut.mutateAsync({
+        phone,
+        registered_dong_override: dong || null,
+        business_name_override: name || null,
+      })
+      // 폼 리셋
+      setPhone('')
+      setDong('')
+      setName('')
+      setPlaceId('')
+      setExtractMs(null)
+    } catch (e) {
+      setError(formatApiError(e))
+    }
   }
+
+  const extracting = extractMut.isPending
+  const submitting = createMut.isPending
 
   return (
     <form onSubmit={handleSubmit} className="space-y-3">
@@ -314,33 +389,65 @@ function SingleRegisterForm({ onAdd }: SingleRegisterFormProps) {
       <div className="grid grid-cols-2 gap-2">
         <FieldInput
           icon={<MapPin size={14} />}
-          placeholder="등록 동 (예: 서울 강남구 역삼동)"
+          placeholder="등록 동 (자동 추출 또는 직접 입력)"
           value={dong}
           onChange={setDong}
         />
         <FieldInput
           icon={<Building2 size={14} />}
-          placeholder="상호"
+          placeholder="상호 (자동 추출 또는 직접 입력)"
           value={name}
           onChange={setName}
         />
       </div>
 
-      {/* Place ID (자동 채워짐, 읽기 전용 우선) */}
+      {/* Place ID 자동 표시 */}
       {placeId && (
         <div className="text-caption text-ink-muted px-3 py-2 rounded-xl bg-brand-50/60 border border-brand-100 flex items-center gap-2">
           <Sparkles size={12} className="text-brand-500" />
-          자동 추출된 Place ID: <span className="font-mono font-bold text-brand-700">{placeId}</span>
+          자동 추출 Place ID:{' '}
+          <span className="font-mono font-bold text-brand-700">{placeId}</span>
+          {extractMs !== null && (
+            <span className="text-ink-soft">· {extractMs}ms</span>
+          )}
+        </div>
+      )}
+
+      {/* 에러 표시 */}
+      {error && (
+        <div className="text-caption text-status-danger px-3 py-2 rounded-xl bg-red-50 border border-red-200 flex items-center gap-2">
+          <AlertTriangle size={12} />
+          {error}
         </div>
       )}
 
       <div className="flex justify-end pt-1">
-        <button type="submit" className="btn-primary">
-          <Plus size={14} /> 등록하기
+        <button
+          type="submit"
+          disabled={submitting || !phone}
+          className="btn-primary disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          {submitting ? (
+            <>
+              <Loader2 size={14} className="animate-spin" /> 등록 중…
+            </>
+          ) : (
+            <>
+              <Plus size={14} /> 등록하기
+            </>
+          )}
         </button>
       </div>
     </form>
   )
+}
+
+function formatApiError(e: unknown): string {
+  if (e instanceof ApiError) {
+    if (e.status === 0) return `네트워크 오류 (백엔드 연결 확인): ${e.message}`
+    return `API ${e.status}: ${e.message}`
+  }
+  return (e as Error).message ?? '알 수 없는 오류'
 }
 
 interface FieldInputProps {
@@ -404,14 +511,16 @@ function BulkUploadDropzone() {
         {file ? file.name : '엑셀(xlsx/csv) 파일을 드롭하거나 클릭'}
       </div>
       <div className="text-caption text-ink-muted mt-1">
-        {file ? '파일 선택됨 — 업로드 버튼을 누르세요' : '최대 10MB · 1,000건까지'}
+        {file ? '파일 선택됨 — 백엔드 일괄 API 추가 시 업로드 가능' : '최대 10MB · 1,000건까지'}
       </div>
       {file && (
         <button
           type="button"
           onClick={(e) => {
             e.stopPropagation()
-            alert(`${file.name} 업로드 (백엔드 연동 시 동작)`)
+            alert(
+              `${file.name} 업로드 — 백엔드 POST /api/v1/places/bulk 엔드포인트 추가 후 활성화`,
+            )
           }}
           className="mt-4 btn-primary"
         >

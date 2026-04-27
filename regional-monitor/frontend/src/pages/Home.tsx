@@ -19,10 +19,22 @@ import {
   ShieldCheck,
   BellRing,
   TrendingUp,
+  AlertTriangle,
 } from 'lucide-react'
 import { Link } from 'react-router-dom'
 
+import { usePlacesSummary } from '@/hooks/usePlaces'
+
 export default function Home() {
+  // 실시간 등록 현황 — 데이터 있으면 실수치로, 없으면 데모 수치
+  const summaryQuery = usePlacesSummary()
+  const summary = summaryQuery.data
+  const hasRealData = (summary?.total ?? 0) > 0
+  const okRate =
+    summary && summary.total > 0
+      ? ((summary.ok / summary.total) * 100).toFixed(1)
+      : '99.2'
+
   return (
     <div className="space-y-10">
       <TopBar
@@ -119,42 +131,83 @@ export default function Home() {
             </div>
             <h2 className="text-h2 text-ink">신뢰할 수 있는 검증 성능</h2>
           </div>
-          <span className="text-caption text-ink-soft">최근 30일 누적 기준</span>
+          <span className="text-caption text-ink-soft">
+            {hasRealData ? '내 등록 기준 실시간' : '최근 30일 누적 기준 (데모)'}
+          </span>
         </div>
 
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-          <MetricTile
-            icon={<CheckCircle2 size={18} />}
-            label="검증 정확도"
-            value="99.2"
-            unit="%"
-            trend="+0.4"
-            tone="success"
-          />
-          <MetricTile
-            icon={<Activity size={18} />}
-            label="누적 검증 건수"
-            value="5,420"
-            unit="건"
-            trend="+312"
-            tone="info"
-          />
-          <MetricTile
-            icon={<Clock size={18} />}
-            label="평균 응답 시간"
-            value="223"
-            unit="ms"
-            trend="-18ms"
-            tone="success"
-          />
-          <MetricTile
-            icon={<Zap size={18} />}
-            label="처리량 (병렬 10)"
-            value="18.2"
-            unit="req/s"
-            trend="안정"
-            tone="info"
-          />
+          {hasRealData && summary ? (
+            <>
+              <MetricTile
+                icon={<Activity size={18} />}
+                label="등록 070 번호"
+                value={summary.total.toLocaleString()}
+                unit="건"
+                trend={`pending ${summary.pending}`}
+                tone="info"
+              />
+              <MetricTile
+                icon={<CheckCircle2 size={18} />}
+                label="정상 노출률"
+                value={okRate}
+                unit="%"
+                trend={`${summary.ok}/${summary.total}`}
+                tone="success"
+              />
+              <MetricTile
+                icon={<AlertTriangle size={18} />}
+                label="주의 (불일치)"
+                value={summary.warning.toLocaleString()}
+                unit="건"
+                trend="동·상호 불일치"
+                tone={summary.warning > 0 ? 'warning' : 'info'}
+              />
+              <MetricTile
+                icon={<Zap size={18} />}
+                label="심각 (지역/삭제)"
+                value={summary.danger.toLocaleString()}
+                unit="건"
+                trend="즉시 조치 필요"
+                tone={summary.danger > 0 ? 'danger' : 'info'}
+              />
+            </>
+          ) : (
+            <>
+              <MetricTile
+                icon={<CheckCircle2 size={18} />}
+                label="검증 정확도"
+                value="99.2"
+                unit="%"
+                trend="+0.4"
+                tone="success"
+              />
+              <MetricTile
+                icon={<Activity size={18} />}
+                label="누적 검증 건수"
+                value="5,420"
+                unit="건"
+                trend="+312"
+                tone="info"
+              />
+              <MetricTile
+                icon={<Clock size={18} />}
+                label="평균 응답 시간"
+                value="223"
+                unit="ms"
+                trend="-18ms"
+                tone="success"
+              />
+              <MetricTile
+                icon={<Zap size={18} />}
+                label="처리량 (병렬 10)"
+                value="18.2"
+                unit="req/s"
+                trend="안정"
+                tone="info"
+              />
+            </>
+          )}
         </div>
       </section>
 

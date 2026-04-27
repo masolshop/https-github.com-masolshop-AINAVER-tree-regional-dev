@@ -5,12 +5,31 @@
  * 타임아웃·에러 표준화·JSON 파싱·CORS 정책을 한 곳에서 관리한다.
  */
 
-const DEFAULT_API_BASE =
-  'https://8000-inw0qfytlerazc1omo3uw-5634da27.sandbox.novita.ai'
+/**
+ * API_BASE 결정 로직 (우선순위)
+ *  1) VITE_API_BASE 환경변수 (build 시 주입)
+ *  2) 현재 호스트가 *-sandbox.novita.ai 형태면 → 포트만 5173 → 8001으로 치환
+ *  3) localhost 개발 시 http://127.0.0.1:8001
+ */
+function resolveApiBase(): string {
+  const envBase = import.meta.env.VITE_API_BASE as string | undefined
+  if (envBase) return envBase.replace(/\/$/, '')
 
-export const API_BASE: string =
-  // Vite 환경변수 (build 시 주입)
-  (import.meta.env.VITE_API_BASE as string | undefined) ?? DEFAULT_API_BASE
+  if (typeof window !== 'undefined') {
+    const { hostname, protocol } = window.location
+    // sandbox.novita.ai 패턴: 5173-XXX-YYY.sandbox.novita.ai → 8000-XXX-YYY...
+    if (hostname.includes('.sandbox.novita.ai')) {
+      const swapped = hostname.replace(/^5173-/, '8001-')
+      return `${protocol}//${swapped}`
+    }
+    if (hostname === 'localhost' || hostname === '127.0.0.1') {
+      return 'http://127.0.0.1:8001'
+    }
+  }
+  return 'http://127.0.0.1:8001'
+}
+
+export const API_BASE: string = resolveApiBase()
 
 export class ApiError extends Error {
   constructor(
