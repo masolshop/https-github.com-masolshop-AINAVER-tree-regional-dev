@@ -231,71 +231,83 @@ def extract_place_info(html: str) -> Dict:
             info["is_dead_page"] = True
             break
 
-    # ───── ① APOLLO_STATE 파싱 (가장 정확) ─────
-    apollo = None
-    m = re.search(r'window\.__APOLLO_STATE__\s*=\s*(\{.*?\})\s*;', html, re.DOTALL)
-    if m:
-        try:
-            apollo = json.loads(m.group(1))
-            info["json_data_present"] = True
-        except Exception:
-            apollo = None
-
-    if apollo:
-        # Apollo는 보통 PlaceSummary:1234, RestaurantSummary:1234 같은 키로 정규화됨
-        for key, obj in apollo.items():
-            if not isinstance(obj, dict):
+    # ───── ① / ② window.__*_STATE__ 영역 텍스트 추출 (greedy + 균형 중괄호) ─────
+    # 비-greedy 정규식은 첫 '}' 에서 끊겨 빈 데이터를 반환하므로,
+    # `window.__X_STATE__ = {` 시작 위치부터 균형이 맞는 닫는 '}' 까지 직접 스캔
+    def _extract_state_block(varname: str) -> str:
+        idx = html.find(f"window.{varname}")
+        if idx < 0:
+            return ""
+        brace_start = html.find("{", idx)
+        if brace_start < 0:
+            return ""
+        depth = 0
+        in_str = False
+        esc = False
+        for i in range(brace_start, min(len(html), brace_start + 2_000_000)):
+            ch = html[i]
+            if esc:
+                esc = False
                 continue
-            if "name" in obj and isinstance(obj["name"], str) and not info["name"]:
-                # 메타 이름 ("네이버 플레이스" 등) 제외
-                n = obj["name"].strip()
+            if ch == "\\":
+                esc = True
+                continue
+            if ch == '"':
+                in_str = not in_str
+                continue
+            if in_str:
+                continue
+            if ch == "{":
+                depth += 1
+            elif ch == "}":
+                depth -= 1
+                if depth == 0:
+                    return html[brace_start : i + 1]
+        return ""
+
+    def _scan_state_text(state_text: str) -> None:
+        """JSON 텍스트에서 핵심 필드를 정규식으로 발췌 (전체 파싱 회피)."""
+        if not state_text:
+            return
+        info["json_data_present"] = True
+        # 이름: 처음 발견되는 "네이버"가 아닌 name
+        if not info["name"]:
+            for nm in re.finditer(r'"name"\s*:\s*"([^"\\]{2,80})"', state_text):
+                n = nm.group(1).strip()
                 if n and not n.startswith("네이버"):
                     info["name"] = n
+                    break
+        if not info["road_address"]:
             for f in ("roadAddress", "newAddress", "fullRoadAddress"):
-                if f in obj and isinstance(obj[f], str) and not info["road_address"]:
-                    info["road_address"] = obj[f].strip()
-            for f in ("address", "jibunAddress", "fullAddress"):
-                if f in obj and isinstance(obj[f], str) and not info["address"]:
-                    info["address"] = obj[f].strip()
+                rm = re.search(rf'"{f}"\s*:\s*"([^"\\]{{5,200}})"', state_text)
+                if rm:
+                    info["road_address"] = rm.group(1).strip()
+                    break
+        if not info["address"]:
+            for f in ("address", "jibunAddress", "fullAddress", "commonAddress"):
+                am = re.search(rf'"{f}"\s*:\s*"([^"\\]{{5,200}})"', state_text)
+                if am:
+                    info["address"] = am.group(1).strip()
+                    break
+        if not info["phone"]:
             for f in ("phone", "virtualPhone", "tel"):
-                if f in obj and isinstance(obj[f], str) and not info["phone"]:
-                    info["phone"] = obj[f].strip()
-            for f in ("category", "categoryName"):
-                if f in obj and isinstance(obj[f], str) and not info["category"]:
-                    info["category"] = obj[f].strip()
+                pm = re.search(rf'"{f}"\s*:\s*"([^"\\]{{6,30}})"', state_text)
+                if pm:
+                    info["phone"] = pm.group(1).strip()
+                    break
+        if not info["category"]:
+            for f in ("category", "categoryName", "categoryCodeName"):
+                cm = re.search(rf'"{f}"\s*:\s*"([^"\\]{{1,60}})"', state_text)
+                if cm:
+                    info["category"] = cm.group(1).strip()
+                    break
 
-    # ───── ② PLACE_STATE 파싱 (보조) ─────
-    if not info["name"] or not info["address"]:
-        m = re.search(r'window\.__PLACE_STATE__\s*=\s*(\{.*?\})\s*;', html, re.DOTALL)
-        if m:
-            try:
-                pstate_text = m.group(1)
-                # 핵심 필드만 정규식으로 (전체 파싱은 비용)
-                if not info["name"]:
-                    nm = re.search(r'"name"\s*:\s*"([^"]+)"', pstate_text)
-                    if nm:
-                        n = nm.group(1).strip()
-                        if not n.startswith("네이버"):
-                            info["name"] = n
-                if not info["road_address"]:
-                    rm = re.search(r'"roadAddress"\s*:\s*"([^"]+)"', pstate_text)
-                    if rm:
-                        info["road_address"] = rm.group(1).strip()
-                if not info["address"]:
-                    am = re.search(r'"address"\s*:\s*"([^"]+)"', pstate_text)
-                    if am:
-                        info["address"] = am.group(1).strip()
-                if not info["phone"]:
-                    pm = re.search(r'"phone"\s*:\s*"([^"]+)"', pstate_text)
-                    if pm:
-                        info["phone"] = pm.group(1).strip()
-                if not info["category"]:
-                    cm = re.search(r'"category"\s*:\s*"([^"]+)"', pstate_text)
-                    if cm:
-                        info["category"] = cm.group(1).strip()
-                info["json_data_present"] = True
-            except Exception:
-                pass
+    apollo_text = _extract_state_block("__APOLLO_STATE__")
+    _scan_state_text(apollo_text)
+
+    if not info["name"] or not info["address"] or not info["phone"]:
+        place_text = _extract_state_block("__PLACE_STATE__")
+        _scan_state_text(place_text)
 
     # ───── ③ og:title fallback ─────
     if not info["name"]:
