@@ -7,6 +7,7 @@
   · 어드민 페이지에서 수동 마킹(`paid_admin`)도 가능하도록 method 에 'admin_grant' 허용.
 """
 from datetime import datetime
+from app.core.time_utils import now_kst, KSTDateTime
 from sqlalchemy import String, Integer, DateTime, ForeignKey, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -45,16 +46,16 @@ class Payment(Base):
     raw_payload: Mapped[str | None] = mapped_column(Text, nullable=True)        # 외부 PG raw JSON
 
     # ── 구독 기간 ──
-    period_start: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
-    period_end: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    period_start: Mapped[datetime | None] = mapped_column(KSTDateTime, nullable=True)
+    period_end: Mapped[datetime | None] = mapped_column(KSTDateTime, nullable=True)
 
     # ── 타임스탬프 ──
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+    created_at: Mapped[datetime] = mapped_column(KSTDateTime, default=now_kst, nullable=False, index=True)
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
+        KSTDateTime, default=now_kst, onupdate=now_kst, nullable=False
     )
-    paid_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
-    refunded_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    paid_at: Mapped[datetime | None] = mapped_column(KSTDateTime, nullable=True)
+    refunded_at: Mapped[datetime | None] = mapped_column(KSTDateTime, nullable=True)
 
     def __repr__(self) -> str:  # pragma: no cover
         return f"<Payment id={self.id} user={self.user_id} plan={self.plan} status={self.status} amount={self.amount_krw}>"

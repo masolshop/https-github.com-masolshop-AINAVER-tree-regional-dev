@@ -10,6 +10,7 @@ verify_batch() 가 만든 raw dict 리스트를 받아:
 from __future__ import annotations
 
 from datetime import datetime
+from app.core.time_utils import now_kst, to_kst, KST
 from typing import Iterable
 
 from sqlalchemy import select
@@ -104,7 +105,7 @@ async def persist_results(
     """
     updated = 0
     history_rows = 0
-    now = datetime.utcnow()
+    now = now_kst()
     new_event_objs: list[ChangeEvent] = []
 
     # place_id_ref → RegisteredPlace 매핑 (1번 쿼리)

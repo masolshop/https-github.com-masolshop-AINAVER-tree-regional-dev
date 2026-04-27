@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import re
 from datetime import datetime
+from app.core.time_utils import now_kst, to_kst, KST
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
@@ -105,7 +106,7 @@ async def login_with_password(
             detail=f"차단된 계정입니다. ({user.blocked_reason or '관리자에게 문의하세요'})",
         )
 
-    user.last_login_at = datetime.utcnow()
+    user.last_login_at = now_kst()
     await db.commit()
     await db.refresh(user)
 
@@ -148,7 +149,7 @@ async def login_with_google(
         result = await db.execute(select(User).where(User.email == email))
         user = result.scalar_one_or_none()
 
-    now = datetime.utcnow()
+    now = now_kst()
 
     if user is None:
         # 신규 가입
@@ -220,7 +221,7 @@ async def complete_profile(
     user.agreed_privacy = True
     user.agreed_terms = True
     user.agreed_marketing = body.agreements.marketing
-    user.agreed_at = datetime.utcnow()
+    user.agreed_at = now_kst()
     user.is_profile_complete = True
 
     await db.commit()

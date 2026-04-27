@@ -3,6 +3,7 @@
  */
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { formatKSTRelative } from '@/utils/datetime'
 import {
   Ban,
   Check,
@@ -170,7 +171,7 @@ export function AdminUsers() {
                     )}
                   </td>
                   <td className="px-4 py-3 text-xs text-ink-muted">
-                    {u.last_login_at ? new Date(u.last_login_at).toLocaleString('ko-KR') : '—'}
+                    {formatKSTRelative(u.last_login_at, '—')}
                   </td>
                   <td className="px-4 py-3 text-right">
                     <div className="inline-flex gap-1">

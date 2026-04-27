@@ -1,5 +1,6 @@
 """DailyHealthCheck + ChangeEvent 모델."""
 from datetime import datetime
+from app.core.time_utils import now_kst, KSTDateTime
 from sqlalchemy import String, Integer, DateTime, ForeignKey, Boolean, Index
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -40,7 +41,7 @@ class DailyHealthCheck(Base):
     error: Mapped[str | None] = mapped_column(String(200), nullable=True)
 
     checked_at: Mapped[datetime] = mapped_column(
-        DateTime, default=datetime.utcnow, nullable=False, index=True
+        KSTDateTime, default=now_kst, nullable=False, index=True
     )
 
 
@@ -76,5 +77,5 @@ class ChangeEvent(Base):
     notified_slack: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
     detected_at: Mapped[datetime] = mapped_column(
-        DateTime, default=datetime.utcnow, nullable=False, index=True
+        KSTDateTime, default=now_kst, nullable=False, index=True
     )

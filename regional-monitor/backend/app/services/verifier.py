@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 from datetime import datetime
+from app.core.time_utils import now_kst, to_kst, KST
 from typing import Iterable
 
 import httpx
@@ -85,7 +86,7 @@ async def verify_one(
         "response_ms": int(cr.elapsed_ms),
         "http_status": cr.http_status,
         "error": cr.error or None,
-        "checked_at": datetime.utcnow(),
+        "checked_at": now_kst(),
     }
 
 

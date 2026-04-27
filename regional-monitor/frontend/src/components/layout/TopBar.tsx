@@ -256,17 +256,6 @@ function severityIcon(s: ChangeEventSeverity) {
   return CheckCircle2
 }
 
-/** "방금 전 / 5분 전 / 3시간 전 / 2일 전" — UTC ISO → 한국어 상대시간 */
-export function formatRelative(iso: string): string {
-  const t = new Date(iso).getTime()
-  if (Number.isNaN(t)) return iso
-  const diffSec = Math.floor((Date.now() - t) / 1000)
-  if (diffSec < 60) return '방금 전'
-  if (diffSec < 3600) return `${Math.floor(diffSec / 60)}분 전`
-  if (diffSec < 86400) return `${Math.floor(diffSec / 3600)}시간 전`
-  if (diffSec < 86400 * 7) return `${Math.floor(diffSec / 86400)}일 전`
-  return new Date(iso).toLocaleDateString('ko-KR', {
-    timeZone: 'Asia/Seoul',
-    year: 'numeric', month: '2-digit', day: '2-digit',
-  })
-}
+/** "방금 전 / 5분 전 / 3시간 전 / 2일 전" — KST 기준 한국어 상대시간 */
+import { formatKSTRelative } from '@/utils/datetime'
+export const formatRelative = (iso: string): string => formatKSTRelative(iso, iso)

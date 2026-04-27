@@ -24,6 +24,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from datetime import datetime, timezone, timedelta
+from app.core.time_utils import now_kst, to_kst, KST
 from typing import Sequence
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -142,7 +143,7 @@ async def run_slot_verification(slot_hour: int | None = None) -> dict:
     Returns:
         {"slot": int, "users": N, "places": M, "events": K, "elapsed_ms": int}
     """
-    started_at = datetime.utcnow()
+    started_at = now_kst()
     slot = slot_hour if slot_hour is not None else kst_hour()
 
     log.info("=== slot %d (KST) verification started ===", slot)
@@ -199,7 +200,7 @@ async def run_slot_verification(slot_hour: int | None = None) -> dict:
             total_events += r.get("events", 0)
             total_updated += r.get("updated", 0)
 
-    elapsed_ms = int((datetime.utcnow() - started_at).total_seconds() * 1000)
+    elapsed_ms = int((now_kst() - started_at).total_seconds() * 1000)
     summary = {
         "slot": slot,
         "users": len(user_jobs),

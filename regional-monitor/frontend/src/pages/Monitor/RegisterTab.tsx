@@ -26,6 +26,7 @@ const BulkUpload = lazy(() =>
 )
 // 대용량 검증 진행률 모달
 import { VerifyJobModal } from './VerifyJobModal'
+import { formatKSTDateTime, formatKSTRelative, todayKST } from '@/utils/datetime'
 import {
   FileSpreadsheet,
   Search,
@@ -227,15 +228,7 @@ export default function RegisterTab() {
         '상호': p.business_name,
         '검증 상태': VERDICT_LABEL_KO[p.current_verdict] ?? p.current_verdict,
         '검증 코드': p.current_verdict,
-        '최근 점검': p.last_checked_at
-          ? new Date(p.last_checked_at).toLocaleString('ko-KR', {
-              year: 'numeric',
-              month: '2-digit',
-              day: '2-digit',
-              hour: '2-digit',
-              minute: '2-digit',
-            })
-          : '',
+        '최근 점검': formatKSTDateTime(p.last_checked_at, ''),
       }))
 
       const ws = XLSX.utils.json_to_sheet(rows)
@@ -253,7 +246,7 @@ export default function RegisterTab() {
       const wb = XLSX.utils.book_new()
       XLSX.utils.book_append_sheet(wb, ws, '불일치 명단')
 
-      const today = new Date().toISOString().slice(0, 10) // YYYY-MM-DD
+      const today = todayKST() // YYYY-MM-DD (KST)
       const filename = `타지역서비스_불일치명단_${today}_${mismatchedPlaces.length}건.xlsx`
       XLSX.writeFile(wb, filename)
     } catch (e) {
@@ -512,14 +505,7 @@ export default function RegisterTab() {
                       <VerdictBadge verdict={p.current_verdict} />
                     </td>
                     <td className="px-3 py-3 text-caption text-ink-muted">
-                      {p.last_checked_at
-                        ? new Date(p.last_checked_at).toLocaleString('ko-KR', {
-                            month: '2-digit',
-                            day: '2-digit',
-                            hour: '2-digit',
-                            minute: '2-digit',
-                          })
-                        : '—'}
+                      {formatKSTRelative(p.last_checked_at, '—')}
                     </td>
                     <td className="px-card-sm py-3 text-right">
                       <div className="inline-flex items-center gap-1">

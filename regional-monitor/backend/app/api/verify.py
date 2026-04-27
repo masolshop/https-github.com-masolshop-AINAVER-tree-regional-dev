@@ -3,6 +3,7 @@ import asyncio
 import io
 import time
 from datetime import datetime
+from app.core.time_utils import now_kst, to_kst, KST
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import StreamingResponse
@@ -61,7 +62,7 @@ def _job_to_out(job: VerifyJob) -> VerifyJobOut:
     )
     elapsed: int | None = None
     eta: int | None = None
-    now = datetime.utcnow()
+    now = now_kst()
     if job.started_at:
         end_ref = job.finished_at or now
         elapsed = max(0, int((end_ref - job.started_at).total_seconds()))

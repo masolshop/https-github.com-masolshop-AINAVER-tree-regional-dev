@@ -6,6 +6,7 @@
   3) 이후 로그인은 1단계만 거치고 바로 서비스 진입
 """
 from datetime import datetime
+from app.core.time_utils import now_kst, KSTDateTime
 from sqlalchemy import String, Integer, DateTime, Boolean
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -32,7 +33,7 @@ class User(Base):
     agreed_privacy: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)   # [필수]
     agreed_terms: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)     # [필수]
     agreed_marketing: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False) # [선택]
-    agreed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    agreed_at: Mapped[datetime | None] = mapped_column(KSTDateTime, nullable=True)
 
     # ── 가입 완료 플래그 ──
     is_profile_complete: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False, index=True)
@@ -65,12 +66,12 @@ class User(Base):
 
     # ── 타임스탬프 ──
     created_at: Mapped[datetime] = mapped_column(
-        DateTime, default=datetime.utcnow, nullable=False
+        KSTDateTime, default=now_kst, nullable=False
     )
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
+        KSTDateTime, default=now_kst, onupdate=now_kst, nullable=False
     )
-    last_login_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    last_login_at: Mapped[datetime | None] = mapped_column(KSTDateTime, nullable=True)
 
     def __repr__(self) -> str:  # pragma: no cover
         return f"<User id={self.id} email={self.email!r} complete={self.is_profile_complete}>"

@@ -373,22 +373,19 @@ function severityIcon(s: ChangeEventSeverity) {
   return CheckCircle2
 }
 
-/** 모든 시각은 KST 기준으로 표기 */
+/** 모든 시각은 KST 기준으로 표기 (utils/datetime 헬퍼 위임) */
+import { formatKST, formatKSTTime } from '@/utils/datetime'
+
 function formatKstTime(iso: string): string {
-  return new Date(iso).toLocaleTimeString('ko-KR', {
-    timeZone: 'Asia/Seoul',
-    hour: '2-digit', minute: '2-digit', hour12: false,
-  })
+  return formatKSTTime(iso)
 }
 function formatKstDate(iso: string): string {
-  return new Date(iso).toLocaleDateString('ko-KR', {
-    timeZone: 'Asia/Seoul',
+  return formatKST(iso, {
     year: 'numeric', month: 'long', day: 'numeric', weekday: 'short',
   })
 }
 function formatKstFull(iso: string): string {
-  return new Date(iso).toLocaleString('ko-KR', {
-    timeZone: 'Asia/Seoul',
+  return formatKST(iso, {
     month: '2-digit', day: '2-digit',
     hour: '2-digit', minute: '2-digit', hour12: false,
   })

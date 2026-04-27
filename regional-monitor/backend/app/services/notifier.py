@@ -19,6 +19,7 @@ import logging
 import smtplib
 import ssl
 from datetime import datetime
+from app.core.time_utils import now_kst, to_kst, KST
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from typing import Any, Iterable
@@ -186,7 +187,7 @@ def _build_email_body(
 ) -> str:
     name = user.name or user.email
     n = len(events)
-    when = datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")
+    when = now_kst().strftime("%Y-%m-%d %H:%M KST")
     if plain:
         lines = [
             f"{name}님, 타지역서비스 자동 검증에서 변경 {n}건이 감지되었습니다.",
@@ -273,7 +274,7 @@ async def _send_slack(
 ) -> bool:
     n = len(events)
     danger_n = sum(1 for e in events if _meta(e.event_type)["severity"] == "danger")
-    when = datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")
+    when = now_kst().strftime("%Y-%m-%d %H:%M KST")
 
     title = f"⚠️ 노출 변경 {n}건 감지" + (f" (위험 {danger_n})" if danger_n else "")
     blocks: list[dict] = [

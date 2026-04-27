@@ -16,6 +16,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta
+from app.core.time_utils import now_kst, to_kst, KST
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -68,7 +69,7 @@ async def get_stats(db: AsyncSession = Depends(get_db)) -> AdminStatsOut:
     places_total = (await db.execute(select(func.count(RegisteredPlace.id)))).scalar_one()
     events_total = (await db.execute(select(func.count(ChangeEvent.id)))).scalar_one()
     # 시스템 차원 "최근 24시간 신규 변경 이벤트" — admin 가시성용
-    yesterday_24h = datetime.utcnow() - timedelta(hours=24)
+    yesterday_24h = now_kst() - timedelta(hours=24)
     events_unread = (await db.execute(
         select(func.count(ChangeEvent.id)).where(ChangeEvent.detected_at >= yesterday_24h)
     )).scalar_one()
@@ -82,7 +83,7 @@ async def get_stats(db: AsyncSession = Depends(get_db)) -> AdminStatsOut:
     revenue_paid_krw = int(revenue_q.scalar_one())
 
     # 검증 활동
-    yesterday = datetime.utcnow() - timedelta(hours=24)
+    yesterday = now_kst() - timedelta(hours=24)
     last_24h_checks = (await db.execute(
         select(func.count(DailyHealthCheck.id))
         .where(DailyHealthCheck.checked_at >= yesterday)
@@ -374,7 +375,7 @@ async def create_payment(
     if not u:
         raise HTTPException(404, "대상 사용자를 찾을 수 없습니다.")
 
-    now = datetime.utcnow()
+    now = now_kst()
     period_end = now + timedelta(days=body.period_days)
 
     p = Payment(
@@ -425,7 +426,7 @@ async def update_payment(
     if body.status is not None:
         prev = p.status
         p.status = body.status
-        now = datetime.utcnow()
+        now = now_kst()
         if body.status == "paid" and prev != "paid":
             p.paid_at = now
         if body.status == "refunded" and prev != "refunded":

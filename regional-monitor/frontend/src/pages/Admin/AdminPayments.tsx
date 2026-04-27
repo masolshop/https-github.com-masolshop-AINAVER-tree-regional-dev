@@ -7,6 +7,7 @@
  */
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { formatKSTDate, formatKSTDateTime } from '@/utils/datetime'
 import {
   CreditCard,
   Plus,
@@ -73,8 +74,7 @@ function formatKRW(n: number): string {
 }
 
 function formatDate(s: string | null): string {
-  if (!s) return '—'
-  return new Date(s).toLocaleString('ko-KR', { dateStyle: 'short', timeStyle: 'short' })
+  return formatKSTDateTime(s, '—')
 }
 
 export function AdminPayments() {
@@ -216,11 +216,11 @@ export function AdminPayments() {
                     </span>
                   </td>
                   <td className="px-4 py-3 text-xs text-ink-muted">
-                    {p.period_start ? new Date(p.period_start).toLocaleDateString('ko-KR') : '—'}
+                    {formatKSTDate(p.period_start, '—')}
                     {p.period_end && (
                       <>
                         {' ~ '}
-                        {new Date(p.period_end).toLocaleDateString('ko-KR')}
+                        {formatKSTDate(p.period_end, '—')}
                       </>
                     )}
                   </td>

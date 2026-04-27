@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import re
 from datetime import datetime
+from app.core.time_utils import now_kst, to_kst, KST
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -184,7 +185,7 @@ async def update_settings(
             value = None
         setattr(user, key, value)
 
-    user.updated_at = datetime.utcnow()
+    user.updated_at = now_kst()
     await db.commit()
     await db.refresh(user)
     return _to_out(user)

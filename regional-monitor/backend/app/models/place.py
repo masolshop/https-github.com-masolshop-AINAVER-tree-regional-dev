@@ -1,5 +1,6 @@
 """RegisteredPlace 모델 — 사용자가 등록한 070+Place ID 매핑."""
 from datetime import datetime
+from app.core.time_utils import now_kst, KSTDateTime
 from sqlalchemy import String, Integer, DateTime, ForeignKey, Index
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -31,14 +32,14 @@ class RegisteredPlace(Base):
     # 현재 검증 상태 (마지막 daily_health_check 결과 캐시)
     # OK / PHONE_MISMATCH / DONG_MISMATCH / NAME_MISMATCH / REGION_MISMATCH / DEAD / PENDING
     current_verdict: Mapped[str] = mapped_column(String(30), default="PENDING", nullable=False)
-    last_checked_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    last_checked_at: Mapped[datetime | None] = mapped_column(KSTDateTime, nullable=True)
 
     # 타임스탬프
     created_at: Mapped[datetime] = mapped_column(
-        DateTime, default=datetime.utcnow, nullable=False
+        KSTDateTime, default=now_kst, nullable=False
     )
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
+        KSTDateTime, default=now_kst, onupdate=now_kst, nullable=False
     )
 
     def __repr__(self) -> str:

@@ -12,6 +12,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from app.core.time_utils import now_kst, to_kst, KST
 from typing import Literal
 
 from fastapi import APIRouter, Depends, Query
@@ -172,7 +173,7 @@ async def mark_events_read(
     db: AsyncSession = Depends(get_db),
 ) -> dict:
     """모두 읽음 처리 (단순히 last_login_at 을 갱신)."""
-    user.last_login_at = datetime.utcnow()
+    user.last_login_at = now_kst()
     await db.commit()
     return {"ok": True, "last_read_at": user.last_login_at}
 

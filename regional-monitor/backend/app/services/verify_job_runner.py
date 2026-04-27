@@ -20,6 +20,7 @@ import asyncio
 import logging
 import time
 from datetime import datetime
+from app.core.time_utils import now_kst, to_kst, KST
 from typing import Iterable
 
 from sqlalchemy import select
@@ -120,7 +121,7 @@ async def run_job(job_id: int) -> None:
             if user is None:
                 job.status = "failed"
                 job.error = "user not found"
-                job.finished_at = datetime.utcnow()
+                job.finished_at = now_kst()
                 await db.commit()
                 return
 
@@ -135,12 +136,12 @@ async def run_job(job_id: int) -> None:
             job.total = len(places)
             job.chunks_total = (len(places) + job.chunk_size - 1) // job.chunk_size
             job.status = "running"
-            job.started_at = datetime.utcnow()
+            job.started_at = now_kst()
             await db.commit()
 
             if not places:
                 job.status = "completed"
-                job.finished_at = datetime.utcnow()
+                job.finished_at = now_kst()
                 await db.commit()
                 return
 
@@ -153,7 +154,7 @@ async def run_job(job_id: int) -> None:
                     if job is None or job.cancel_requested:
                         if job is not None:
                             job.status = "cancelled"
-                            job.finished_at = datetime.utcnow()
+                            job.finished_at = now_kst()
                             await db.commit()
                         logger.info("verify_job %d cancelled at chunk_index=%d", job_id, chunk_index)
                         return
@@ -233,7 +234,7 @@ async def run_job(job_id: int) -> None:
                     job.status = "cancelled"
                 else:
                     job.status = "completed"
-                job.finished_at = datetime.utcnow()
+                job.finished_at = now_kst()
                 await db.commit()
             logger.info("verify_job %d done status=%s", job_id, job.status)
 
@@ -245,7 +246,7 @@ async def run_job(job_id: int) -> None:
                     if job is not None:
                         job.status = "failed"
                         job.error = str(exc)[:1000]
-                        job.finished_at = datetime.utcnow()
+                        job.finished_at = now_kst()
                         await db.commit()
             except Exception:                                                         # noqa: BLE001
                 logger.exception("failed to update job %d as failed", job_id)

@@ -16,6 +16,7 @@ cancel_requested 가 True 이면 워커가 다음 청크 시작 전에 멈춘다
 from __future__ import annotations
 
 from datetime import datetime
+from app.core.time_utils import now_kst, KSTDateTime
 from sqlalchemy import String, Integer, DateTime, ForeignKey, Boolean, Index, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -48,10 +49,10 @@ class VerifyJob(Base):
     chunk_size: Mapped[int] = mapped_column(Integer, default=500, nullable=False)
     chunks_total: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     chunks_done: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
-    started_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
-    finished_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    started_at: Mapped[datetime | None] = mapped_column(KSTDateTime, nullable=True)
+    finished_at: Mapped[datetime | None] = mapped_column(KSTDateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
-        DateTime, default=datetime.utcnow, nullable=False, index=True
+        KSTDateTime, default=now_kst, nullable=False, index=True
     )
 
     # 에러
