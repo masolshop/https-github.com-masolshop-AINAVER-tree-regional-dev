@@ -12,6 +12,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
 import {
   bulkCreatePlaces,
+  bulkDeletePlaces,
   createPlace,
   createPlaceAuto,
   deletePlace,
@@ -20,6 +21,7 @@ import {
   updatePlace,
 } from '../api/places'
 import type {
+  PlaceBulkDeleteRequest,
   PlaceBulkRequest,
   PlaceCreate,
   PlaceCreateAuto,
@@ -110,6 +112,15 @@ export function useBulkCreatePlaces() {
   const invalidate = useInvalidatePlaces()
   return useMutation({
     mutationFn: (req: PlaceBulkRequest) => bulkCreatePlaces(req),
+    onSuccess: invalidate,
+  })
+}
+
+/** 일괄 삭제 — ids 배열 또는 all=true */
+export function useBulkDeletePlaces() {
+  const invalidate = useInvalidatePlaces()
+  return useMutation({
+    mutationFn: (req: PlaceBulkDeleteRequest) => bulkDeletePlaces(req),
     onSuccess: invalidate,
   })
 }

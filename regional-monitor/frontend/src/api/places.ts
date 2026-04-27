@@ -13,6 +13,8 @@ import type {
   MessageResponse,
   PlaceBulkRequest,
   PlaceBulkResponse,
+  PlaceBulkDeleteRequest,
+  PlaceBulkDeleteResponse,
   PlaceCreate,
   PlaceCreateAuto,
   PlaceListOut,
@@ -48,6 +50,12 @@ export const updatePlace = (id: number, req: PlaceUpdate) =>
 
 export const deletePlace = (id: number) =>
   api.del<MessageResponse>(`/api/v1/places/${id}`)
+
+/** 일괄 삭제 — ids 배열 또는 all=true. 본인 소유만 삭제됨. */
+export const bulkDeletePlaces = (req: PlaceBulkDeleteRequest) =>
+  api.post<PlaceBulkDeleteResponse>('/api/v1/places/bulk-delete', req, {
+    timeoutMs: 60_000,
+  })
 
 /* ─────────── Live Verification ─────────── */
 export const runLiveCheck = (req: LiveCheckRequest = {}) =>

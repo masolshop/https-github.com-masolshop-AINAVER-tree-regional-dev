@@ -19,6 +19,8 @@ from app.schemas import (
     PlaceSummary,
     PlaceBulkRequest,
     PlaceBulkResponse,
+    PlaceBulkDeleteRequest,
+    PlaceBulkDeleteResponse,
     BulkRowStatus,
     MessageResponse,
 )
@@ -380,6 +382,83 @@ async def delete_place(
     await db.delete(place)
     await db.commit()
     return MessageResponse(message=f"{place.phone} 등록이 삭제되었습니다.")
+
+
+# ────────────────────────────────────────────────────────────
+@router.post("/bulk-delete", response_model=PlaceBulkDeleteResponse)
+async def bulk_delete_places(
+    req: PlaceBulkDeleteRequest,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> PlaceBulkDeleteResponse:
+    """등록 일괄 삭제.
+
+    - `ids`: 삭제할 Place 내부 id 리스트 (최대 1,000건 권장)
+    - `all=True`: 본인의 모든 등록 일괄 삭제 (확인 다이얼로그 후 호출)
+
+    본인 소유의 등록만 삭제 가능. 한 번의 트랜잭션으로 처리.
+    """
+    from sqlalchemy import delete as sa_delete
+
+    started = time.time()
+
+    if not req.all and not req.ids:
+        raise HTTPException(
+            status_code=400,
+            detail="ids 또는 all=True 중 하나는 필수입니다.",
+        )
+
+    if req.all:
+        # 본인 모든 등록 삭제 (이중 확인은 프론트에서 수행)
+        # 먼저 카운트
+        cnt_result = await db.execute(
+            select(func.count(RegisteredPlace.id)).where(
+                RegisteredPlace.user_id == user.id
+            )
+        )
+        total = int(cnt_result.scalar() or 0)
+        await db.execute(
+            sa_delete(RegisteredPlace).where(RegisteredPlace.user_id == user.id)
+        )
+        await db.commit()
+        return PlaceBulkDeleteResponse(
+            requested=total,
+            deleted=total,
+            not_found=0,
+            elapsed_ms=int((time.time() - started) * 1000),
+        )
+
+    # ids 기반 삭제
+    requested_ids = list(set(req.ids or []))
+    if not requested_ids:
+        return PlaceBulkDeleteResponse(
+            requested=0, deleted=0, not_found=0, elapsed_ms=0
+        )
+
+    # 본인 소유만 추리기
+    rows = await db.execute(
+        select(RegisteredPlace.id).where(
+            RegisteredPlace.id.in_(requested_ids),
+            RegisteredPlace.user_id == user.id,
+        )
+    )
+    owned_ids = [r[0] for r in rows.all()]
+
+    if owned_ids:
+        await db.execute(
+            sa_delete(RegisteredPlace).where(
+                RegisteredPlace.id.in_(owned_ids),
+                RegisteredPlace.user_id == user.id,
+            )
+        )
+        await db.commit()
+
+    return PlaceBulkDeleteResponse(
+        requested=len(requested_ids),
+        deleted=len(owned_ids),
+        not_found=len(requested_ids) - len(owned_ids),
+        elapsed_ms=int((time.time() - started) * 1000),
+    )
 
 
 # ────────────────────────────────────────────────────────────

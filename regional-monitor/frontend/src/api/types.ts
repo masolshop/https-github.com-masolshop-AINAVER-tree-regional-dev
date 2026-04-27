@@ -119,6 +119,19 @@ export interface PlaceBulkResponse {
   rows: BulkRowStatus[]
 }
 
+/* ─────────── /api/v1/places/bulk-delete ─────────── */
+export interface PlaceBulkDeleteRequest {
+  ids?: number[] | null
+  all?: boolean
+}
+
+export interface PlaceBulkDeleteResponse {
+  requested: number
+  deleted: number
+  not_found: number
+  elapsed_ms: number
+}
+
 export interface MessageResponse {
   message: string
 }
