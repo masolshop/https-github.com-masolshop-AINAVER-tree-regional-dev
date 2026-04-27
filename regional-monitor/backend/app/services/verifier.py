@@ -107,16 +107,13 @@ async def verify_one(
     }
     cr = await check_place(client, sample)
 
-    # verdict 매핑 — place_id_checker는 OK/PHONE_MISMATCH/DONG_MISMATCH/NAME_MISMATCH/DEAD/ERROR 반환
+    # verdict 매핑 — place_id_checker는 OK/PHONE_MISMATCH/DONG_MISMATCH/DEAD/ERROR 반환
+    # (NAME_MISMATCH는 단순화 정책에 따라 더 이상 발생하지 않음)
     verdict = cr.verdict if cr.verdict else "PENDING"
     if verdict == "ERROR":
         verdict = "DEAD"  # 네트워크 오류는 DEAD로 통합 (사용자 입장에서는 같음)
     elif verdict == "SUSPICIOUS":
         verdict = "DONG_MISMATCH"  # 보수적
-
-    # REGION_MISMATCH 추가 판정 — 시/도 단위 차이가 있으면 격상
-    if verdict == "DONG_MISMATCH" and cr.detail and "완전히 다른 지역" in cr.detail:
-        verdict = "REGION_MISMATCH"
 
     # 동(짧게) 추출
     actual_dong = ""

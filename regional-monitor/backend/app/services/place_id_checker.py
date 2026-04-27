@@ -139,25 +139,31 @@ def normalize_address(addr: str) -> Dict[str, str]:
 
 
 def compare_dong(expected: str, actual: str) -> Tuple[bool, str]:
+    """
+    단순 비교: 동/로/리 단위만 일치하면 OK (시/구는 무시).
+
+    - 사용자가 등록 시 "용산동"만 적었거나 "광주광역시 동구 용산동"을 적었거나 동일하게 처리
+    - 네이버가 "광주 동구 용산동" 또는 "용산동 12-3" 처럼 반환해도 동일하게 처리
+    - 동/가/읍/면/리/로 키워드를 추출하여 양쪽에 같은 항목이 하나라도 있으면 매치
+    """
     if not expected or not actual:
         return False, "주소 정보 부족"
 
-    e = normalize_address(expected)
-    a = normalize_address(actual)
+    # 동/가/읍/면/리/로 단위 추출 (모두)
+    pattern = re.compile(r"[가-힣0-9]+(?:동|가|읍|면|리|로(?:[0-9]+가)?)")
+    e_units = set(pattern.findall(expected))
+    a_units = set(pattern.findall(actual))
 
-    if e["sigungu"] and e["dong"] and e["sigungu"] == a["sigungu"] and e["dong"] == a["dong"]:
-        return True, f"동까지 정확히 일치 ({a['sigungu']} {a['dong']})"
+    if not e_units:
+        return False, f"등록 주소에서 동/로/리 단위를 찾을 수 없음 ({expected})"
+    if not a_units:
+        return False, f"실제 주소에서 동/로/리 단위를 찾을 수 없음 ({actual})"
 
-    if e["dong"] and a["dong"] and e["dong"] == a["dong"] and e["sigungu"] != a["sigungu"]:
-        return False, f"동명이인 (예상={e['sigungu']}/{e['dong']}, 실제={a['sigungu']}/{a['dong']})"
+    common = e_units & a_units
+    if common:
+        return True, f"동/로/리 일치 ({', '.join(sorted(common))})"
 
-    if e["sigungu"] and e["sigungu"] == a["sigungu"]:
-        return False, f"같은 구 다른 동 (예상={e['dong']}, 실제={a['dong']})"
-
-    if e["sido"] and e["sido"] == a["sido"]:
-        return False, f"같은 시도 다른 구 (예상={e['sigungu']}/{e['dong']}, 실제={a['sigungu']}/{a['dong']})"
-
-    return False, f"완전히 다른 지역 (예상={e['sido']}/{e['sigungu']}, 실제={a['sido']}/{a['sigungu']})"
+    return False, f"동/로/리 불일치 (예상={sorted(e_units)}, 실제={sorted(a_units)})"
 
 
 def compare_name(expected: str, actual: str) -> Tuple[bool, float, str]:
@@ -368,14 +374,15 @@ async def check_place(client: httpx.AsyncClient, sample: Dict) -> CheckResult:
     result.actual_phone = info["phone"]
     result.actual_category = info["category"]
 
-    # ① Place alive
-    if r.status_code != 200 or info["is_dead_page"] or not info["name"]:
+    # ① Place alive — place_id 페이지가 HTTP 200으로 응답하면 살아있음
+    #   (네이버 SPA는 본문에 name이 없을 수 있으므로 name 유무를 alive 판단에서 제외)
+    if r.status_code != 200 or info["is_dead_page"]:
         result.place_alive = False
         result.verdict = "DEAD"
         result.severity = "CRITICAL"
         result.detail = (
-            f"Place 페이지가 존재하지 않거나 정보 추출 실패 "
-            f"(status={r.status_code}, dead={info['is_dead_page']}, name='{info['name']}')"
+            f"Place 페이지가 존재하지 않음 "
+            f"(status={r.status_code}, dead={info['is_dead_page']})"
         )
         return result
 
@@ -387,19 +394,19 @@ async def check_place(client: httpx.AsyncClient, sample: Dict) -> CheckResult:
     if phone_clean in candidates_clean or phone in html:
         result.phone_match = True
 
-    # ③ Dong match
+    # ③ Dong/로/리 match (시·구 무시, 동/로/리만 일치하면 OK)
     dong_ok, dong_detail = compare_dong(result.expected_dong, result.actual_address)
     result.dong_match = dong_ok
 
-    # ④ Name match
+    # ④ Name match (참고용 — verdict 판정에는 사용 안함)
     name_ok, name_ratio, name_detail = compare_name(result.expected_biz, result.actual_name)
     result.name_match = name_ok
 
-    # 최종 판정
-    if result.phone_match and result.dong_match and result.name_match:
+    # 최종 판정 — 단순화: 전화 + 동/로/리 만 검사 (상호명은 참고용)
+    if result.phone_match and result.dong_match:
         result.verdict = "OK"
         result.severity = "OK"
-        result.detail = "✅ 4중 검증 모두 통과 (정상 노출)"
+        result.detail = f"✅ 전화·동/로/리 일치 ({dong_detail})"
     elif not result.phone_match:
         result.verdict = "PHONE_MISMATCH"
         result.severity = "CRITICAL"
@@ -407,11 +414,7 @@ async def check_place(client: httpx.AsyncClient, sample: Dict) -> CheckResult:
     elif not result.dong_match:
         result.verdict = "DONG_MISMATCH"
         result.severity = "CRITICAL"
-        result.detail = f"⛔ 동 미스매치: {dong_detail}"
-    elif not result.name_match:
-        result.verdict = "NAME_MISMATCH"
-        result.severity = "WARN"
-        result.detail = f"⚠️ 070+동 일치하나 상호 다름 ({name_detail})"
+        result.detail = f"⛔ 동/로/리 불일치: {dong_detail}"
     else:
         result.verdict = "SUSPICIOUS"
         result.severity = "WARN"
