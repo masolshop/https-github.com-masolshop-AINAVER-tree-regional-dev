@@ -7,9 +7,11 @@
 
 | 시간 (KST) | 작업 | 산출물 | 위치 |
 |---|---|---|---|
-| 01:00 | DB 핫 백업 (`sqlite3 .backup` + gzip) | `db_<YYYY-MM-DD>_<HHMMSS>.sqlite.gz` | `/home/ubuntu/backups/db/` |
+| 01:00 | DB 핫 백업 (PostgreSQL: `pg_dump`, SQLite: `.backup` + gzip) | `db_<YYYY-MM-DD>_<HHMMSS>.{sql,sqlite}.gz` | `/home/ubuntu/backups/db/` |
 | 01:30 | 사용자별 데이터 export (JSON + gzip) | `user_<id>_<email>_<YYYY-MM-DD>.json.gz` | `/home/ubuntu/backups/users/` |
 | 02:00 | 코드 전체 스냅샷 (tar.gz) | `code_<YYYY-MM-DD>_<HHMMSS>.tar.gz` | `/home/ubuntu/backups/code/` |
+
+DB 종류는 `backend/.env` 의 `DATABASE_URL` 로 자동 감지된다 (sqlite/postgresql 모두 지원).
 
 ### 사용자별 export 구성 (JSON)
 ```json
@@ -89,6 +91,16 @@ sudo journalctl -u regionwatch-backup-db.service -n 50
 ## 복구 절차
 
 ### DB 복원
+
+**PostgreSQL**:
+```bash
+sudo systemctl stop regionwatch-backend
+gunzip -c /home/ubuntu/backups/db/db_<DATE>_<TIME>.sql.gz | \
+  PGPASSWORD=<pwd> psql -h 127.0.0.1 -U regionwatch regionwatch
+sudo systemctl start regionwatch-backend
+```
+
+**SQLite**:
 ```bash
 cd /opt/regionwatch/regional-monitor/backend
 sudo systemctl stop regionwatch-backend

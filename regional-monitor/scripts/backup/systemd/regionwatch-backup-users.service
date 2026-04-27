@@ -7,7 +7,7 @@ Type=oneshot
 User=ubuntu
 Group=ubuntu
 Environment=TZ=Asia/Seoul
-ExecStart=/usr/bin/python3 /opt/regionwatch/regional-monitor/scripts/backup/backup_users.py
+ExecStart=/opt/regionwatch/regional-monitor/backend/venv/bin/python /opt/regionwatch/regional-monitor/scripts/backup/backup_users.py
 StandardOutput=journal
 StandardError=journal
 TimeoutStartSec=15min

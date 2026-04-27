@@ -1,29 +1,27 @@
 #!/usr/bin/env bash
-# 타지역서비스 — DB 전체 핫 백업 (SQLite .backup + gzip)
+# 타지역서비스 — DB 전체 핫 백업
 # 매일 KST 01:00 실행 (systemd timer)
 #
-# 절차:
-#   1. sqlite3 .backup 으로 hot copy (서비스 stop 없이 안전)
-#   2. gzip -9 압축
-#   3. /home/ubuntu/backups/db/db_<DATE>_<TIME>.sqlite.gz 저장
-#   4. 7일 초과 파일 자동 삭제
-#   5. (옵션) S3 업로드
+# DATABASE_URL 을 자동 감지:
+#   · postgresql[+driver]://user:pwd@host:port/dbname  → pg_dump
+#   · sqlite[+driver]:///path/to.db                    → sqlite3 .backup
+# 산출물:
+#   /home/ubuntu/backups/db/db_<DATE>_<TIME>.{sqlite|sql}.gz
+# 7일 초과 자동 삭제. S3 업로드 (BACKUP_S3_ENABLED=true).
 set -euo pipefail
 
-# ── 환경 ────────────────────────────────────────
 APP_DIR="${APP_DIR:-/opt/regionwatch/regional-monitor}"
-DB_PATH="${DB_PATH:-${APP_DIR}/backend/regional_monitor.db}"
 BACKUP_ROOT="${BACKUP_ROOT:-/home/ubuntu/backups}"
 BACKUP_DIR="${BACKUP_ROOT}/db"
 LOG_DIR="${BACKUP_ROOT}/logs"
 LOG_FILE="${LOG_DIR}/backup_db.log"
 RETENTION_DAYS=7
 
-# 환경 변수 로드 (S3 등)
+# .env 로드
 ENV_FILE="${APP_DIR}/backend/.env"
 if [[ -f "${ENV_FILE}" ]]; then
-    # shellcheck disable=SC1090
     set -o allexport
+    # shellcheck disable=SC1090
     source "${ENV_FILE}"
     set +o allexport
 fi
@@ -36,38 +34,96 @@ log() {
 
 log "─── DB backup start ───"
 
-# DB 파일 존재 확인
-if [[ ! -f "${DB_PATH}" ]]; then
-    log "ERROR: DB file not found: ${DB_PATH}"
+DB_URL="${DATABASE_URL:-}"
+if [[ -z "${DB_URL}" ]]; then
+    log "ERROR: DATABASE_URL not set in .env"
     exit 1
 fi
 
-# 파일명
 TS=$(date '+%Y-%m-%d_%H%M%S')
-TMP_DB="${BACKUP_DIR}/db_${TS}.sqlite"
-OUT_FILE="${BACKUP_DIR}/db_${TS}.sqlite.gz"
 
-# ── 1) Hot backup ──────────────────────────────
-log "Step 1: sqlite3 .backup → ${TMP_DB}"
-sqlite3 "${DB_PATH}" ".backup '${TMP_DB}'"
+# ── DB 종류 감지 ─────────────────────────────────
+if [[ "${DB_URL}" == sqlite* ]]; then
+    DB_KIND="sqlite"
+    # sqlite[+aiosqlite]:///./regional_monitor.db
+    # 슬래시 3개 제거 후 경로 추출
+    SQLITE_PATH="${DB_URL#*:///}"
+    # 상대 경로면 backend 디렉터리 기준으로 풀어준다.
+    if [[ "${SQLITE_PATH:0:1}" != "/" ]]; then
+        SQLITE_PATH="${APP_DIR}/backend/${SQLITE_PATH#./}"
+    fi
+    OUT_FILE="${BACKUP_DIR}/db_${TS}.sqlite.gz"
+    TMP_DB="${BACKUP_DIR}/db_${TS}.sqlite"
 
-# 무결성 체크
-INTEGRITY=$(sqlite3 "${TMP_DB}" "PRAGMA integrity_check;" 2>&1 || true)
-if [[ "${INTEGRITY}" != "ok" ]]; then
-    log "ERROR: integrity_check failed: ${INTEGRITY}"
-    rm -f "${TMP_DB}"
-    exit 2
+    log "Mode: SQLite — ${SQLITE_PATH}"
+    if [[ ! -f "${SQLITE_PATH}" ]]; then
+        log "ERROR: SQLite file not found: ${SQLITE_PATH}"
+        exit 1
+    fi
+
+    log "Step 1: sqlite3 .backup → ${TMP_DB}"
+    sqlite3 "${SQLITE_PATH}" ".backup '${TMP_DB}'"
+
+    INTEGRITY=$(sqlite3 "${TMP_DB}" "PRAGMA integrity_check;" 2>&1 || true)
+    if [[ "${INTEGRITY}" != "ok" ]]; then
+        log "ERROR: integrity_check failed: ${INTEGRITY}"
+        rm -f "${TMP_DB}"
+        exit 2
+    fi
+    log "Integrity OK"
+
+    log "Step 2: gzip -9 → ${OUT_FILE}"
+    gzip -9 "${TMP_DB}"
+
+elif [[ "${DB_URL}" == postgresql* ]] || [[ "${DB_URL}" == postgres* ]]; then
+    DB_KIND="postgres"
+    OUT_FILE="${BACKUP_DIR}/db_${TS}.sql.gz"
+
+    # URL parsing — 정규식
+    # postgresql[+driver]://user:pass@host:port/dbname[?args]
+    URL="${DB_URL}"
+    # +driver 제거
+    URL="${URL/postgresql+*:\/\//postgresql:\/\/}"
+    URL="${URL/postgres+*:\/\//postgres:\/\/}"
+    if [[ "${URL}" =~ ^postgres(ql)?://([^:]+):([^@]+)@([^:/]+):?([0-9]*)/([^?]+) ]]; then
+        PG_USER="${BASH_REMATCH[2]}"
+        PG_PASS="${BASH_REMATCH[3]}"
+        PG_HOST="${BASH_REMATCH[4]}"
+        PG_PORT="${BASH_REMATCH[5]:-5432}"
+        PG_DB="${BASH_REMATCH[6]}"
+    else
+        log "ERROR: cannot parse DATABASE_URL: ${URL}"
+        exit 3
+    fi
+
+    log "Mode: PostgreSQL — ${PG_USER}@${PG_HOST}:${PG_PORT}/${PG_DB}"
+    log "Step 1: pg_dump → ${OUT_FILE}"
+    PGPASSWORD="${PG_PASS}" pg_dump \
+        -h "${PG_HOST}" -p "${PG_PORT}" -U "${PG_USER}" \
+        --format=plain --no-owner --no-privileges --clean --if-exists \
+        "${PG_DB}" 2>>"${LOG_FILE}" | gzip -9 > "${OUT_FILE}"
+
+    if [[ ! -s "${OUT_FILE}" ]]; then
+        log "ERROR: pg_dump produced empty file"
+        rm -f "${OUT_FILE}"
+        exit 4
+    fi
+
+    # 무결성 체크: gzip -t
+    if ! gzip -t "${OUT_FILE}" 2>>"${LOG_FILE}"; then
+        log "ERROR: gzip -t failed"
+        exit 5
+    fi
+    log "gzip integrity OK"
+else
+    log "ERROR: unsupported DATABASE_URL scheme: ${DB_URL%%:*}"
+    exit 1
 fi
-log "Integrity OK"
-
-# ── 2) gzip 압축 ───────────────────────────────
-log "Step 2: gzip -9 → ${OUT_FILE}"
-gzip -9 "${TMP_DB}"   # produces ${TMP_DB}.gz == ${OUT_FILE}
 
 SIZE=$(du -h "${OUT_FILE}" | awk '{print $1}')
 log "Saved: ${OUT_FILE} (${SIZE})"
 
-# ── 3) S3 업로드 (선택) ────────────────────────
+# ── S3 업로드 (선택) ─────────────────────────────
 if [[ "${BACKUP_S3_ENABLED:-false}" == "true" ]] && [[ -n "${BACKUP_S3_BUCKET:-}" ]]; then
     if command -v aws >/dev/null 2>&1; then
         S3_KEY="db/$(basename "${OUT_FILE}")"
@@ -86,14 +142,14 @@ else
     log "Step 3: S3 upload disabled (set BACKUP_S3_ENABLED=true to activate)"
 fi
 
-# ── 4) 7일 초과 파일 정리 ─────────────────────
+# ── 7일 초과 정리 ────────────────────────────────
 log "Step 4: removing files older than ${RETENTION_DAYS} days"
-DELETED=$(find "${BACKUP_DIR}" -maxdepth 1 -type f -name "db_*.sqlite.gz" \
+DELETED=$(find "${BACKUP_DIR}" -maxdepth 1 -type f \( -name "db_*.sqlite.gz" -o -name "db_*.sql.gz" \) \
     -mtime +${RETENTION_DAYS} -print -delete | wc -l)
 log "Removed ${DELETED} old file(s)"
 
-REMAINING=$(find "${BACKUP_DIR}" -maxdepth 1 -type f -name "db_*.sqlite.gz" | wc -l)
+REMAINING=$(find "${BACKUP_DIR}" -maxdepth 1 -type f \( -name "db_*.sqlite.gz" -o -name "db_*.sql.gz" \) | wc -l)
 log "Remaining: ${REMAINING} file(s)"
 
-log "─── DB backup completed ───"
+log "─── DB backup completed (mode=${DB_KIND}) ───"
 exit 0

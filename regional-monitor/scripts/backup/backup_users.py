@@ -9,23 +9,24 @@
 내보내는 테이블:
   - users          (해당 사용자 1행, hashed_password 제외)
   - registered_places  (user_id 일치)
-  - daily_health_checks (place_id_ref → user 의 place 들; 최근 30일)
-  - change_events  (place_id_ref → user 의 place 들; 최근 30일)
+  - daily_health_checks (user 의 place 들; 최근 30일)
+  - change_events  (user 의 place 들; 최근 30일)
   - verify_jobs    (user_id 일치)
   - payments       (user_id 일치)
 
-저장 후 7일 초과 파일 자동 삭제.
-S3 활성화시 업로드 (BACKUP_S3_ENABLED=true).
+DB 백엔드(SQLite/PostgreSQL)에 무관하게 동작 — 앱의 SQLAlchemy 모델/엔진 재사용.
+
+저장 후 7일 초과 파일 자동 삭제. S3 활성화시 업로드.
 """
 from __future__ import annotations
 
+import asyncio
 import gzip
 import json
 import logging
 import os
 import re
 import shutil
-import sqlite3
 import subprocess
 import sys
 import time
@@ -33,9 +34,9 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
-# ── 경로 (환경변수로 오버라이드 가능) ──────────────
+# ── 경로 설정 ─────────────────────────────────────
 APP_DIR = Path(os.environ.get("APP_DIR", "/opt/regionwatch/regional-monitor"))
-DB_PATH = Path(os.environ.get("DB_PATH", str(APP_DIR / "backend" / "regional_monitor.db")))
+BACKEND_DIR = APP_DIR / "backend"
 BACKUP_ROOT = Path(os.environ.get("BACKUP_ROOT", "/home/ubuntu/backups"))
 USERS_DIR = BACKUP_ROOT / "users"
 LOG_DIR = BACKUP_ROOT / "logs"
@@ -45,15 +46,18 @@ RETENTION_DAYS = 7
 HEALTH_CHECK_DAYS = 30  # daily_health_checks/change_events 최근 N일만
 KST = timezone(timedelta(hours=9))
 
-# .env 로드 (S3 옵션)
-ENV_FILE = APP_DIR / "backend" / ".env"
+# 백엔드 모듈을 import 할 수 있도록 sys.path / 작업 디렉터리 설정
+sys.path.insert(0, str(BACKEND_DIR))
+os.chdir(BACKEND_DIR)
+
+# .env 로드 (DATABASE_URL 등) — backend/.env 가 우선
+ENV_FILE = BACKEND_DIR / ".env"
 if ENV_FILE.is_file():
     for raw in ENV_FILE.read_text(encoding="utf-8").splitlines():
         line = raw.strip()
         if not line or line.startswith("#") or "=" not in line:
             continue
         k, v = line.split("=", 1)
-        # 환경에 이미 있으면 덮어쓰지 않음
         os.environ.setdefault(k.strip(), v.strip().strip('"').strip("'"))
 
 # ── 로깅 ──────────────────────────────────────────
@@ -76,87 +80,155 @@ def now_kst() -> datetime:
 
 
 def safe_email(email: str | None) -> str:
-    """이메일을 파일명에 안전한 문자열로 변환."""
     if not email:
         return "unknown"
     return re.sub(r"[^A-Za-z0-9._-]+", "_", email)[:80]
 
 
-def row_to_dict(row: sqlite3.Row) -> dict[str, Any]:
-    d: dict[str, Any] = {}
-    for k in row.keys():
-        v = row[k]
-        # 바이트 → base64-ish 문자열은 우리 모델엔 없음. 그대로 직렬화.
-        d[k] = v
-    return d
-
-
-def fetch_all(conn: sqlite3.Connection, sql: str, params: tuple = ()) -> list[dict[str, Any]]:
+# ── 앱 모델 import — venv 활성화 후 ───────────────
+def _import_app():
+    """venv 활성화된 환경에서 SQLAlchemy 엔진/모델 import."""
     try:
-        cur = conn.execute(sql, params)
-        return [row_to_dict(r) for r in cur.fetchall()]
-    except sqlite3.OperationalError as e:
-        # 테이블이 아직 마이그레이션되지 않은 경우 등 — 빈 리스트로 폴백
-        if "no such table" in str(e).lower():
-            logger.warning("Table missing, skipping: %s", e)
-            return []
-        raise
+        from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
+        from sqlalchemy import select, text
+    except ImportError:
+        logger.error("SQLAlchemy not available — must run in app venv "
+                     "(systemd unit ExecStart should use venv python)")
+        sys.exit(10)
+    return create_async_engine, AsyncSession, select, text
 
 
-def fetch_one(conn: sqlite3.Connection, sql: str, params: tuple = ()) -> dict[str, Any] | None:
-    cur = conn.execute(sql, params)
-    r = cur.fetchone()
-    return row_to_dict(r) if r else None
+def _row_to_dict(row: Any) -> dict[str, Any]:
+    """SQLAlchemy Row → dict (모든 컬럼)."""
+    if hasattr(row, "_mapping"):
+        return {k: _coerce(v) for k, v in dict(row._mapping).items()}
+    return {k: _coerce(v) for k, v in dict(row).items()}
 
 
-def export_user(conn: sqlite3.Connection, user_id: int) -> dict[str, Any]:
-    """단일 사용자에 대한 모든 관련 데이터를 dict 로 반환."""
-    user = fetch_one(conn, "SELECT * FROM users WHERE id = ?", (user_id,))
-    if not user:
-        raise ValueError(f"user not found: id={user_id}")
+def _coerce(v: Any) -> Any:
+    """JSON 직렬화에 안전한 형으로 변환."""
+    if isinstance(v, datetime):
+        return v.isoformat()
+    if isinstance(v, (bytes, bytearray)):
+        try:
+            return v.decode("utf-8")
+        except UnicodeDecodeError:
+            import base64
+            return {"__b64__": base64.b64encode(v).decode("ascii")}
+    return v
 
-    # 비밀번호 해시 제거 (안전성) — 모델 변천에 대비해 가능한 컬럼명 모두 제거
-    for k in ("hashed_password", "password_hash", "password"):
-        user.pop(k, None)
 
-    places = fetch_all(
-        conn,
-        "SELECT * FROM registered_places WHERE user_id = ? ORDER BY id",
-        (user_id,),
-    )
+async def _async_export_all() -> tuple[int, int, int]:
+    """모든 사용자 export. (success, fail, total_bytes) 반환."""
+    create_async_engine, AsyncSession, select, text = _import_app()
+
+    db_url = os.environ.get("DATABASE_URL", "sqlite+aiosqlite:///./regional_monitor.db")
+    logger.info("DB: %s", _redact_password(db_url))
+
+    engine = create_async_engine(db_url, future=True)
+
+    today = now_kst().strftime("%Y-%m-%d")
+    cutoff_iso = (now_kst() - timedelta(days=HEALTH_CHECK_DAYS)).isoformat()
+
+    success = 0
+    failure = 0
+    total_bytes = 0
+
+    async with engine.connect() as conn:
+        # 사용자 목록
+        users_rows = (await conn.execute(text(
+            "SELECT id, email FROM users ORDER BY id"
+        ))).fetchall()
+        logger.info("Found %d user(s)", len(users_rows))
+
+        for u in users_rows:
+            uid = u.id
+            email = u.email
+            fname = f"user_{uid}_{safe_email(email)}_{today}.json.gz"
+            out_path = USERS_DIR / fname
+            try:
+                data = await _export_one(conn, uid, cutoff_iso, text)
+                size = _write_gz_json(out_path, data)
+                total_bytes += size
+                success += 1
+                logger.info(
+                    "OK user_id=%d email=%s places=%d events=%d "
+                    "checks=%d jobs=%d payments=%d size=%.1fKB",
+                    uid, email,
+                    data["counts"]["places"],
+                    data["counts"]["change_events"],
+                    data["counts"]["daily_health_checks"],
+                    data["counts"]["verify_jobs"],
+                    data["counts"]["payments"],
+                    size / 1024,
+                )
+                _upload_to_s3(out_path, f"users/{fname}")
+            except Exception as e:  # noqa: BLE001
+                failure += 1
+                logger.exception("FAIL user_id=%s email=%s: %s", uid, email, e)
+
+    await engine.dispose()
+    return success, failure, total_bytes
+
+
+async def _export_one(conn, user_id: int, cutoff_iso: str, text) -> dict[str, Any]:
+    """단일 사용자 데이터 export."""
+    # users (1행, hashed_password 제외)
+    user_row = (await conn.execute(
+        text("SELECT * FROM users WHERE id = :uid"),
+        {"uid": user_id},
+    )).fetchone()
+    if not user_row:
+        raise ValueError(f"user not found: {user_id}")
+    user = _row_to_dict(user_row)
+    user.pop("hashed_password", None)
+
+    # registered_places
+    places_rows = (await conn.execute(
+        text("SELECT * FROM registered_places WHERE user_id = :uid ORDER BY id"),
+        {"uid": user_id},
+    )).fetchall()
+    places = [_row_to_dict(r) for r in places_rows]
     place_ids = [p["id"] for p in places]
 
-    cutoff = (now_kst() - timedelta(days=HEALTH_CHECK_DAYS)).strftime("%Y-%m-%d %H:%M:%S")
-
+    # daily_health_checks (place 들 + 최근 30일)
     daily_checks: list[dict[str, Any]] = []
     change_events: list[dict[str, Any]] = []
     if place_ids:
-        # SQLite IN 절 — placeholder 동적 생성
-        placeholders = ",".join("?" * len(place_ids))
-        daily_checks = fetch_all(
-            conn,
-            f"SELECT * FROM daily_health_checks "
-            f"WHERE place_id_ref IN ({placeholders}) AND checked_at >= ? "
-            f"ORDER BY checked_at DESC",
-            tuple(place_ids) + (cutoff,),
-        )
-        change_events = fetch_all(
-            conn,
-            f"SELECT * FROM change_events "
-            f"WHERE place_id_ref IN ({placeholders}) AND detected_at >= ? "
-            f"ORDER BY detected_at DESC",
-            tuple(place_ids) + (cutoff,),
-        )
+        # bind list — SQLAlchemy text() expanding via tuple
+        from sqlalchemy import bindparam
+        dh_stmt = text(
+            "SELECT * FROM daily_health_checks "
+            "WHERE place_id_ref IN :pids AND checked_at >= :cut "
+            "ORDER BY checked_at DESC"
+        ).bindparams(bindparam("pids", expanding=True))
+        rows = (await conn.execute(
+            dh_stmt, {"pids": place_ids, "cut": cutoff_iso}
+        )).fetchall()
+        daily_checks = [_row_to_dict(r) for r in rows]
 
-    verify_jobs = fetch_all(
-        conn,
-        "SELECT * FROM verify_jobs WHERE user_id = ? ORDER BY id DESC",
-        (user_id,),
+        ce_stmt = text(
+            "SELECT * FROM change_events "
+            "WHERE place_id_ref IN :pids AND detected_at >= :cut "
+            "ORDER BY detected_at DESC"
+        ).bindparams(bindparam("pids", expanding=True))
+        rows = (await conn.execute(
+            ce_stmt, {"pids": place_ids, "cut": cutoff_iso}
+        )).fetchall()
+        change_events = [_row_to_dict(r) for r in rows]
+
+    # verify_jobs (없을 수 있음)
+    verify_jobs = await _safe_select(
+        conn, text,
+        "SELECT * FROM verify_jobs WHERE user_id = :uid ORDER BY id DESC",
+        {"uid": user_id},
     )
-    payments = fetch_all(
-        conn,
-        "SELECT * FROM payments WHERE user_id = ? ORDER BY id DESC",
-        (user_id,),
+
+    # payments
+    payments = await _safe_select(
+        conn, text,
+        "SELECT * FROM payments WHERE user_id = :uid ORDER BY id DESC",
+        {"uid": user_id},
     )
 
     return {
@@ -178,15 +250,32 @@ def export_user(conn: sqlite3.Connection, user_id: int) -> dict[str, Any]:
     }
 
 
-def write_gz_json(path: Path, data: dict[str, Any]) -> int:
+async def _safe_select(conn, text, sql: str, params: dict) -> list[dict[str, Any]]:
+    """테이블 부재 등으로 실패시 빈 리스트로 폴백."""
+    try:
+        rows = (await conn.execute(text(sql), params)).fetchall()
+        return [_row_to_dict(r) for r in rows]
+    except Exception as e:  # noqa: BLE001
+        msg = str(e).lower()
+        if "no such table" in msg or "does not exist" in msg or "undefined" in msg:
+            logger.warning("Table missing, skipping: %s", e)
+            return []
+        raise
+
+
+def _redact_password(url: str) -> str:
+    """로그용 — DATABASE_URL 의 비밀번호 부분 가린다."""
+    return re.sub(r"(://[^:/@]+):([^@]+)@", r"\1:***@", url)
+
+
+def _write_gz_json(path: Path, data: dict[str, Any]) -> int:
     payload = json.dumps(data, ensure_ascii=False, default=str, indent=2)
     with gzip.open(path, "wb", compresslevel=9) as f:
         f.write(payload.encode("utf-8"))
     return path.stat().st_size
 
 
-def upload_to_s3(local_path: Path, key: str) -> bool:
-    """S3 업로드 (활성화시). 실패해도 백업 자체는 성공으로 간주."""
+def _upload_to_s3(local_path: Path, key: str) -> bool:
     if os.environ.get("BACKUP_S3_ENABLED", "false").lower() != "true":
         return False
     bucket = os.environ.get("BACKUP_S3_BUCKET")
@@ -202,18 +291,17 @@ def upload_to_s3(local_path: Path, key: str) -> bool:
         subprocess.run(
             ["aws", "s3", "cp", str(local_path), s3_uri,
              "--region", region, "--no-progress"],
-            check=True,
-            capture_output=True,
+            check=True, capture_output=True,
         )
         logger.info("S3 upload OK: %s", s3_uri)
         return True
     except subprocess.CalledProcessError as e:
-        logger.warning("S3 upload failed: %s", e.stderr.decode(errors="replace") if e.stderr else e)
+        logger.warning("S3 upload failed: %s",
+                       e.stderr.decode(errors="replace") if e.stderr else e)
         return False
 
 
-def cleanup_old(directory: Path) -> int:
-    """7일 초과 파일 삭제, 삭제 개수 반환."""
+def _cleanup_old(directory: Path) -> int:
     cutoff = time.time() - RETENTION_DAYS * 86400
     removed = 0
     for p in directory.glob("user_*.json.gz"):
@@ -228,62 +316,22 @@ def cleanup_old(directory: Path) -> int:
 
 def main() -> int:
     logger.info("─── Per-user export start ───")
-
-    if not DB_PATH.is_file():
-        logger.error("DB not found: %s", DB_PATH)
-        return 1
-
-    today = now_kst().strftime("%Y-%m-%d")
-    conn = sqlite3.connect(f"file:{DB_PATH}?mode=ro", uri=True)
-    conn.row_factory = sqlite3.Row
-
     try:
-        users = fetch_all(conn, "SELECT id, email FROM users ORDER BY id")
-        logger.info("Found %d user(s)", len(users))
+        success, failure, total_bytes = asyncio.run(_async_export_all())
+    except Exception as e:  # noqa: BLE001
+        logger.exception("export failed: %s", e)
+        return 99
 
-        success = 0
-        failure = 0
-        total_bytes = 0
+    logger.info(
+        "Export summary: success=%d fail=%d total_size=%.1fKB",
+        success, failure, total_bytes / 1024,
+    )
 
-        for u in users:
-            uid = u["id"]
-            email = u["email"]
-            fname = f"user_{uid}_{safe_email(email)}_{today}.json.gz"
-            out_path = USERS_DIR / fname
-            try:
-                data = export_user(conn, uid)
-                size = write_gz_json(out_path, data)
-                total_bytes += size
-                success += 1
-                logger.info(
-                    "OK user_id=%d email=%s places=%d events=%d jobs=%d "
-                    "size=%.1fKB",
-                    uid, email,
-                    data["counts"]["places"],
-                    data["counts"]["change_events"],
-                    data["counts"]["verify_jobs"],
-                    size / 1024,
-                )
-                # S3
-                upload_to_s3(out_path, f"users/{fname}")
-            except Exception as e:  # noqa: BLE001
-                failure += 1
-                logger.exception("FAIL user_id=%d email=%s: %s", uid, email, e)
+    removed = _cleanup_old(USERS_DIR)
+    logger.info("Removed %d old file(s) (>%dd)", removed, RETENTION_DAYS)
 
-        logger.info(
-            "Export summary: success=%d fail=%d total_size=%.1fKB",
-            success, failure, total_bytes / 1024,
-        )
-
-        removed = cleanup_old(USERS_DIR)
-        logger.info("Removed %d old file(s) (>%dd)", removed, RETENTION_DAYS)
-
-        remaining = len(list(USERS_DIR.glob("user_*.json.gz")))
-        logger.info("Remaining: %d file(s)", remaining)
-
-    finally:
-        conn.close()
-
+    remaining = len(list(USERS_DIR.glob("user_*.json.gz")))
+    logger.info("Remaining: %d file(s)", remaining)
     logger.info("─── Per-user export completed ───")
     return 0 if failure == 0 else 2
 

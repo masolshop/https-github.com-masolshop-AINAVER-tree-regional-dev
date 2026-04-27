@@ -47,9 +47,11 @@ CATEGORY_PATTERNS: dict[str, str] = {
     "code":  "code_*.tar.gz",
 }
 
+VENV_PY = APP_DIR / "backend" / "venv" / "bin" / "python"
 CATEGORY_SCRIPTS: dict[str, list[str]] = {
     "db":    ["/bin/bash", str(SCRIPT_DIR / "backup_db.sh")],
-    "users": ["/usr/bin/python3", str(SCRIPT_DIR / "backup_users.py")],
+    "users": [str(VENV_PY) if VENV_PY.exists() else "/usr/bin/python3",
+              str(SCRIPT_DIR / "backup_users.py")],
     "code":  ["/bin/bash", str(SCRIPT_DIR / "backup_code.sh")],
 }
 
