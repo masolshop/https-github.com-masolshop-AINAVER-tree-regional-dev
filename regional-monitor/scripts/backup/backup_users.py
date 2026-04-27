@@ -128,8 +128,10 @@ async def _async_export_all() -> tuple[int, int, int]:
     engine = create_async_engine(db_url, future=True)
 
     today = now_kst().strftime("%Y-%m-%d")
-    # asyncpg/SQLAlchemy needs a datetime instance, not a string.
-    cutoff_dt = now_kst() - timedelta(days=HEALTH_CHECK_DAYS)
+    # asyncpg + naive timestamp columns: pass a naive datetime in the same
+    # local time (KST) the rows were written in. Stripping tzinfo aligns
+    # comparison with the existing naive values in the DB.
+    cutoff_dt = (now_kst() - timedelta(days=HEALTH_CHECK_DAYS)).replace(tzinfo=None)
 
     success = 0
     failure = 0
