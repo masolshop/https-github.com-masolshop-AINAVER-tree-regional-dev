@@ -42,7 +42,8 @@ CATEGORY_DIRS: dict[str, Path] = {
 }
 
 CATEGORY_PATTERNS: dict[str, str] = {
-    "db":    "db_*.sqlite.gz",
+    # db: matches both db_*.sqlite.gz (SQLite hot-copy) and db_*.sql.gz (pg_dump)
+    "db":    "db_*.gz",
     "users": "user_*.json.gz",
     "code":  "code_*.tar.gz",
 }
