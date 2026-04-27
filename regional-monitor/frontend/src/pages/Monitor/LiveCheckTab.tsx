@@ -1,19 +1,24 @@
 /**
- * Monitor — Tab 2: 실시간 노출 확인 (실 API 연동)
- *  ├─ 상단: 즉시 검증 실행 버튼 + 진행 상태(요청 inflight)
+ * Monitor — Tab 2: 실시간 노출 확인 (실 API 연동, 청크 분할 호출)
+ *  ├─ 상단: 즉시 검증 실행 버튼 + 청크 진행률 + 청크 크기 선택
  *  ├─ 4중 검증 결과 요약 (정상/주의/심각 + 평균응답/처리량)
  *  └─ 상세 결과 테이블 (등록값 vs 실제값 비교)
  *
  * 백엔드 호출:
- *   POST /api/v1/verify/live    body { place_ids: number[] | null }
- *   place_ids === null  → 전체 등록 검증
+ *   POST /api/v1/verify/live    body { place_ids: number[] }
+ *   - 1500건 한번에 호출 시 ~3분 소요 → 프론트 axios 타임아웃 위험
+ *   - 그래서 클라이언트가 200건씩 청크로 나눠 순차 호출
+ *   - 청크별 결과는 누적해서 한번에 보여줌
  */
+import { useState, useMemo, useRef } from 'react'
 import { Card } from '@/components/ui/Card'
 import { VerdictBadge } from './VerdictBadge'
-import { useLiveCheck } from '@/hooks/useLiveCheck'
 import { usePlacesList } from '@/hooks/usePlaces'
+import { useQueryClient } from '@tanstack/react-query'
+import { runLiveCheck } from '@/api/places'
 import { ApiError } from '@/api/client'
 import type { VerificationResult } from '@/api/types'
+import { placeKeys } from '@/hooks/usePlaces'
 import {
   Play,
   Loader2,
@@ -26,35 +31,153 @@ import {
   Clock,
   Zap,
   AlertTriangle,
+  StopCircle,
 } from 'lucide-react'
 
+const DEFAULT_CHUNK_SIZE = 200      // 청크당 200건 (~30초/청크)
+const CHUNK_DELAY_MS = 200          // 청크 사이 휴식 (네이버 부하 분산)
+
 export default function LiveCheckTab() {
+  const qc = useQueryClient()
   const { data: placesData } = usePlacesList()
-  const liveCheck = useLiveCheck()
+
+  // 청크 처리 상태
+  const [running, setRunning] = useState(false)
+  const [chunkSize, setChunkSize] = useState<number>(DEFAULT_CHUNK_SIZE)
+  const [progress, setProgress] = useState({ chunk: 0, totalChunks: 0, done: 0, total: 0 })
+  const [results, setResults] = useState<VerificationResult[]>([])
+  const [totalMs, setTotalMs] = useState(0)
+  const [errorMsg, setErrorMsg] = useState<string | null>(null)
+  const cancelRef = useRef(false)
 
   const totalRegistered = placesData?.summary.total ?? 0
-  const running = liveCheck.isPending
-  const apiResp = liveCheck.data
-  const results: VerificationResult[] = apiResp?.results ?? []
-  const error = liveCheck.error
+  const allPlaceIds = useMemo(
+    () => (placesData?.items ?? []).map((p) => p.id),
+    [placesData?.items],
+  )
 
-  const summary = apiResp?.summary ?? { ok: 0, warning: 0, danger: 0 }
+  // 누적 요약
+  const summary = useMemo(() => {
+    const s = { ok: 0, warning: 0, danger: 0 }
+    for (const r of results) {
+      if (r.verdict === 'OK') s.ok++
+      else if (
+        r.verdict === 'PHONE_MISMATCH' ||
+        r.verdict === 'DONG_MISMATCH' ||
+        r.verdict === 'NAME_MISMATCH'
+      )
+        s.warning++
+      else if (r.verdict === 'REGION_MISMATCH' || r.verdict === 'DEAD') s.danger++
+    }
+    return s
+  }, [results])
 
-  const startCheck = () => {
+  const avgMs = useMemo(() => {
+    if (results.length === 0) return 0
+    const sum = results.reduce((a, r) => a + (r.response_ms || 0), 0)
+    return Math.round(sum / results.length)
+  }, [results])
+
+  const throughput = useMemo(() => {
+    if (totalMs === 0 || results.length === 0) return 0
+    return Number(((results.length / totalMs) * 1000).toFixed(1))
+  }, [results.length, totalMs])
+
+  const startCheck = async () => {
     if (totalRegistered === 0) {
       alert('등록된 070 번호가 없습니다. 먼저 "등록 관리" 탭에서 등록해 주세요.')
       return
     }
-    // 전체 검증 (place_ids 미지정 → 백엔드가 모든 등록 검증)
-    liveCheck.mutate({})
+    if (running) return
+
+    // 초기화
+    setRunning(true)
+    setErrorMsg(null)
+    setResults([])
+    setTotalMs(0)
+    cancelRef.current = false
+
+    const ids = [...allPlaceIds]
+    const chunks: number[][] = []
+    for (let i = 0; i < ids.length; i += chunkSize) {
+      chunks.push(ids.slice(i, i + chunkSize))
+    }
+
+    setProgress({
+      chunk: 0,
+      totalChunks: chunks.length,
+      done: 0,
+      total: ids.length,
+    })
+
+    console.log(
+      `[LiveCheck] 시작: ${ids.length}건을 ${chunks.length}개 청크로 분할 (청크 크기: ${chunkSize})`,
+    )
+
+    let accResults: VerificationResult[] = []
+    let accMs = 0
+    const t0 = performance.now()
+
+    try {
+      for (let i = 0; i < chunks.length; i++) {
+        if (cancelRef.current) {
+          console.log(`[LiveCheck] 사용자 취소 (청크 ${i + 1}/${chunks.length})`)
+          break
+        }
+        const chunk = chunks[i]
+        console.log(`[LiveCheck] 청크 ${i + 1}/${chunks.length} 전송 중 (${chunk.length}건)…`)
+        setProgress((p) => ({ ...p, chunk: i + 1 }))
+
+        const ts = performance.now()
+        const resp = await runLiveCheck({ place_ids: chunk })
+        const elapsed = Math.round(performance.now() - ts)
+
+        accMs += resp.total_ms || elapsed
+        accResults = accResults.concat(resp.results || [])
+        setResults([...accResults])
+        setTotalMs(accMs)
+        setProgress((p) => ({ ...p, done: accResults.length }))
+
+        console.log(
+          `[LiveCheck] 청크 ${i + 1}/${chunks.length} 완료 (${elapsed}ms): ` +
+            `누적 ${accResults.length}/${ids.length}, ` +
+            `ok=${resp.summary?.ok ?? 0} warn=${resp.summary?.warning ?? 0} dgr=${resp.summary?.danger ?? 0}`,
+        )
+
+        // 마지막 청크가 아니면 잠시 휴식 (네이버 부하 분산)
+        if (i < chunks.length - 1) {
+          await new Promise((r) => setTimeout(r, CHUNK_DELAY_MS))
+        }
+      }
+
+      const total = Math.round(performance.now() - t0)
+      console.log(
+        `[LiveCheck] 완료: ${accResults.length}/${ids.length}건 (총 ${total}ms)`,
+      )
+      // Places 캐시 무효화 — verdict 갱신 반영
+      qc.invalidateQueries({ queryKey: placeKeys.all })
+    } catch (e: unknown) {
+      const msg = formatApiError(e)
+      console.error('[LiveCheck] 실패:', msg, e)
+      setErrorMsg(msg)
+    } finally {
+      setRunning(false)
+    }
   }
+
+  const cancel = () => {
+    cancelRef.current = true
+  }
+
+  const progressPct =
+    progress.total > 0 ? Math.round((progress.done / progress.total) * 100) : 0
 
   return (
     <div className="space-y-6">
       {/* ───── 즉시 검증 실행 패널 ───── */}
       <Card variant="dark" className="min-h-[180px]">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-5">
-          <div>
+          <div className="flex-1">
             <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-pill bg-white/15 text-white/90 text-caption font-bold uppercase tracking-wider mb-3">
               <ShieldCheck size={12} /> live verification
             </span>
@@ -63,51 +186,91 @@ export default function LiveCheckTab() {
               등록된 <span className="font-bold text-white">{totalRegistered}</span>개의 070
               번호에 대해 플레이스 ID 기반 4중 검증을 수행합니다.
               <br />
-              평균 0.4~0.7초/건 (백엔드 동시 8요청 병렬).
+              <span className="text-caption text-white/60">
+                {chunkSize}건씩 청크로 나눠 순차 호출 · 청크당 ~30초 ·
+                청크 사이 {CHUNK_DELAY_MS}ms 휴식 (네이버 부하 분산)
+              </span>
             </p>
           </div>
-          <button
-            type="button"
-            onClick={startCheck}
-            disabled={running || totalRegistered === 0}
-            className="inline-flex items-center gap-2 px-6 py-3 rounded-pill bg-white text-brand-700 font-bold text-body shadow-card hover:shadow-card-hover disabled:opacity-50 disabled:cursor-not-allowed transition-all whitespace-nowrap"
-          >
-            {running ? (
-              <>
-                <Loader2 size={16} className="animate-spin" />
-                검증 진행 중…
-              </>
-            ) : (
-              <>
-                <Play size={16} /> 지금 검증 시작
-              </>
+
+          <div className="flex flex-col items-end gap-2">
+            {/* 청크 크기 선택 (running이 아닐 때만) */}
+            {!running && (
+              <label className="text-caption text-white/70 flex items-center gap-2">
+                청크 크기
+                <select
+                  value={chunkSize}
+                  onChange={(e) => setChunkSize(Number(e.target.value))}
+                  className="px-2 py-1 rounded bg-white/10 text-white text-caption border border-white/20 focus:outline-none focus:ring-2 focus:ring-white/30"
+                >
+                  <option value={50} className="text-ink">50건</option>
+                  <option value={100} className="text-ink">100건</option>
+                  <option value={200} className="text-ink">200건 (권장)</option>
+                  <option value={500} className="text-ink">500건</option>
+                </select>
+              </label>
             )}
-          </button>
+
+            <div className="flex gap-2">
+              {running && (
+                <button
+                  type="button"
+                  onClick={cancel}
+                  className="inline-flex items-center gap-2 px-4 py-3 rounded-pill bg-red-500/90 hover:bg-red-500 text-white font-semibold text-body-sm transition-all"
+                >
+                  <StopCircle size={16} /> 취소
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={startCheck}
+                disabled={running || totalRegistered === 0}
+                className="inline-flex items-center gap-2 px-6 py-3 rounded-pill bg-white text-brand-700 font-bold text-body shadow-card hover:shadow-card-hover disabled:opacity-50 disabled:cursor-not-allowed transition-all whitespace-nowrap"
+              >
+                {running ? (
+                  <>
+                    <Loader2 size={16} className="animate-spin" />
+                    검증 진행 중…
+                  </>
+                ) : (
+                  <>
+                    <Play size={16} /> 지금 검증 시작
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
         </div>
 
-        {/* 진행 인디케이터 (백엔드는 일괄 응답이라 부정형 진행률 대신 펄스 바) */}
-        {running && (
+        {/* 청크별 진행률 막대 */}
+        {running && progress.totalChunks > 0 && (
           <div className="mt-5">
-            <div className="h-2 bg-white/15 rounded-full overflow-hidden">
-              <div className="h-full w-1/3 bg-gradient-to-r from-brand-300 to-white rounded-full animate-pulse" />
+            <div className="flex items-center justify-between text-caption text-white/80 mb-2 tabular-nums">
+              <span>
+                청크 {progress.chunk}/{progress.totalChunks} · {progress.done}/{progress.total}건
+              </span>
+              <span>{progressPct}%</span>
             </div>
-            <p className="text-caption text-white/60 mt-2">
-              {totalRegistered}건 검증 중… 백엔드가 병렬로 처리합니다.
-            </p>
+            <div className="h-2 bg-white/15 rounded-full overflow-hidden">
+              <div
+                className="h-full bg-gradient-to-r from-brand-300 to-white rounded-full transition-all duration-300"
+                style={{ width: `${progressPct}%` }}
+              />
+            </div>
           </div>
         )}
       </Card>
 
       {/* ───── 에러 표시 ───── */}
-      {error && (
+      {errorMsg && (
         <div className="px-4 py-3 rounded-card bg-red-50 border border-red-200 text-status-danger flex items-center gap-2">
           <AlertTriangle size={14} />
-          검증 실패: {formatApiError(error)}
+          검증 실패: {errorMsg}
         </div>
       )}
 
-      {/* ───── 결과 요약 (검증 완료 시) ───── */}
-      {results.length > 0 && apiResp && (
+      {/* ───── 결과 요약 (1건 이상 결과 누적 시) ───── */}
+      {results.length > 0 && (
         <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
           <SummaryStat
             icon={<CheckCircle2 size={16} />}
@@ -130,14 +293,14 @@ export default function LiveCheckTab() {
           <SummaryStat
             icon={<Clock size={16} />}
             label="평균 응답"
-            value={`${apiResp.avg_ms}`}
+            value={`${avgMs}`}
             unit="ms"
             tone="info"
           />
           <SummaryStat
             icon={<Zap size={16} />}
             label="처리량"
-            value={`${apiResp.throughput.toFixed(1)}`}
+            value={`${throughput.toFixed(1)}`}
             unit="req/s"
             tone="info"
           />
@@ -152,12 +315,12 @@ export default function LiveCheckTab() {
             <p className="text-caption text-ink-muted mt-0.5">
               {results.length === 0
                 ? '"지금 검증 시작" 버튼을 눌러 실시간 검증을 수행하세요.'
-                : `4중 검증: ✓ 페이지 생존 / ✓ 전화 일치 / ✓ 동 일치 / ✓ 상호 일치`}
+                : `4중 검증: ✓ 페이지 생존 / ✓ 전화 일치 / ✓ 동 일치 / ✓ 상호 일치 (총 ${results.length}건)`}
             </p>
           </div>
-          {apiResp && (
+          {totalMs > 0 && (
             <div className="text-caption text-ink-muted tabular-nums">
-              총 {apiResp.total_ms}ms 소요
+              총 {totalMs}ms 누적
             </div>
           )}
         </div>
@@ -190,19 +353,19 @@ export default function LiveCheckTab() {
                         {r.phone}
                       </div>
                       <div className="text-caption text-ink-muted font-mono mt-0.5">
-                        {r.place_id}
+                        {r.place_id ?? '—'}
                       </div>
                     </td>
                     <td className="px-3 py-3 text-caption">
                       <ComparisonRow
                         icon={<MapPin size={11} />}
-                        expected={r.registered_dong}
+                        expected={r.registered_dong ?? '—'}
                         actual={r.detail.actual_dong ?? '—'}
                         match={r.detail.dong_match}
                       />
                       <ComparisonRow
                         icon={<Building2 size={11} />}
-                        expected={r.business_name}
+                        expected={r.business_name ?? '—'}
                         actual={r.detail.actual_name ?? '—'}
                         match={r.detail.name_match}
                       />

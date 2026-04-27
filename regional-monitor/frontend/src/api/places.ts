@@ -64,8 +64,11 @@ export const bulkDeletePlaces = (req: PlaceBulkDeleteRequest) =>
   })
 
 /* ─────────── Live Verification ─────────── */
+/** 즉시 검증. 클라이언트가 200건 청크로 나눠 호출.
+ *  청크 1개 = 200건 × 평균 1.5s ÷ 동시10 ≈ 30s. 차단/재시도 여유 240초.
+ */
 export const runLiveCheck = (req: LiveCheckRequest = {}) =>
-  api.post<LiveCheckResponse>('/api/v1/verify/live', req, { timeoutMs: 60_000 })
+  api.post<LiveCheckResponse>('/api/v1/verify/live', req, { timeoutMs: 240_000 })
 
 /* ─────────── Bulk Verification (대용량 청크 작업) ─────────── */
 /** 새 검증 작업 생성 (사용자당 동시 1개). place_ids 비우면 전체. */

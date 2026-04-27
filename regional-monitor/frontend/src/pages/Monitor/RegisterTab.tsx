@@ -95,9 +95,9 @@ export default function RegisterTab() {
     return places.filter(
       (p) =>
         p.phone.toLowerCase().includes(q) ||
-        p.business_name.toLowerCase().includes(q) ||
-        p.registered_dong.toLowerCase().includes(q) ||
-        p.place_id.includes(q),
+        (p.business_name?.toLowerCase().includes(q) ?? false) ||
+        (p.registered_dong?.toLowerCase().includes(q) ?? false) ||
+        (p.place_id?.includes(q) ?? false),
     )
   }, [places, search])
 
@@ -494,14 +494,16 @@ export default function RegisterTab() {
                       {p.phone}
                     </td>
                     <td className="px-3 py-3 text-ink-muted tabular-nums font-mono text-caption">
-                      {p.place_id}
+                      {p.place_id ?? <span className="text-ink-soft italic">—</span>}
                     </td>
-                    <td className="px-3 py-3 text-ink">{p.registered_dong}</td>
+                    <td className="px-3 py-3 text-ink">
+                      {p.registered_dong ?? <span className="text-ink-soft italic">—</span>}
+                    </td>
                     <td
                       className="px-3 py-3 text-ink truncate max-w-[200px]"
-                      title={p.business_name}
+                      title={p.business_name ?? undefined}
                     >
-                      {p.business_name}
+                      {p.business_name ?? <span className="text-ink-soft italic">—</span>}
                     </td>
                     <td className="px-3 py-3">
                       <VerdictBadge verdict={p.current_verdict} />

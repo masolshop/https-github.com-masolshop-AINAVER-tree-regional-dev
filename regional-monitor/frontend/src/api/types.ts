@@ -56,9 +56,10 @@ export interface PlaceUpdate {
 export interface PlaceOut {
   id: number
   phone: string
-  place_id: string
-  registered_dong: string
-  business_name: string
+  // 등록 직후(추출 전)에는 NULL 일 수 있음. 검증 시 자동 채워짐.
+  place_id: string | null
+  registered_dong: string | null
+  business_name: string | null
   full_address: string | null
   category: string | null
   current_verdict: ApiVerdict
@@ -155,9 +156,10 @@ export interface VerificationDetail {
 export interface VerificationResult {
   place_id_ref: number
   phone: string
-  place_id: string
-  registered_dong: string
-  business_name: string
+  // 등록 직후(미추출) 검증 시 NULL 가능
+  place_id: string | null
+  registered_dong: string | null
+  business_name: string | null
   detail: VerificationDetail
   verdict: ApiVerdict
   response_ms: number
