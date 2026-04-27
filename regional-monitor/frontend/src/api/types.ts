@@ -135,6 +135,7 @@ export interface User {
   quota_places: number
   is_profile_complete: boolean
   agreed_marketing: boolean
+  verify_slot: number              // 0~23 (KST 기준 자동 검증 시각)
   created_at: string
 }
 
@@ -165,4 +166,48 @@ export interface ProfileCompleteRequest {
 
 export interface MeResponse {
   user: User
+}
+
+/* ─────────── /api/v1/events ─────────── */
+
+/** 변경 이벤트 종류 — 백엔드 services/persist.py classify_event() 와 동기화 */
+export type ChangeEventType =
+  | 'PAGE_DELETED'    // 페이지 삭제 (DEAD)
+  | 'EXPOSURE_LOST'   // OK → 비-OK
+  | 'REGION_CHANGED'  // 시/도 단위 변경
+  | 'DONG_CHANGED'    // 동 변경
+  | 'NAME_CHANGED'    // 상호 변경
+  | 'RECOVERED'       // 비-OK → OK
+  | 'OTHER_CHANGED'
+
+export type ChangeEventSeverity = 'danger' | 'warning' | 'info'
+
+export interface ChangeEventOut {
+  id: number
+  place_id_ref: number
+  phone: string
+  business_name: string
+  event_type: ChangeEventType
+  severity: ChangeEventSeverity
+  prev_verdict: string
+  new_verdict: string
+  summary: string
+  detected_at: string             // ISO datetime (UTC)
+}
+
+export interface EventListOut {
+  items: ChangeEventOut[]
+  total: number
+}
+
+export interface UnreadCountOut {
+  unread: number
+  last_read_at: string | null
+}
+
+export interface SchedulerStatusOut {
+  next_run_at: string | null      // ISO datetime (KST, +09:00)
+  verify_slot: number             // 0~23 (KST)
+  verify_slot_label: string       // "매일 03:00 (KST)"
+  timezone: string                // "Asia/Seoul (KST, UTC+9)"
 }
