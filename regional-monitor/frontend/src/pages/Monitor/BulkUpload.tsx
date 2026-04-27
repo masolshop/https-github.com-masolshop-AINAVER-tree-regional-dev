@@ -10,12 +10,12 @@
  *   4) "업로드 시작" → POST /api/v1/places/bulk
  *   5) 행별 결과 테이블 (status: created/duplicate/invalid_phone/extract_failed/quota_exceeded)
  *
- * 업로드 동작:
+ * 업로드 동작 (Phase 1 — 추출 분리):
  *   - 한 파일에 최대 10,000건까지 허용
  *   - 클라이언트가 500건씩 청크로 나눠 POST /api/v1/places/bulk 를 순차 호출
+ *   - 백엔드는 phone만 DB에 저장 (네이버 호출 없음 → 매우 빠름)
  *   - 각 청크 결과를 누적 합산해 최종 결과 패널 표시
- *   - 진행률 (현재 청크 / 총 청크) 실시간 노출
- *   - 청크 사이 짧은 휴식(150ms)으로 네이버 부하 분산
+ *   - 추출+검증은 사용자가 "실시간 노출 확인 → 지금 검증 시작" 누를 때 수행
  */
 import { useRef, useState } from 'react'
 import {
@@ -39,7 +39,7 @@ import type { PlaceBulkResponse, BulkRowStatusKey } from '@/api/types'
 
 const MAX_ROWS = 10000              // 한 파일 업로드 상한
 const CHUNK_SIZE = 500              // 한 번 API 호출당 행 수 (네이버 부하 분산)
-const CHUNK_DELAY_MS = 150          // 청크 사이 짧은 휴식
+const CHUNK_DELAY_MS = 50           // 청크 사이 짧은 yield (DB INSERT만이라 짧게)
 const HEADER_PHONE_KEYS = ['phone', '070', '전화', '전화번호', '번호']
 const HEADER_DONG_KEYS = ['dong', '동', '등록동', '주소', 'address']
 const HEADER_NAME_KEYS = ['name', '상호', '상호명', '업체명', 'business']
@@ -113,6 +113,7 @@ export function BulkUpload() {
       processedRows: 0,
       totalRows: rows.length,
     })
+    console.log(`[BulkUpload] 시작: ${rows.length}건을 ${chunks.length}개 청크로 분할 (청크 크기: ${CHUNK_SIZE})`)
 
     // 결과 누적 합산
     const merged: PlaceBulkResponse = {
@@ -137,6 +138,8 @@ export function BulkUpload() {
         })
 
         const chunk = chunks[i]
+        const t0 = Date.now()
+        console.log(`[BulkUpload] 청크 ${i + 1}/${chunks.length} 전송 중 (${chunk.length}건)…`)
         const res = await bulkMut.mutateAsync({
           rows: chunk.map((r) => ({
             phone: r.phone,
@@ -144,6 +147,12 @@ export function BulkUpload() {
             business_name_override: r.name || null,
           })),
         })
+        const ms = Date.now() - t0
+        console.log(
+          `[BulkUpload] 청크 ${i + 1}/${chunks.length} 완료 (${ms}ms): ` +
+            `created=${res.created} dup=${res.duplicate} invalid=${res.invalid_phone} ` +
+            `extract_fail=${res.extract_failed} quota_exc=${res.quota_exceeded} remaining=${res.quota_remaining}`,
+        )
 
         // 합산
         merged.requested += res.requested

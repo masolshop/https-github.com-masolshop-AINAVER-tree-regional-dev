@@ -89,7 +89,7 @@ export interface PlaceBulkRow {
 }
 
 export interface PlaceBulkRequest {
-  rows: PlaceBulkRow[]                 // 1~100건
+  rows: PlaceBulkRow[]                 // 1~1000건 (권장 500건 청크)
 }
 
 export type BulkRowStatusKey =

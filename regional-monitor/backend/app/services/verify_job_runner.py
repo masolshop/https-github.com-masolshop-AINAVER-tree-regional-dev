@@ -28,6 +28,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import AsyncSessionLocal
 from app.core.config import settings
+from app.extractors import extract_place_from_phone
 from app.models.place import RegisteredPlace
 from app.models.user import User
 from app.models.verify_job import VerifyJob
@@ -43,6 +44,8 @@ _GLOBAL_JOB_SEMAPHORE = asyncio.Semaphore(50)
 CHUNK_CONCURRENCY = 10
 # 청크 사이 작은 yield 시간(ms)
 CHUNK_YIELD_MS = 50
+# 추출 단계 동시성 (네이버 부하 분산 — 검증보다 보수적으로)
+EXTRACT_CONCURRENCY = 5
 
 # 플랜별 1회 검증 한도
 PLAN_VERIFY_LIMIT = {
@@ -89,6 +92,54 @@ async def _load_places(db: AsyncSession, user_id: int, ids: list[int] | None) ->
 async def _refresh_job(db: AsyncSession, job_id: int) -> VerifyJob | None:
     res = await db.execute(select(VerifyJob).where(VerifyJob.id == job_id))
     return res.scalar_one_or_none()
+
+
+async def _extract_missing_place_ids(
+    chunk: list[RegisteredPlace],
+) -> tuple[list[RegisteredPlace], int, int]:
+    """청크 내 place_id가 NULL인 row들을 phone으로 추출해 채운다 (in-memory).
+
+    Returns:
+        (검증 가능한 place 리스트, 추출 성공 수, 추출 실패 수)
+
+    동작:
+      - place_id 가 이미 있는 row 는 그대로 반환
+      - 없는 row 는 extract_place_from_phone 호출 후 in-memory로 채움
+      - 추출 실패한 row는 검증 대상에서 제외하고 current_verdict='DEAD' 마크 (DB는 호출자가 commit)
+    """
+    needs_extract = [p for p in chunk if not p.place_id]
+    if not needs_extract:
+        return chunk, 0, 0
+
+    sem = asyncio.Semaphore(EXTRACT_CONCURRENCY)
+
+    async def _do(p: RegisteredPlace) -> tuple[RegisteredPlace, bool]:
+        async with sem:
+            try:
+                ex = await extract_place_from_phone(p.phone)
+            except Exception as e:                              # noqa: BLE001
+                logger.warning("extract failed phone=%s err=%s", p.phone, e)
+                return p, False
+            if ex.success and ex.place_id:
+                p.place_id = ex.place_id
+                if not p.business_name:
+                    p.business_name = ex.name or ""
+                if not p.registered_dong:
+                    p.registered_dong = ex.address or ex.dong or ""
+                if not p.full_address:
+                    p.full_address = ex.address
+                if not p.category:
+                    p.category = ex.category
+                return p, True
+            return p, False
+
+    results = await asyncio.gather(*(_do(p) for p in needs_extract))
+    success_count = sum(1 for _, ok in results if ok)
+    fail_count = len(results) - success_count
+
+    # place_id 가 채워진 것 + 원래부터 있던 것
+    verifiable = [p for p in chunk if p.place_id]
+    return verifiable, success_count, fail_count
 
 
 def _summarize(raw_results: list[dict]) -> tuple[int, int, int]:
@@ -161,32 +212,77 @@ async def run_job(job_id: int) -> None:
 
                 chunk = places[chunk_index : chunk_index + 500]
 
-                # 실제 검증 (HTTP 호출 — DB 세션 불필요)
-                t0 = time.perf_counter()
-                raw_results = await verify_batch(chunk, concurrency=CHUNK_CONCURRENCY)
-                elapsed_ms = int((time.perf_counter() - t0) * 1000)
+                # 0) 추출 단계 — place_id가 NULL인 row 들에 대해 phone→place_id 추출
+                t_extract = time.perf_counter()
+                verifiable_chunk, ext_ok, ext_fail = await _extract_missing_place_ids(chunk)
+                extract_ms = int((time.perf_counter() - t_extract) * 1000)
+                if ext_ok or ext_fail:
+                    logger.info(
+                        "verify_job %d chunk %d extract: ok=%d fail=%d (%d ms)",
+                        job_id, chunk_index // 500 + 1, ext_ok, ext_fail, extract_ms,
+                    )
+                    # 추출 결과를 DB에 즉시 반영 (in-memory 객체에만 채워졌으니 별도 commit)
+                    async with AsyncSessionLocal() as db:
+                        # in-memory 변경된 row 들을 다시 로드해 업데이트
+                        ids_to_update = [p.id for p in chunk if p.place_id]
+                        if ids_to_update:
+                            res = await db.execute(
+                                select(RegisteredPlace).where(RegisteredPlace.id.in_(ids_to_update))
+                            )
+                            db_places = {p.id: p for p in res.scalars().all()}
+                            for p in chunk:
+                                if not p.place_id:
+                                    continue
+                                dbp = db_places.get(p.id)
+                                if dbp:
+                                    dbp.place_id = p.place_id
+                                    if not dbp.business_name:
+                                        dbp.business_name = p.business_name
+                                    if not dbp.registered_dong:
+                                        dbp.registered_dong = p.registered_dong
+                                    if not dbp.full_address:
+                                        dbp.full_address = p.full_address
+                                    if not dbp.category:
+                                        dbp.category = p.category
+                            await db.commit()
+
+                # 1) 실제 검증 (place_id 있는 row만)
+                if not verifiable_chunk:
+                    logger.warning(
+                        "verify_job %d chunk %d: no verifiable places (all extracts failed)",
+                        job_id, chunk_index // 500 + 1,
+                    )
+                    raw_results = []
+                    elapsed_ms = 0
+                else:
+                    t0 = time.perf_counter()
+                    raw_results = await verify_batch(verifiable_chunk, concurrency=CHUNK_CONCURRENCY)
+                    elapsed_ms = int((time.perf_counter() - t0) * 1000)
 
                 # DB persist (새 세션)
                 async with AsyncSessionLocal() as db:
-                    persist_stats = await persist_results(db, raw_results)
+                    persist_stats = await persist_results(db, raw_results) if raw_results else {"new_events": []}
 
-                    # full_address 보강
-                    place_by_id = {p.id: p for p in chunk}
-                    place_in_db = (
-                        (await db.execute(
-                            select(RegisteredPlace).where(
-                                RegisteredPlace.id.in_(list(place_by_id.keys()))
-                            )
-                        )).scalars().all()
-                    )
-                    pid_in_db = {p.id: p for p in place_in_db}
-                    for r in raw_results:
-                        p = pid_in_db.get(r["place_id_ref"])
-                        if p and not p.full_address:
-                            addr = r["detail"].get("actual_address")
-                            if addr:
-                                p.full_address = addr
-                    await db.commit()
+                    # full_address 보강 (검증된 것만)
+                    if raw_results:
+                        place_by_id = {p.id: p for p in verifiable_chunk}
+                        place_in_db = (
+                            (await db.execute(
+                                select(RegisteredPlace).where(
+                                    RegisteredPlace.id.in_(list(place_by_id.keys()))
+                                )
+                            )).scalars().all()
+                        )
+                        pid_in_db = {p.id: p for p in place_in_db}
+                        for r in raw_results:
+                            p = pid_in_db.get(r["place_id_ref"])
+                            if p and not p.full_address:
+                                addr = r["detail"].get("actual_address")
+                                if addr:
+                                    p.full_address = addr
+                        await db.commit()
+                    else:
+                        pid_in_db = {}
 
                     # notifier (best-effort)
                     new_events = persist_stats.pop("new_events", []) or []

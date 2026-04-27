@@ -1,7 +1,7 @@
 /**
  * Monitor — Tab 1: 등록 관리 (실 API 연동)
  *
- *  ┌─ 메인: 엑셀/CSV 일괄 업로드 (POST /api/v1/places/bulk, 동시 5건 추출, 1회 100건)
+ *  ┌─ 메인: 엑셀/CSV 일괄 업로드 (POST /api/v1/places/bulk, 동시 10건 추출, 500건씩 청크 분할)
  *  └─ 하단: 등록 리스트 테이블
  *           · 검색 / 재검증 / 단건 삭제
  *           · 체크박스 다중 선택 + 선택 일괄 삭제 + 전체 삭제
@@ -279,8 +279,10 @@ export default function RegisterTab() {
             <h3 className="text-h3 text-ink">엑셀 / CSV 대량 등록</h3>
             <p className="text-caption text-ink-muted mt-0.5">
               엑셀에서 070 번호 열을 복사·붙여넣기 하거나 CSV·TXT 파일을 업로드하세요.
-              <span className="text-brand-600 font-semibold"> 1회 최대 100건</span>,
-              백엔드가 동시 5건씩 자동으로 Place ID·동·상호를 추출합니다.
+              <span className="text-brand-600 font-semibold"> 1회 최대 10,000건</span>,
+              자동으로 <span className="text-brand-600 font-semibold">500건씩 청크로 나눠 즉시 등록</span>됩니다 (네이버 호출 없음 — 1500건 ~3초).
+              <br />
+              <span className="text-ink-muted">등록 후 <b>실시간 노출 확인 → 지금 검증 시작</b>을 누르면 4중 검증이 청크로 진행됩니다.</span>
             </p>
           </div>
         </div>

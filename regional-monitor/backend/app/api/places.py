@@ -1,5 +1,4 @@
 """등록된 070 Place 관리 API."""
-import asyncio
 import re
 import time
 
@@ -165,17 +164,22 @@ async def bulk_create_places(
     user: User = Depends(require_quota),       # 가입 완료 + 최소 1건 quota 가드
     db: AsyncSession = Depends(get_db),
 ) -> PlaceBulkResponse:
-    """엑셀/CSV 일괄 등록.
+    """엑셀/CSV 일괄 등록 — 추출 분리형 (Phase 1: phone만 저장).
 
     프론트엔드는 .xlsx / .csv 를 클라이언트에서 파싱해 phone 컬럼을 추출하고,
     이 엔드포인트에 JSON 배열로 보낸다 (백엔드 파일 파서/대용량 업로드 부담 회피).
 
-    동작:
+    동작 (네이버 호출 없음 — 빠르고 안정적):
       1) 070 형식 검증 → invalid_phone
       2) 사용자 등록 중복 검사 → duplicate
       3) 사용자 quota_places 초과 → quota_exceeded
-      4) 네이버 추출 (병렬, 동시 5건) → extract_failed 또는 created
-      5) 트랜잭션 1회 commit (created 들만 일괄 INSERT)
+      4) 통과한 phone 들을 그대로 DB INSERT (place_id/name 등은 NULL)
+         current_verdict = "PENDING" 로 표시되어 검증 시작 시 추출+검증이 함께 수행된다.
+
+    이렇게 분리하면:
+      - 1500건 등록이 1초도 안 걸림 (DB INSERT만)
+      - 네이버 차단/타임아웃에 영향받지 않음
+      - 사용자가 "지금 검증 시작" 누르면 verify_job_runner가 추출+검증을 청크로 처리
 
     응답: 행별 status + 합계 + 남은 quota.
     """
@@ -194,9 +198,9 @@ async def bulk_create_places(
     )
     existing_phones = {row[0] for row in existing_q.all()}
 
-    # 1차 패스: phone 정규화 + 중복/쿼터/형식 검증
+    # phone 정규화 + 중복/쿼터/형식 검증 + INSERT 객체 누적
     PHONE_RE = re.compile(r"^070-?\d{3,4}-?\d{4}$")
-    plan: list[dict] = []          # {row_index, phone_normalized, status, override_dong, override_name}
+    to_insert: list[RegisteredPlace] = []
     seen_in_batch: set[str] = set()
     rows_status: list[BulkRowStatus] = []
     accept_count = 0
@@ -246,75 +250,31 @@ async def bulk_create_places(
 
         seen_in_batch.add(norm)
         accept_count += 1
-        plan.append({
-            "row_index": idx,
-            "phone": norm,
-            "override_dong": row.registered_dong_override,
-            "override_name": row.business_name_override,
-            "status_index": len(rows_status),
-        })
-        rows_status.append(BulkRowStatus(phone=norm, status="pending"))
-
-    # 2차 패스: 추출 (동시성 10 — 500건 청크 기준 ~50초)
-    # 네이버 부하 분산을 위해 클라이언트는 500건씩 청크로 끊어 호출 권장
-    sem = asyncio.Semaphore(10)
-
-    async def _extract(item: dict):
-        async with sem:
-            try:
-                ex = await extract_place_from_phone(item["phone"])
-                return item, ex
-            except Exception as e:                                           # 그물망
-                class _F:                                                    # 가짜 실패 객체
-                    success = False
-                    place_id = None
-                    name = None
-                    dong = None
-                    address = None
-                    category = None
-                    error = f"추출 예외: {e!s}"
-                return item, _F()
-
-    extract_results = await asyncio.gather(
-        *(_extract(it) for it in plan),
-        return_exceptions=False,
-    )
-
-    # 3차 패스: 성공만 INSERT
-    to_insert: list[RegisteredPlace] = []
-    for item, ex in extract_results:
-        si = item["status_index"]
-        if not getattr(ex, "success", False) or not getattr(ex, "place_id", None):
-            rows_status[si] = BulkRowStatus(
-                phone=item["phone"],
-                status="extract_failed",
-                error=getattr(ex, "error", None) or "네이버 플레이스 추출 실패",
-            )
-            continue
-
+        # 사용자 override가 있으면 채우고, 없으면 NULL — 검증 시작 시 자동 추출됨
         place = RegisteredPlace(
             user_id=user.id,
-            phone=item["phone"],
-            place_id=ex.place_id,
-            registered_dong=item["override_dong"] or ex.address or ex.dong or "",
-            business_name=item["override_name"] or ex.name or "",
-            full_address=ex.address,
-            category=ex.category,
-            current_verdict="PENDING",
+            phone=norm,
+            place_id=None,                                  # 검증 시작 시 추출
+            registered_dong=row.registered_dong_override or None,
+            business_name=row.business_name_override or None,
+            full_address=None,
+            category=None,
+            current_verdict="PENDING",                      # 미검증 상태
         )
         to_insert.append(place)
-        rows_status[si] = BulkRowStatus(
-            phone=item["phone"],
+        rows_status.append(BulkRowStatus(
+            phone=norm,
             status="created",
-            place_id=ex.place_id,
-            business_name=ex.name,
-        )
+            place_id=None,
+            business_name=row.business_name_override or None,
+        ))
 
+    # 한 번에 일괄 INSERT (네이버 호출 없음 — 매우 빠름)
     if to_insert:
         db.add_all(to_insert)
         await db.commit()
 
-    # 합계 집계
+    # 합계 집계 (extract_failed 카테고리는 더 이상 발생하지 않음)
     counts = {"created": 0, "duplicate": 0, "invalid_phone": 0, "extract_failed": 0, "quota_exceeded": 0}
     for r in rows_status:
         counts[r.status] = counts.get(r.status, 0) + 1

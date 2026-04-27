@@ -28,14 +28,18 @@ class PlaceUpdate(BaseModel):
 
 
 class PlaceOut(BaseModel):
-    """단건 응답."""
+    """단건 응답.
+
+    추출 분리형(Phase 1) 도입 후 place_id/registered_dong/business_name 은
+    추출 전(미검증) 상태에서 None이 될 수 있음. 검증 시작 시 자동 채워진다.
+    """
     model_config = ConfigDict(from_attributes=True)
 
     id: int
     phone: str
-    place_id: str
-    registered_dong: str
-    business_name: str
+    place_id: str | None = None
+    registered_dong: str | None = None
+    business_name: str | None = None
     full_address: str | None = None
     category: str | None = None
     current_verdict: VerdictType

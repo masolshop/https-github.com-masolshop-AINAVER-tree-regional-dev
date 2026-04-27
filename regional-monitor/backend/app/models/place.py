@@ -20,10 +20,11 @@ class RegisteredPlace(Base):
     )
 
     # 등록 정보 (사용자가 입력 + 자동 추출 보강)
+    # phone만 등록 시 필수, 나머지는 추출 후 채워짐 (검증 시작 시 추출 또는 자동 검증 시 추출)
     phone: Mapped[str] = mapped_column(String(20), nullable=False, index=True)
-    place_id: Mapped[str] = mapped_column(String(20), nullable=False, index=True)
-    registered_dong: Mapped[str] = mapped_column(String(120), nullable=False)  # 등록 시점 동
-    business_name: Mapped[str] = mapped_column(String(200), nullable=False)
+    place_id: Mapped[str | None] = mapped_column(String(20), nullable=True, index=True)
+    registered_dong: Mapped[str | None] = mapped_column(String(120), nullable=True)  # 등록 시점 동
+    business_name: Mapped[str | None] = mapped_column(String(200), nullable=True)
 
     # 자동 추출 부가 정보
     full_address: Mapped[str | None] = mapped_column(String(300), nullable=True)

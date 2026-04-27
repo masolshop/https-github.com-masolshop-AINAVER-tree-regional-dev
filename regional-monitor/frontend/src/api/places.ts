@@ -42,10 +42,13 @@ export const createPlace = (req: PlaceCreate) =>
 export const createPlaceAuto = (req: PlaceCreateAuto) =>
   api.post<PlaceOut>('/api/v1/places/auto', req, { timeoutMs: 15_000 })
 
-/** 일괄 등록 (Excel/CSV에서 추출한 번호 리스트). 백엔드는 동시 5개로 추출 처리. */
+/** 일괄 등록 (Excel/CSV에서 추출한 번호 리스트). 백엔드는 동시 10개로 추출 처리.
+ *  클라이언트는 500건씩 청크로 나눠 호출하므로 타임아웃은 청크 1개 기준.
+ *  500건 × 평균 1.5s ÷ 동시10 ≈ 75초, 여유 240초.
+ */
 export const bulkCreatePlaces = (req: PlaceBulkRequest) =>
   api.post<PlaceBulkResponse>('/api/v1/places/bulk', req, {
-    timeoutMs: 120_000,                // 100건 × 평균 1.8s ÷ 동시5 ≈ 36s, 여유 120s
+    timeoutMs: 240_000,
   })
 
 export const updatePlace = (id: number, req: PlaceUpdate) =>
