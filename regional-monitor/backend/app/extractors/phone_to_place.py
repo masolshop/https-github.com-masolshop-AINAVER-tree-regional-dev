@@ -49,11 +49,30 @@ class ExtractedPlace:
 
 # ────────────────────────────────────────────────────────────
 # 정규식 (모듈 로드 시 1회 컴파일)
-_RE_PLACE_ID = re.compile(r'place/(\d{6,15})(?:/home|/menu|\?|")')
+#
+# 네이버 모바일 통합검색 결과의 HTML은 시기별로 마이크로한 변형이 많다.
+# 다음 5가지 패턴 중 하나라도 매칭되면 place_id 로 인정한다:
+#   ① m.place.naver.com/place/<id>           ← 가장 흔한 직접 링크
+#   ② nmap.place.naver.com/.../did=<id>      ← 길찾기/지도 진입 링크
+#   ③ "place/<id>?..." 또는 "place/<id>/..."  ← 옛 패턴(기존 정규식)
+#   ④ "did":"<id>" / "placeId":"<id>"        ← JSON 데이터 필드
+#   ⑤ "id":"<id>" (8자리 이상)                ← Apollo state 의 일반 id 필드
+_RE_PLACE_ID = re.compile(r'place/(\d{6,15})')                # ① + ③
+_RE_PLACE_ID_DID = re.compile(r'did=(\d{6,15})')              # ②
+_RE_PLACE_ID_JSON = re.compile(r'"(?:placeId|did|placeNo)"\s*:\s*"?(\d{6,15})"?')  # ④
+_RE_PLACE_ID_GENERIC_ID = re.compile(r'"id"\s*:\s*"(\d{8,15})"')                    # ⑤
+
 _RE_NAME = re.compile(r'"name"\s*:\s*"([^"]{2,80})"')
+# 보조: og:title 형태 (예: '<meta property="og:title" content="대구방충망 : 네이버 검색"/>')
+# 검색 결과 페이지의 og:title 은 항상 검색어 자체("070-… : 네이버 검색")라 무의미하므로 사용하지 않음.
+# 대신 검색 결과 카드의 <strong> 태그를 폴백으로 시도한다.
+_RE_NAME_FALLBACK_STRONG = re.compile(
+    r'<strong[^>]*class="[^"]*(?:tit_name|api_thumb|api_subject_bx_title|tit)[^"]*"[^>]*>([^<]{2,80})</strong>'
+)
+
 _RE_ADDR_PRIMARY = re.compile(r'"address"\s*:\s*"([^"]{5,150})"')
 _RE_ADDR_FALLBACK = re.compile(
-    r'"(?:roadAddress|fullAddress|jibunAddress)"\s*:\s*"([^"]{5,150})"'
+    r'"(?:roadAddress|fullAddress|jibunAddress|commonAddress|fullRoadAddress)"\s*:\s*"([^"]{5,150})"'
 )
 _RE_CATEGORY = re.compile(r'"category"\s*:\s*"([^"]{1,50})"')
 
@@ -199,8 +218,26 @@ async def extract_place_from_phone(
         html = r.text
 
         # 1) Place ID 추출 (가장 중요)
-        pid_match = _RE_PLACE_ID.search(html)
-        place_id = pid_match.group(1) if pid_match else None
+        # 5가지 패턴을 순차 시도하고, 가장 자주 등장하는 ID 를 선택한다.
+        # (한 검색 결과에 여러 후보가 있을 수 있으므로 빈도수 기반 다수결.)
+        from collections import Counter
+        counter: Counter[str] = Counter()
+        for rx in (
+            _RE_PLACE_ID,
+            _RE_PLACE_ID_DID,
+            _RE_PLACE_ID_JSON,
+            _RE_PLACE_ID_GENERIC_ID,
+        ):
+            for pid in rx.findall(html):
+                counter[pid] += 1
+
+        # 검색 결과 페이지에 잡힌 노이즈 ID 제외 (네이버 자체 시스템 ID 등)
+        # — 길이 7자 미만, 또는 모두 같은 숫자(0000000) 같은 명백한 더미는 제외
+        for pid in list(counter):
+            if len(pid) < 7 or len(set(pid)) == 1:
+                del counter[pid]
+
+        place_id = counter.most_common(1)[0][0] if counter else None
 
         if not place_id:
             return ExtractedPlace(
@@ -210,9 +247,15 @@ async def extract_place_from_phone(
                 error="place_id_not_found",
             )
 
-        # 2) 상호명
+        # 2) 상호명 — JSON "name" 우선, 없으면 결과 카드 <strong> 폴백
         name_match = _RE_NAME.search(html)
         name = name_match.group(1) if name_match else None
+        if not name:
+            sm = _RE_NAME_FALLBACK_STRONG.search(html)
+            if sm:
+                # &amp; 등 엔티티 디코드
+                import html as _html_mod
+                name = _html_mod.unescape(sm.group(1)).strip()
 
         # 3) 주소 (primary → fallback)
         addr_match = _RE_ADDR_PRIMARY.search(html)
@@ -248,18 +291,16 @@ async def extract_place_from_phone(
             score += 0.05
         confidence = round(min(score, 1.0), 2)
 
-        # success 판정: 핵심 메타 (place_id + name) 추출이 핵심
-        # phone_in_html은 신뢰도 가중치로만 사용 — 네이버가 모든 링크 querystring에
-        # 검색어를 자동 삽입하므로 100% 신뢰할 수 없음. 사용자 확인 단계에서 다시 검증.
-        is_success = bool(place_id and name)
+        # success 판정: place_id 만 있으면 후속 4중 검증으로 진행 가능
+        # (이름은 검증 단계의 m.place.naver.com/place/<id>/home 에서 다시 가져옴)
+        # 단, 신뢰도가 낮은 경우엔 error 필드에 사유를 기록.
+        is_success = bool(place_id)
         err: Optional[str] = None
-        if not is_success:
-            if not place_id:
-                err = "place_id_not_found"
-            elif not name:
-                err = "name_not_found"
-            else:
-                err = "partial"
+        if not place_id:
+            err = "place_id_not_found"
+        elif not name:
+            # place_id 는 잡혔으나 검색결과 카드에 상호가 없는 경우 — 검증 단계에서 보강됨
+            err = "name_not_found_in_search"
         elif not phone_in_html:
             # 성공이지만 신뢰도 낮음 — 사용자 확인 권장
             err = "needs_user_review"
