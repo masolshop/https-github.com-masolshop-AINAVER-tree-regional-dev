@@ -5,7 +5,7 @@
     ./venv/bin/python -m scripts.seed_superadmin
 
 또는 환경변수로 직접 지정:
-    SUPERADMIN_EMAIL=cero@femayeon.com \
+    SUPERADMIN_EMAIL=ceo@femayeon.com \
     SUPERADMIN_PASSWORD=...                \
     SUPERADMIN_NAME="최고관리자"          \
     ./venv/bin/python -m scripts.seed_superadmin
@@ -35,7 +35,7 @@ from app.models.user import User
 
 
 # 기본값 — 환경변수가 없을 때만 사용. 운영에서는 반드시 환경변수로 덮어쓸 것.
-DEFAULT_EMAIL = os.getenv("SUPERADMIN_EMAIL", "cero@femayeon.com")
+DEFAULT_EMAIL = os.getenv("SUPERADMIN_EMAIL", "ceo@femayeon.com")
 DEFAULT_PASSWORD = os.getenv("SUPERADMIN_PASSWORD", "sun3328io$$")
 DEFAULT_NAME = os.getenv("SUPERADMIN_NAME", "최고관리자")
 
