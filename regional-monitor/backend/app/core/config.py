@@ -33,6 +33,11 @@ class Settings(BaseSettings):
     DONG_THRESHOLD: int = 70          # 0~100
     NAME_THRESHOLD: int = 40
 
+    # ── 자동 검증 스케줄러 ──
+    # 24시간 분산 (시간당 1회): 매 시각 정각에 verify_slot 일치 사용자만 검증
+    # 테스트/개발 시 끄려면 SCHEDULER_ENABLED=false
+    SCHEDULER_ENABLED: bool = True
+
     # ── CORS ──
     CORS_ALLOW_ORIGINS: list[str] = [
         "http://localhost:5173",

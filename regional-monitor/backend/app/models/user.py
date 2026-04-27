@@ -37,6 +37,11 @@ class User(Base):
     # ── 가입 완료 플래그 ──
     is_profile_complete: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False, index=True)
 
+    # ── 자동 검증 시간 슬롯 (0~23, "매일 N시 검증") ──
+    # 사용자 분산을 위해 가입 시 id % 24 로 자동 배정.
+    # 1만 명일 때 슬롯당 ~417명 × 5건 = 2,085건/시간 → 0.6 RPS (네이버 안전).
+    verify_slot: Mapped[int] = mapped_column(Integer, default=0, nullable=False, index=True)
+
     # ── 플랜 ──
     plan: Mapped[str] = mapped_column(String(20), default="free", nullable=False)
     quota_places: Mapped[int] = mapped_column(Integer, default=5, nullable=False)

@@ -8,7 +8,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core import get_db
 from app.models.place import RegisteredPlace
-from app.models.check import DailyHealthCheck
 from app.models.user import User
 from app.schemas import (
     LiveCheckRequest,
@@ -17,6 +16,7 @@ from app.schemas import (
     VerificationDetail,
 )
 from app.services import verify_batch, summarize_results
+from app.services.persist import persist_results
 from .deps import get_current_user
 
 router = APIRouter(prefix="/verify", tags=["verify"])
@@ -48,33 +48,17 @@ async def run_live_check(
     raw_results = await verify_batch(places, concurrency=10)
     total_ms = int((time.perf_counter() - t0) * 1000)
 
-    # DB 기록 + verdict 캐시 갱신
-    for r, place in zip(raw_results, places):
-        d = r["detail"]
-        check = DailyHealthCheck(
-            place_id_ref=place.id,
-            alive=d["alive"],
-            phone_match=d["phone_match"],
-            dong_match=d["dong_match"],
-            name_match=d["name_match"],
-            actual_phone=d["actual_phone"],
-            actual_dong=d["actual_dong"],
-            actual_name=d["actual_name"],
-            actual_address=d["actual_address"],
-            verdict=r["verdict"],
-            response_ms=r["response_ms"],
-            http_status=r["http_status"],
-            error=r["error"],
-            checked_at=r["checked_at"],
-        )
-        db.add(check)
+    # DB 기록 + verdict 캐시 갱신 + ChangeEvent 자동 생성
+    persist_stats = await persist_results(db, raw_results)
 
-        place.current_verdict = r["verdict"]
-        place.last_checked_at = r["checked_at"]
-        # 자동 추출 보강 (이전에 비어 있던 경우만)
-        if not place.full_address and d.get("actual_address"):
-            place.full_address = d["actual_address"]
-
+    # 자동 추출 보강 (이전에 비어 있던 full_address 만 채움)
+    place_by_id = {p.id: p for p in places}
+    for r in raw_results:
+        place = place_by_id.get(r["place_id_ref"])
+        if place and not place.full_address:
+            addr = r["detail"].get("actual_address")
+            if addr:
+                place.full_address = addr
     await db.commit()
 
     # 응답 변환

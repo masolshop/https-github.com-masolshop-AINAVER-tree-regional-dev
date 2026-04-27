@@ -13,6 +13,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.core import settings, init_db
 from app.api import api_router
+from app.services.scheduler import start_scheduler, stop_scheduler
 
 
 @asynccontextmanager
@@ -22,8 +23,17 @@ async def lifespan(app: FastAPI):
     print(f"✅ {settings.APP_NAME} v{settings.APP_VERSION} started")
     print(f"   DB: {settings.DATABASE_URL}")
     print(f"   Debug: {settings.DEBUG}")
+    # APScheduler — 매 시각(KST) 정각마다 슬롯별 자동 검증
+    if settings.SCHEDULER_ENABLED:
+        sched = start_scheduler()
+        job = sched.get_job("slot_verification")
+        nxt = job.next_run_time if job else None
+        print(f"⏰ Scheduler armed (KST) — next run: {nxt}")
+    else:
+        print("⏰ Scheduler disabled (SCHEDULER_ENABLED=false)")
     yield
     # ── shutdown ──
+    stop_scheduler()
     print("👋 Shutting down")
 
 

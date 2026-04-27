@@ -19,6 +19,7 @@ class UserOut(BaseModel):
     quota_places: int
     is_profile_complete: bool
     agreed_marketing: bool
+    verify_slot: int = 0           # 0~23, 매일 자동 검증되는 시각(시)
     created_at: datetime
 
     class Config:

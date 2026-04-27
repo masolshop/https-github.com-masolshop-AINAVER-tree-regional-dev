@@ -106,6 +106,9 @@ async def login_with_google(
 
     if user is None:
         # 신규 가입
+        # verify_slot: 0~23 랜덤 배정 (사용자 분산용 — 매일 N시 자동 검증)
+        import random
+        slot = random.randint(0, 23)
         user = User(
             email=email,
             name=name,
@@ -114,6 +117,7 @@ async def login_with_google(
             plan="free",
             quota_places=5,
             is_profile_complete=False,
+            verify_slot=slot,
             last_login_at=now,
         )
         db.add(user)
