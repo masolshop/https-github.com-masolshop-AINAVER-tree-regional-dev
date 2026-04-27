@@ -11,6 +11,8 @@ import type {
   LiveCheckRequest,
   LiveCheckResponse,
   MessageResponse,
+  PlaceBulkRequest,
+  PlaceBulkResponse,
   PlaceCreate,
   PlaceCreateAuto,
   PlaceListOut,
@@ -34,6 +36,12 @@ export const createPlace = (req: PlaceCreate) =>
 
 export const createPlaceAuto = (req: PlaceCreateAuto) =>
   api.post<PlaceOut>('/api/v1/places/auto', req, { timeoutMs: 15_000 })
+
+/** 일괄 등록 (Excel/CSV에서 추출한 번호 리스트). 백엔드는 동시 5개로 추출 처리. */
+export const bulkCreatePlaces = (req: PlaceBulkRequest) =>
+  api.post<PlaceBulkResponse>('/api/v1/places/bulk', req, {
+    timeoutMs: 120_000,                // 100건 × 평균 1.8s ÷ 동시5 ≈ 36s, 여유 120s
+  })
 
 export const updatePlace = (id: number, req: PlaceUpdate) =>
   api.patch<PlaceOut>(`/api/v1/places/${id}`, req)

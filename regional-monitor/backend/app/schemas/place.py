@@ -57,3 +57,40 @@ class PlaceListOut(BaseModel):
     """리스트 응답 (요약 + 목록)."""
     summary: PlaceSummary
     items: list[PlaceOut]
+
+
+# ─────────────────── 일괄 등록 (Excel/CSV) ───────────────────
+
+
+class PlaceBulkRow(BaseModel):
+    """일괄 등록 1행."""
+    phone: str = Field(..., description="070-1234-5678 (자유 형식)")
+    registered_dong_override: str | None = None
+    business_name_override: str | None = None
+
+
+class PlaceBulkRequest(BaseModel):
+    """일괄 등록 요청. 한 번에 최대 100건."""
+    rows: list[PlaceBulkRow] = Field(..., min_length=1, max_length=100)
+
+
+class BulkRowStatus(BaseModel):
+    """일괄 등록 행별 결과."""
+    phone: str                                # 입력값(정규화 시도 후)
+    status: str                               # "created" / "duplicate" / "invalid_phone" / "extract_failed" / "quota_exceeded"
+    place_id: str | None = None               # 성공 시
+    business_name: str | None = None          # 성공 시
+    error: str | None = None                  # 실패 시 사람 친화 메시지
+
+
+class PlaceBulkResponse(BaseModel):
+    """일괄 등록 결과."""
+    requested: int
+    created: int
+    duplicate: int
+    invalid_phone: int
+    extract_failed: int
+    quota_exceeded: int
+    elapsed_ms: int
+    quota_remaining: int                      # 남은 등록 가능 수
+    rows: list[BulkRowStatus]

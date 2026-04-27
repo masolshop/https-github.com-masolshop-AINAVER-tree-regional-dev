@@ -80,6 +80,45 @@ export interface PlaceListOut {
   items: PlaceOut[]
 }
 
+/* ─────────── 일괄 등록 (Excel/CSV) ─────────── */
+
+export interface PlaceBulkRow {
+  phone: string
+  registered_dong_override?: string | null
+  business_name_override?: string | null
+}
+
+export interface PlaceBulkRequest {
+  rows: PlaceBulkRow[]                 // 1~100건
+}
+
+export type BulkRowStatusKey =
+  | 'created'
+  | 'duplicate'
+  | 'invalid_phone'
+  | 'extract_failed'
+  | 'quota_exceeded'
+
+export interface BulkRowStatus {
+  phone: string
+  status: BulkRowStatusKey
+  place_id?: string | null
+  business_name?: string | null
+  error?: string | null
+}
+
+export interface PlaceBulkResponse {
+  requested: number
+  created: number
+  duplicate: number
+  invalid_phone: number
+  extract_failed: number
+  quota_exceeded: number
+  elapsed_ms: number
+  quota_remaining: number
+  rows: BulkRowStatus[]
+}
+
 export interface MessageResponse {
   message: string
 }

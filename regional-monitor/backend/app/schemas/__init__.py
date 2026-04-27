@@ -7,6 +7,10 @@ from .place import (
     PlaceOut,
     PlaceListOut,
     PlaceSummary,
+    PlaceBulkRow,
+    PlaceBulkRequest,
+    BulkRowStatus,
+    PlaceBulkResponse,
 )
 from .verification import (
     VerificationDetail,
@@ -33,6 +37,10 @@ __all__ = [
     "PlaceOut",
     "PlaceListOut",
     "PlaceSummary",
+    "PlaceBulkRow",
+    "PlaceBulkRequest",
+    "BulkRowStatus",
+    "PlaceBulkResponse",
     "VerificationDetail",
     "VerificationResult",
     "LiveCheckRequest",

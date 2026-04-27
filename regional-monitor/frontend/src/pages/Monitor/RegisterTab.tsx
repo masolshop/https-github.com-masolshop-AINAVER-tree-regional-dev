@@ -1,10 +1,10 @@
 /**
  * Monitor — Tab 1: 등록 관리 (실 API 연동)
  *  ┌─ 좌: 070 단건 등록 폼 (자동 추출 → 등록)
- *  ├─ 우: 엑셀 일괄 업로드 (UI만; 백엔드 일괄 엔드포인트는 추후)
+ *  ├─ 우: 엑셀/CSV 일괄 업로드 (POST /api/v1/places/bulk, 동시 5건 추출, 1회 100건)
  *  └─ 하: 등록 리스트 테이블 (검색·필터·삭제·재검증)
  */
-import { useMemo, useState } from 'react'
+import { lazy, Suspense, useMemo, useState } from 'react'
 import { Card } from '@/components/ui/Card'
 import { VerdictBadge } from './VerdictBadge'
 import type { RegisteredPlace } from './types'
@@ -16,18 +16,21 @@ import {
 import { useExtractPhone } from '@/hooks/useExtract'
 import { useLiveCheck } from '@/hooks/useLiveCheck'
 import { ApiError } from '@/api/client'
+
+// xlsx 라이브러리(~370KB)를 지연 로드해서 초기 번들 크기 절감
+const BulkUpload = lazy(() =>
+  import('./BulkUpload').then((m) => ({ default: m.BulkUpload })),
+)
 import {
   Phone,
   MapPin,
   Building2,
   Sparkles,
-  Upload,
   FileSpreadsheet,
   Search,
   Trash2,
   RefreshCw,
   Plus,
-  Download,
   AlertTriangle,
   Loader2,
 } from 'lucide-react'
@@ -106,27 +109,23 @@ export default function RegisterTab() {
               <FileSpreadsheet size={18} />
             </div>
             <div>
-              <h3 className="text-h3 text-ink">엑셀 일괄 업로드</h3>
+              <h3 className="text-h3 text-ink">엑셀/CSV 일괄 업로드</h3>
               <p className="text-caption text-ink-muted">
-                여러 070 번호를 한 번에 등록 (백엔드 엔드포인트 추가 예정)
+                CSV·TXT 파일 또는 Excel 복사·붙여넣기 (1회 최대 100건)
               </p>
             </div>
           </div>
 
-          <BulkUploadDropzone />
-
-          <div className="mt-4 flex items-center justify-between text-caption">
-            <span className="text-ink-muted">
-              컬럼: 070 / 등록동 / 상호 (자동 추출 가능 시 070만 입력)
-            </span>
-            <button
-              type="button"
-              className="inline-flex items-center gap-1.5 text-brand-600 font-semibold hover:underline"
-              onClick={() => alert('샘플 엑셀 다운로드 (백엔드 일괄 API 추가 시 구현)')}
-            >
-              <Download size={12} /> 샘플 다운로드
-            </button>
-          </div>
+          <Suspense
+            fallback={
+              <div className="rounded-card border-2 border-dashed border-ink-watermark/40 bg-white p-6 text-center text-caption text-ink-muted">
+                <Loader2 size={20} className="inline animate-spin mr-2" />
+                업로드 모듈 로드 중…
+              </div>
+            }
+          >
+            <BulkUpload />
+          </Suspense>
         </Card>
       </div>
 
@@ -475,58 +474,3 @@ function FieldInput({ icon, placeholder, value, onChange, className }: FieldInpu
   )
 }
 
-function BulkUploadDropzone() {
-  const [dragOver, setDragOver] = useState(false)
-  const [file, setFile] = useState<File | null>(null)
-
-  return (
-    <div
-      onDragOver={(e) => {
-        e.preventDefault()
-        setDragOver(true)
-      }}
-      onDragLeave={() => setDragOver(false)}
-      onDrop={(e) => {
-        e.preventDefault()
-        setDragOver(false)
-        const f = e.dataTransfer.files[0]
-        if (f) setFile(f)
-      }}
-      className={`relative rounded-card border-2 border-dashed transition-all ${
-        dragOver
-          ? 'border-brand-500 bg-brand-50/50'
-          : 'border-ink-watermark/50 bg-white'
-      } p-6 text-center cursor-pointer`}
-    >
-      <input
-        type="file"
-        accept=".xlsx,.xls,.csv"
-        className="absolute inset-0 opacity-0 cursor-pointer"
-        onChange={(e) => setFile(e.target.files?.[0] ?? null)}
-      />
-      <div className="w-12 h-12 mx-auto rounded-2xl bg-brand-50 text-brand-600 flex items-center justify-center mb-3">
-        <Upload size={20} />
-      </div>
-      <div className="text-body-sm text-ink font-semibold">
-        {file ? file.name : '엑셀(xlsx/csv) 파일을 드롭하거나 클릭'}
-      </div>
-      <div className="text-caption text-ink-muted mt-1">
-        {file ? '파일 선택됨 — 백엔드 일괄 API 추가 시 업로드 가능' : '최대 10MB · 1,000건까지'}
-      </div>
-      {file && (
-        <button
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation()
-            alert(
-              `${file.name} 업로드 — 백엔드 POST /api/v1/places/bulk 엔드포인트 추가 후 활성화`,
-            )
-          }}
-          className="mt-4 btn-primary"
-        >
-          <Upload size={14} /> 업로드 시작
-        </button>
-      )}
-    </div>
-  )
-}

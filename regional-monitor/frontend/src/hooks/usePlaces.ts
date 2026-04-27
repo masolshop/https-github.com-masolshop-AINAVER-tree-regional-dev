@@ -11,6 +11,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
 import {
+  bulkCreatePlaces,
   createPlace,
   createPlaceAuto,
   deletePlace,
@@ -19,6 +20,7 @@ import {
   updatePlace,
 } from '../api/places'
 import type {
+  PlaceBulkRequest,
   PlaceCreate,
   PlaceCreateAuto,
   PlaceUpdate,
@@ -99,6 +101,15 @@ export function useDeletePlace() {
   const invalidate = useInvalidatePlaces()
   return useMutation({
     mutationFn: (id: number) => deletePlace(id),
+    onSuccess: invalidate,
+  })
+}
+
+/** 일괄 등록 (엑셀/CSV 업로드) — 1~100건 */
+export function useBulkCreatePlaces() {
+  const invalidate = useInvalidatePlaces()
+  return useMutation({
+    mutationFn: (req: PlaceBulkRequest) => bulkCreatePlaces(req),
     onSuccess: invalidate,
   })
 }
