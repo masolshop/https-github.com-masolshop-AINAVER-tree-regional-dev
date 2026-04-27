@@ -107,7 +107,14 @@ async def verify_one(
     }
     cr = await check_place(client, sample)
 
-    # verdict 매핑 — place_id_checker는 OK/PHONE_MISMATCH/DONG_MISMATCH/DEAD/ERROR 반환
+    # PENDING(429 rate-limit 등 일시 오류) → 최종 1회 재시도 (5~10초 대기)
+    # 청크 간 추가 분산 효과로 PENDING 누수를 줄이기 위함
+    if cr.verdict == "PENDING":
+        import random as _r
+        await asyncio.sleep(5 + _r.uniform(0, 5))
+        cr = await check_place(client, sample)
+
+    # verdict 매핑 — place_id_checker는 OK/PHONE_MISMATCH/DONG_MISMATCH/DEAD/PENDING/ERROR 반환
     # (NAME_MISMATCH는 단순화 정책에 따라 더 이상 발생하지 않음)
     verdict = cr.verdict if cr.verdict else "PENDING"
     if verdict == "ERROR":

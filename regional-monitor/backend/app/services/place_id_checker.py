@@ -17,6 +17,7 @@ v2 → v3 개선 사항:
 import asyncio
 import time
 import json
+import random
 import re
 from typing import Dict, List, Tuple
 from dataclasses import dataclass, asdict
@@ -371,15 +372,18 @@ async def check_place(client: httpx.AsyncClient, sample: Dict) -> CheckResult:
     t0 = time.perf_counter()
     r = None
     html = ""
-    # 429(Rate Limit) 발생 시 backoff 후 1회 재시도
-    for attempt in range(2):
+    # 429(Rate Limit) 발생 시 exponential backoff 후 최대 4회 재시도
+    # 누적 대기: 2 + 4 + 8 = 14초 (충분히 throttle 회복)
+    for attempt in range(4):
         try:
-            r = await client.get(url, headers=headers, follow_redirects=True, timeout=12.0)
+            r = await client.get(url, headers=headers, follow_redirects=True, timeout=15.0)
             html = r.text
             if r.status_code != 429:
                 break
-            # 429: 짧은 backoff 후 재시도
-            await asyncio.sleep(1.5 + attempt * 1.5)
+            if attempt == 3:
+                break  # 마지막 시도 — 더 이상 backoff 안함
+            # 2s, 4s, 8s + jitter (동시 요청들이 동시에 깨어나지 않도록)
+            await asyncio.sleep((2 ** (attempt + 1)) + random.uniform(0, 1.5))
         except Exception as e:
             result.elapsed_ms = round((time.perf_counter() - t0) * 1000, 1)
             result.http_status = -1

@@ -115,9 +115,9 @@ async def run_live_check(
     if not places:
         raise HTTPException(status_code=404, detail="검증할 등록이 없습니다.")
 
-    # 병렬 검증 (concurrency 5 — 네이버 429 방지)
+    # 병렬 검증 (concurrency 3 — 네이버 429 방지, 1청크 200건 ≈ 70초)
     t0 = time.perf_counter()
-    raw_results = await verify_batch(places, concurrency=5)
+    raw_results = await verify_batch(places, concurrency=3)
     total_ms = int((time.perf_counter() - t0) * 1000)
 
     # DB 기록 + verdict 캐시 갱신 + ChangeEvent 자동 생성
