@@ -594,7 +594,18 @@ function EmptyState() {
 
 function formatApiError(e: unknown): string {
   if (e instanceof ApiError) {
-    if (e.status === 0) return `네트워크 오류 (백엔드 연결 확인): ${e.message}`
+    if (e.status === 0) {
+      // status=0 은 (1) 네트워크 단절, (2) 자체 timeout, (3) 사용자 abort 모두 포함.
+      // request timeout 은 정밀모드에서 네이버 rate-limit 회복 대기로 발생할 수 있음.
+      if (/timeout/i.test(e.message)) {
+        return (
+          '검증 요청 시간 초과. 네이버 요청 한도(429) 영향으로 마지막 청크가 ' +
+          '오래 걸렸을 수 있습니다. 부분 결과는 자동 저장되었으니 잠시 후 ' +
+          '"등록 관리" 탭에서 결과를 확인하거나 빠른 검증으로 다시 시도해 주세요.'
+        )
+      }
+      return `네트워크 오류 (백엔드 연결 확인): ${e.message}`
+    }
     if (e.status === 409) {
       // 동일 사용자가 이미 검증 진행 중 — 백엔드 락 충돌
       return '이전 검증이 아직 진행 중입니다. 잠시 후 다시 시도해 주세요.'

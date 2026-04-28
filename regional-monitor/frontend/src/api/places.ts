@@ -64,18 +64,26 @@ export const bulkDeletePlaces = (req: PlaceBulkDeleteRequest) =>
   })
 
 /* ─────────── Live Verification ─────────── */
-/** 즉시 검증. 클라이언트가 200건 청크로 나눠 호출.
- *  청크 1개 = 200건 × 평균 1.5s ÷ 동시10 ≈ 30s. 차단/재시도 여유 240초.
+/** 즉시 검증. 클라이언트가 100~200건 청크로 나눠 호출.
+ *  청크 1개 = 100건 × 평균 110ms ≈ 11초 (정상시).
+ *  단, 네이버가 rate-limit(429)을 걸면 백엔드가 2+4+8s exponential backoff 로 최대
+ *  3회 재시도 → 한 건당 최대 14초 추가. 청크 100건 중 10%가 retry 라면 +140초.
+ *  실측(2026-04-28 회차 8): 청크 96건이 308초 걸린 사례 있음.
+ *  → timeout 을 mode 별로 분기:
+ *     · fast 모드: 헤더만 GET, 빠름. 240초로 충분.
+ *     · full 모드: 전화/동/로/리 추가 검증 + retry 누적 → 600초 (10분).
  *  signal: 사용자가 ‘취소’ 누를 때 진행 중인 청크 fetch 도 즉시 중단.
  */
 export const runLiveCheck = (
   req: LiveCheckRequest = {},
   opts: { signal?: AbortSignal } = {},
-) =>
-  api.post<LiveCheckResponse>('/api/v1/verify/live', req, {
-    timeoutMs: 240_000,
+) => {
+  const isFullMode = (req.mode ?? 'full') === 'full'
+  return api.post<LiveCheckResponse>('/api/v1/verify/live', req, {
+    timeoutMs: isFullMode ? 600_000 : 240_000,
     signal: opts.signal,
   })
+}
 
 /* ─────────── Bulk Verification (대용량 청크 작업) ─────────── */
 /** 새 검증 작업 생성 (사용자당 동시 1개). place_ids 비우면 전체. */
