@@ -24,7 +24,8 @@ from app.core import get_db
 from app.models.check import ChangeEvent, VerificationRun
 from app.models.place import RegisteredPlace
 from app.models.user import User
-from app.services.scheduler import KST, get_next_run_at
+from app.services.scheduler import KST, get_next_run_at  # noqa: F401  (KST 다른 곳 사용)
+from app.core.time_utils import now_kst
 from .deps import get_current_user
 
 
@@ -184,15 +185,22 @@ async def scheduler_status(
 ) -> SchedulerStatusOut:
     """내 검증 슬롯 + 다음 자동 검증 시각 (마이페이지/Home 노출용).
 
+    "다음 자동 검증" 은 **사용자 본인의 verify_slot 기준** 다음 KST 정각이다.
+    (APScheduler 자체의 다음 tick 이 아님 — 그건 모든 사용자에게 똑같이 보여서 혼란 유발)
+
+    예) 지금 KST 19:40, user.verify_slot=11 → 내일 11:00 KST
+        지금 KST 09:30, user.verify_slot=11 → 오늘 11:00 KST
     모든 시각은 한국 표준시(KST, UTC+9) 기준.
     """
-    next_run = get_next_run_at()
-    # APScheduler 가 timezone-aware datetime 을 반환하므로 KST 로 변환
-    if next_run is not None and next_run.tzinfo is not None:
-        next_run = next_run.astimezone(KST)
+    from datetime import timedelta
+
+    now = now_kst()
+    target = now.replace(hour=user.verify_slot, minute=0, second=0, microsecond=0)
+    if target <= now:
+        target = target + timedelta(days=1)
 
     return SchedulerStatusOut(
-        next_run_at=next_run,
+        next_run_at=target,
         verify_slot=user.verify_slot,
         verify_slot_label=f"매일 {user.verify_slot:02d}:00 (KST)",
     )
