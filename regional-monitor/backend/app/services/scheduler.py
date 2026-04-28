@@ -130,12 +130,15 @@ async def _verify_user_places(
             if not places:
                 return {"updated": 0, "events": 0, "history": 0}
 
+            import time as _time
+            _t0 = _time.perf_counter()
             results = await verify_batch(
                 places,
                 concurrency=PER_USER_CONCURRENCY,
                 mode=AUTO_VERIFY_MODE,
                 pace_ms=AUTO_PACE_MS,
             )
+            elapsed_ms = int((_time.perf_counter() - _t0) * 1000)
             stats = await persist_results(db, results)
 
             # ── 알림 발송 (best-effort, ChangeEvent 가 있을 때만) ──
@@ -145,8 +148,29 @@ async def _verify_user_places(
                 try:
                     user = await db.get(User, user_id)
                     if user is not None:
+                        # 회차 요약 (이메일 템플릿용)
+                        ok_n = sum(1 for r in results if str(r["verdict"]).endswith("OK"))
+                        dead_n = sum(1 for r in results if str(r["verdict"]).endswith("DEAD"))
+                        pending_n = sum(1 for r in results if str(r["verdict"]).endswith("PENDING"))
+                        mismatch_n = sum(
+                            1 for r in results
+                            if str(r["verdict"]).endswith(("PHONE_MISMATCH", "DONG_MISMATCH",
+                                                            "NAME_MISMATCH", "REGION_MISMATCH"))
+                        )
+                        run_summary = {
+                            "total": len(results),
+                            "ok": ok_n,
+                            "dead": dead_n,
+                            "mismatch": mismatch_n,
+                            "pending": pending_n,
+                            "elapsed_ms": elapsed_ms,
+                            "mode": AUTO_VERIFY_MODE,
+                            "trigger": "scheduler",
+                        }
                         notif_stats = await notify_user_events(
-                            db, user, new_events, place_lookup=place_lookup,
+                            db, user, new_events,
+                            place_lookup=place_lookup,
+                            run_summary=run_summary,
                         )
                         stats["email_sent"] = notif_stats.get("email_sent", 0)
                         stats["slack_sent"] = notif_stats.get("slack_sent", 0)

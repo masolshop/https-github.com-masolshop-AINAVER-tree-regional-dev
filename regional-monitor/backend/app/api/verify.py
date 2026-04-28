@@ -174,7 +174,30 @@ async def run_live_check(
     place_lookup = persist_stats.pop("place_lookup", {}) or place_by_id
     if settings.NOTIFY_ENABLED and new_events:
         try:
-            await notify_user_events(db, user, new_events, place_lookup=place_lookup)
+            # 회차 요약 (이메일 템플릿용)
+            ok_n_summary = sum(1 for r in raw_results if str(r["verdict"]).endswith("OK"))
+            dead_n_summary = sum(1 for r in raw_results if str(r["verdict"]).endswith("DEAD"))
+            pending_n_summary = sum(1 for r in raw_results if str(r["verdict"]).endswith("PENDING"))
+            mismatch_n_summary = sum(
+                1 for r in raw_results
+                if str(r["verdict"]).endswith(("PHONE_MISMATCH", "DONG_MISMATCH",
+                                                "NAME_MISMATCH", "REGION_MISMATCH"))
+            )
+            run_summary = {
+                "total": len(raw_results),
+                "ok": ok_n_summary,
+                "dead": dead_n_summary,
+                "mismatch": mismatch_n_summary,
+                "pending": pending_n_summary,
+                "elapsed_ms": total_ms,
+                "mode": mode,
+                "trigger": "manual",
+            }
+            await notify_user_events(
+                db, user, new_events,
+                place_lookup=place_lookup,
+                run_summary=run_summary,
+            )
         except Exception:                                                        # noqa: BLE001
             # 알림 실패가 검증 응답을 망치지 않도록 조용히 무시 (notifier 내부에서 로깅).
             pass
