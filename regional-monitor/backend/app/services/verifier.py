@@ -184,20 +184,13 @@ async def verify_batch(
     if not place_list:
         return []
 
-    # 적응형 동시성 — 활성 사용자 수에 따라 글로벌 세마포어가 자동 조정됨
-    # 단일 사용자: 글로벌 5 슬롯 → concurrency=5 까지 풀로 활용
-    # 다중 사용자: 글로벌 2 슬롯 → 사용자별 concurrency=2 한도 자동 큐잉
-    await acquire_verification_slot()
+    # 적응형 동시성:
+    #  - 단일 사용자(active==1): 글로벌 SOLO=2, 로컬 sem=요청값(기본 5) → 글로벌이 실제 한도
+    #  - 다중 사용자(active>=2): 글로벌 MULTI=1로 전환되어 사용자 간 자동 직렬화
+    # 로컬 sem은 빠르게 글로벌에 진입하기 위한 큐잉 한도 (글로벌이 절대 상한)
+    acquire_verification_slot()
     try:
-        # 현재 활성 사용자 수에 맞춰 로컬 동시성도 적응
-        active = get_active_verification_count()
-        global_limit = get_current_naver_limit()
-        # 단일 사용자(active==1): 호출자 지정 concurrency 그대로 사용 (최대 글로벌 한도)
-        # 다중 사용자(active>=2): 글로벌 한도 이하로 강제 (안전)
-        effective_concurrency = (
-            min(concurrency, global_limit) if active <= 1 else global_limit
-        )
-        sem = asyncio.Semaphore(effective_concurrency)
+        sem = asyncio.Semaphore(concurrency)
 
         async with httpx.AsyncClient(http2=False, follow_redirects=True) as client:
 
@@ -207,7 +200,7 @@ async def verify_batch(
 
             return await asyncio.gather(*(_one(p) for p in place_list))
     finally:
-        await release_verification_slot()
+        release_verification_slot()
 
 
 # ────────────────────────────────────────────────────────────

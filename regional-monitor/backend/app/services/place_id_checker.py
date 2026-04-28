@@ -86,94 +86,85 @@ MOBILE_UA = (
 # Naver의 IP 단위 throttle 정책상 동시 호출은 거의 즉시 차단되며,
 # 직렬 호출은 안정적으로 200 OK. 따라서 단일 사용자도 1로 시작 (직렬화).
 # 296건 × 270ms = 약 80초 — 안정적이고 예측 가능한 성능.
-NAVER_SOLO_LIMIT = 1    # 활성 사용자 1명일 때 (직렬 = 가장 안정)
-NAVER_MULTI_LIMIT = 1   # 활성 사용자 2명 이상일 때 (큐잉)
+NAVER_SOLO_LIMIT = 2    # 활성 사용자 1명일 때 (sem=2 + pace=150ms → 154ms/req, 296건 ~46초)
+NAVER_MULTI_LIMIT = 1   # 활성 사용자 2명 이상일 때 (직렬 큐잉, 안전 우선)
 
 # 활성 검증 작업 카운터 (verify_batch 시작 시 +1, 종료 시 -1)
+# 단순 정수 카운터 — GIL 보호로 race condition 없음, lock 불필요.
 _active_verifications: int = 0
-_active_lock: asyncio.Lock | None = None
 
-# 동적으로 재생성되는 세마포어 (현재 활성 사용자 수에 따라)
-_NAVER_GLOBAL_SEM: asyncio.Semaphore | None = None
-_current_limit: int = NAVER_SOLO_LIMIT
-
-
-def _get_active_lock() -> asyncio.Lock:
-    global _active_lock
-    if _active_lock is None:
-        _active_lock = asyncio.Lock()
-    return _active_lock
+# 두 개의 고정 세마포어를 미리 만들어 두고 활성 사용자 수에 따라 골라 사용.
+# 재생성하지 않으므로 데드락 위험 없음.
+_NAVER_SOLO_SEM: asyncio.Semaphore | None = None
+_NAVER_MULTI_SEM: asyncio.Semaphore | None = None
 
 
-async def acquire_verification_slot() -> None:
-    """검증 작업 시작 시 호출 — 활성 카운터 증가 + 세마포어 재조정."""
-    global _active_verifications, _NAVER_GLOBAL_SEM, _current_limit
-    async with _get_active_lock():
-        _active_verifications += 1
-        # 활성자 1명 → 5, 2명+ → 2
-        new_limit = NAVER_SOLO_LIMIT if _active_verifications <= 1 else NAVER_MULTI_LIMIT
-        if new_limit != _current_limit or _NAVER_GLOBAL_SEM is None:
-            # 새 세마포어 생성 (기존에 대기 중인 작업은 그대로 진행됨 — 새 요청만 새 한도 적용)
-            _NAVER_GLOBAL_SEM = asyncio.Semaphore(new_limit)
-            _current_limit = new_limit
+def acquire_verification_slot() -> None:
+    """검증 작업 시작 — 단순 카운터 증가 (동기, lock 불필요)."""
+    global _active_verifications
+    _active_verifications += 1
 
 
-async def release_verification_slot() -> None:
-    """검증 작업 종료 시 호출 — 활성 카운터 감소 + 세마포어 재조정."""
-    global _active_verifications, _NAVER_GLOBAL_SEM, _current_limit
-    async with _get_active_lock():
-        _active_verifications = max(0, _active_verifications - 1)
-        # 활성자 1명 이하로 떨어지면 다시 SOLO 한도로 확장
-        new_limit = NAVER_SOLO_LIMIT if _active_verifications <= 1 else NAVER_MULTI_LIMIT
-        if new_limit != _current_limit:
-            _NAVER_GLOBAL_SEM = asyncio.Semaphore(new_limit)
-            _current_limit = new_limit
+def release_verification_slot() -> None:
+    """검증 작업 종료 — 카운터 감소."""
+    global _active_verifications
+    _active_verifications = max(0, _active_verifications - 1)
 
 
 def get_active_verification_count() -> int:
-    """현재 진행 중인 검증 작업 수 (디버깅/모니터링용)."""
+    """현재 진행 중인 검증 작업 수."""
     return _active_verifications
 
 
 def get_current_naver_limit() -> int:
-    """현재 적용 중인 네이버 동시 호출 한도 (디버깅/모니터링용)."""
-    return _current_limit
+    """현재 권장 네이버 동시 호출 한도 (활성 사용자 수에 따라)."""
+    return NAVER_SOLO_LIMIT if _active_verifications <= 1 else NAVER_MULTI_LIMIT
 
 
 _last_naver_call_time: float = 0.0
-NAVER_MIN_INTERVAL_SEC = 0.20  # 직렬 호출 간 최소 간격 (Naver burst 검출 회피)
+_pace_lock: asyncio.Lock | None = None
+NAVER_MIN_INTERVAL_SEC = 0.15  # 호출 간 최소 간격 (실측: 150ms로도 100% OK)
 
 
 async def _pace_naver_call() -> None:
-    """직렬 호출 간 최소 간격 강제 — Naver의 IP burst 검출 우회.
+    """호출 간 최소 간격 강제 — Naver의 IP burst 검출 우회.
 
-    글로벌 세마포어가 1이라 직렬이지만, 호출 사이에 충분한 간격이 없으면
-    Naver는 짧은 시간에 같은 IP에서 너무 많은 요청을 받았다고 판단해 throttle함.
+    글로벌 세마포어가 2(SOLO)라 동시 2개 진입 가능 → mutex 필요.
+    lock으로 last 시간 갱신을 직렬화하여 실제 호출 간격이 NAVER_MIN_INTERVAL_SEC 이상 보장.
 
     실측 (2026-04-28, AWS Lightsail Seoul → Naver m.place):
-      - 간격 < 100ms (병렬 동시): 50~100% 429
-      - 간격 200ms (직렬 200ms): 100% 200 OK ✅
-      - 간격 300ms (직렬 300ms): 100% 200 OK
+      - 50ms 직렬: 20/20 OK, 243ms/req
+      - 100ms 직렬: 30/30 OK, 164ms/req
+      - 150ms + sem=2: 30/30 OK, 154ms/req ✅ (현재 설정)
     """
     import time as _t
-    global _last_naver_call_time
-    # 세마포어가 1이라 동시 진입 없음 → mutex 불필요, 단순 비교만
-    now = _t.monotonic()
-    elapsed = now - _last_naver_call_time
-    wait = NAVER_MIN_INTERVAL_SEC - elapsed
-    if wait > 0:
-        await asyncio.sleep(wait)
-    _last_naver_call_time = _t.monotonic()
+    global _last_naver_call_time, _pace_lock
+    if _pace_lock is None:
+        _pace_lock = asyncio.Lock()
+    async with _pace_lock:
+        now = _t.monotonic()
+        elapsed = now - _last_naver_call_time
+        wait = NAVER_MIN_INTERVAL_SEC - elapsed
+        if wait > 0:
+            await asyncio.sleep(wait)
+        _last_naver_call_time = _t.monotonic()
 
 
 def _get_naver_global_sem() -> asyncio.Semaphore:
-    """이벤트 루프 시작 후 lazy-init.
-    acquire/release_verification_slot 으로 세마포어가 재생성될 수 있다.
+    """활성 사용자 수에 따라 SOLO 또는 MULTI 세마포어를 반환.
+    각 세마포어는 한 번만 생성되어 평생 재사용됨 (재생성 = 데드락 위험).
+
+    동작:
+      - 활성 사용자 ≤ 1: SOLO 세마포어(2 슬롯) → 단일 사용자 빠른 처리
+      - 활성 사용자 ≥ 2: MULTI 세마포어(1 슬롯) → 사용자 간 자동 직렬화
+    같은 사용자 내 호출은 같은 세마포어를 공유하므로 안전.
     """
-    global _NAVER_GLOBAL_SEM
-    if _NAVER_GLOBAL_SEM is None:
-        _NAVER_GLOBAL_SEM = asyncio.Semaphore(NAVER_SOLO_LIMIT)
-    return _NAVER_GLOBAL_SEM
+    global _NAVER_SOLO_SEM, _NAVER_MULTI_SEM
+    if _NAVER_SOLO_SEM is None:
+        _NAVER_SOLO_SEM = asyncio.Semaphore(NAVER_SOLO_LIMIT)
+    if _NAVER_MULTI_SEM is None:
+        _NAVER_MULTI_SEM = asyncio.Semaphore(NAVER_MULTI_LIMIT)
+    return _NAVER_SOLO_SEM if _active_verifications <= 1 else _NAVER_MULTI_SEM
 
 
 @dataclass

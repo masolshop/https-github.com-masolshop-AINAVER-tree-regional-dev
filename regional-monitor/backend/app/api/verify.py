@@ -115,18 +115,16 @@ async def run_live_check(
     if not places:
         raise HTTPException(status_code=404, detail="검증할 등록이 없습니다.")
 
-    # 병렬 검증 — 글로벌 세마포어가 실제 한도 결정 (place_id_checker.py)
-    # 실측 결과 (2026-04-28, Lightsail Seoul → Naver):
-    #   직렬 1건씩 (300ms 간격)  → 100% 200 OK, ~270ms/건
-    #   동시 2건                 → 50% 429 발생 (즉시 throttle)
-    #   동시 3건+                → 거의 100% 429 (1분 이상 회복 대기)
-    # 결론: AWS Lightsail IP 단위 throttle이 매우 엄격 → 직렬 처리가 가장 빠름
-    # 296건 × 270ms ≈ 80초 (안정적, PENDING 누수 없음)
+    # 병렬 검증 — 글로벌 세마포어 + 호출 간격 페이싱이 실제 한도 결정
+    # 실측 (2026-04-28 Lightsail Seoul → Naver, 150ms pacing 적용):
+    #   sem=1 + pace=150ms → ~270ms/req, 296건 ~80초
+    #   sem=2 + pace=150ms → ~154ms/req, 296건 ~46초 ✅
+    #   sem=3+            → 30%+ 429 (페이싱이 충분치 않음)
+    # concurrency=2 — 글로벌 SOLO=2 한도 완전 활용
     mode = (req.mode or "full").lower()
     if mode not in ("full", "fast"):
         mode = "full"
-    # concurrency=1 — 글로벌 게이트(SOLO=1)와 일치, 직렬 처리
-    concurrency = 1
+    concurrency = 2
     t0 = time.perf_counter()
     raw_results = await verify_batch(places, concurrency=concurrency, mode=mode)
     total_ms = int((time.perf_counter() - t0) * 1000)
