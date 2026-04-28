@@ -111,3 +111,51 @@
     @apply bg-brand-500 text-white shadow-card;
   }
 }
+
+/* ============================================================
+   모바일 최적화 글로벌 규칙
+   ============================================================ */
+@layer utilities {
+  /* 가로 스크롤 절대 방지 (overflow-x: hidden) */
+  html, body {
+    overflow-x: hidden;
+    max-width: 100vw;
+  }
+
+  /* iOS Safari 줌 방지 (input/select/textarea 16px 미만 시 자동 줌) */
+  @media (max-width: 1023px) {
+    input,
+    select,
+    textarea {
+      font-size: 16px !important;
+    }
+  }
+
+  /* 모바일에서 큰 데스크탑 폰트 강제 축소 (text-h1, text-h2 등) */
+  @media (max-width: 640px) {
+    .text-h1 { font-size: 1.5rem !important; line-height: 2rem !important; }
+    .text-h2 { font-size: 1.25rem !important; line-height: 1.75rem !important; }
+    .text-h3 { font-size: 1.125rem !important; line-height: 1.5rem !important; }
+    .text-watermark { font-size: 2.5rem !important; line-height: 1 !important; }
+  }
+
+  /* 모바일에서 카드 min-height 완화 */
+  @media (max-width: 640px) {
+    .card-base { padding: 1rem !important; }
+  }
+
+  /* 모바일 터치 타겟 최소 크기 (44px) 보장 - 작은 버튼들 */
+  @media (max-width: 640px) {
+    button, a {
+      -webkit-tap-highlight-color: transparent;
+    }
+  }
+
+  /* 모바일에서 표(table) 가로 스크롤 가능 */
+  @media (max-width: 1023px) {
+    .table-scroll-mobile {
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
+    }
+  }
+}

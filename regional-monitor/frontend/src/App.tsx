@@ -11,6 +11,7 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 
 import { AppLayout } from '@/components/layout/AppLayout'
+import { InAppBrowserGuard } from '@/components/InAppBrowserGuard'
 import { useAuthStore } from '@/store/auth'
 import { configureAuth } from '@/api/client'
 import { useMe } from '@/hooks/useAuth'
@@ -96,6 +97,8 @@ function AuthBootstrap() {
 export default function App() {
   return (
     <QueryClientProvider client={queryClient}>
+      {/* 인앱 브라우저(카톡 등) 감지 → 외부 브라우저 자동 열기. 모든 라우트보다 먼저 검사 */}
+      <InAppBrowserGuard />
       <BrowserRouter>
         <AuthBootstrap />
         <Routes>

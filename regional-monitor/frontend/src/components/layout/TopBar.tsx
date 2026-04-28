@@ -37,16 +37,16 @@ export function TopBar({ title, subtitle }: TopBarProps) {
   }, [open])
 
   return (
-    <div className="flex items-center justify-between px-2 py-3 mb-2">
-      <div>
-        {title && <h1 className="text-h1 text-ink">{title}</h1>}
-        {subtitle && <p className="text-body-sm text-ink-muted mt-1">{subtitle}</p>}
+    <div className="flex items-center justify-between gap-2 px-1 sm:px-2 py-2 sm:py-3 mb-2">
+      <div className="min-w-0 flex-1">
+        {title && <h1 className="text-xl sm:text-h1 text-ink truncate">{title}</h1>}
+        {subtitle && <p className="text-caption sm:text-body-sm text-ink-muted mt-0.5 sm:mt-1 line-clamp-2">{subtitle}</p>}
       </div>
 
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
         <button
           aria-label="검색"
-          className="w-10 h-10 rounded-2xl bg-white shadow-card flex items-center justify-center text-ink-muted hover:text-ink transition-colors"
+          className="hidden sm:flex w-10 h-10 rounded-2xl bg-white shadow-card items-center justify-center text-ink-muted hover:text-ink transition-colors"
         >
           <Search size={18} />
         </button>
@@ -56,10 +56,11 @@ export function TopBar({ title, subtitle }: TopBarProps) {
             to="/admin"
             aria-label="관리자 콘솔"
             title="관리자 콘솔"
-            className="h-10 px-3 rounded-2xl bg-white shadow-card flex items-center gap-1.5 text-ink-muted hover:text-brand-600 transition-colors"
+            className="h-9 sm:h-10 px-2.5 sm:px-3 rounded-xl sm:rounded-2xl bg-white shadow-card flex items-center gap-1 sm:gap-1.5 text-ink-muted hover:text-brand-600 transition-colors"
           >
-            <ShieldCheck size={16} />
-            <span className="text-caption font-semibold">관리자</span>
+            <ShieldCheck size={14} className="sm:hidden" />
+            <ShieldCheck size={16} className="hidden sm:block" />
+            <span className="text-[11px] sm:text-caption font-semibold">관리자</span>
           </Link>
         )}
 
@@ -135,7 +136,7 @@ function NotificationPanel({ onClose }: { onClose: () => void }) {
     <div
       role="dialog"
       aria-label="알림"
-      className="absolute right-0 mt-2 w-[380px] bg-white rounded-card-lg shadow-card-hover overflow-hidden z-30 border border-bg-subtle"
+      className="absolute right-0 mt-2 w-[calc(100vw-2rem)] max-w-[380px] sm:w-[380px] bg-white rounded-card-lg shadow-card-hover overflow-hidden z-30 border border-bg-subtle"
     >
       {/* 헤더 */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-bg-subtle">

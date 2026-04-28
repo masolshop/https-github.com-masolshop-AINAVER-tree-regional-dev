@@ -5,6 +5,11 @@
  * - 2번: 솔루션 소개
  * - 3번: 실시간 노출 관리   ← 로그인 필요
  * - 4번: 자동 노출 검증 관리   ← 로그인 필요
+ *
+ * 데스크탑(≥lg): 좌측 고정 사이드바
+ * 모바일(<lg): AppLayout이 Drawer로 감싸서 표시
+ *
+ * onItemClick: 메뉴/로그인/로그아웃 클릭 시 호출 (모바일 Drawer 자동 닫기용)
  */
 import { NavLink, useNavigate } from 'react-router-dom'
 import {
@@ -21,6 +26,10 @@ import {
 import clsx from 'clsx'
 import { useAuthStore } from '@/store/auth'
 import { useLogout } from '@/hooks/useAuth'
+
+interface SidebarProps {
+  onItemClick?: () => void
+}
 
 const PLAN_LABEL: Record<string, string> = {
   free: 'FREE',
@@ -43,7 +52,7 @@ const MENU: MenuItem[] = [
   { to: '/history',  label: '자동 노출 검증 관리', icon: History,         requireAuth: true  },
 ]
 
-export function Sidebar() {
+export function Sidebar({ onItemClick }: SidebarProps = {}) {
   const navigate = useNavigate()
   const { user, isAuthenticated, openLoginModal } = useAuthStore()
   const logoutMut = useLogout()
@@ -53,10 +62,11 @@ export function Sidebar() {
       e.preventDefault()
       openLoginModal(item.to)
     }
+    onItemClick?.()
   }
 
   return (
-    <aside className="w-72 shrink-0 h-screen sticky top-0 flex flex-col p-5 gap-4">
+    <aside className="w-72 shrink-0 h-screen lg:sticky lg:top-0 flex flex-col p-5 gap-4 bg-bg overflow-y-auto">
       {/* 로고 */}
       <div className="px-2 pt-2 pb-1">
         <div className="flex items-center gap-2">
@@ -111,6 +121,7 @@ export function Sidebar() {
             </div>
             <button
               onClick={() => {
+                onItemClick?.()
                 logoutMut.mutate(undefined, {
                   onSettled: () => navigate('/'),
                 })
@@ -133,7 +144,10 @@ export function Sidebar() {
               </div>
             </div>
             <button
-              onClick={() => openLoginModal()}
+              onClick={() => {
+                onItemClick?.()
+                openLoginModal()
+              }}
               className="w-full flex items-center justify-center gap-1.5 py-2.5 text-body-sm font-semibold rounded-xl bg-brand-500 text-white hover:bg-brand-600 transition-colors"
             >
               <LogIn size={16} /> 로그인 / 회원가입
@@ -175,6 +189,7 @@ export function Sidebar() {
         {isAuthenticated && user?.is_superadmin && (
           <NavLink
             to="/admin"
+            onClick={() => onItemClick?.()}
             className={({ isActive }) =>
               clsx(
                 'sidebar-item mt-2 border-t border-bg-subtle pt-3',
