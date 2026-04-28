@@ -1,14 +1,19 @@
 /**
- * 로그인 / 회원가입 / 아이디·비밀번호 찾기 / Google 추가정보 모달
+ * 로그인 / 회원가입 / 아이디·비밀번호 찾기 모달
  *
  * 모달 단계 (store/auth.ts 의 LoginModalStep):
- *   - 'login'      : 로그인 화면 (아이디/비번 또는 Google)
- *   - 'signup'     : 직접 회원가입 (아이디/비번 + 이메일/이름/회사/휴대폰)
- *   - 'forgot-id'  : 아이디 찾기 (이메일 입력)
- *   - 'forgot-pw'  : 비밀번호 재설정 링크 발송 (아이디/이메일 입력)
- *   - 'profile'    : Google 로그인 후 추가정보 입력 (구 흐름 — 호환 유지)
+ *   - 'login'      : 일반 사용자 (휴대폰 + 비밀번호) / 어드민 (이메일 + 비밀번호) 탭 로그인
+ *   - 'signup'     : 회원가입 (휴대폰=아이디 + 비밀번호 + 이메일/이름/회사 + 약관)
+ *   - 'forgot-id'  : 아이디(=가입 휴대폰번호) 찾기 (가입 이메일 입력 → 이메일로 발송)
+ *   - 'forgot-pw'  : 비밀번호 재설정 링크 발송 (휴대폰/이메일/아이디 입력)
+ *   - 'profile'    : (legacy) 기존 Google 가입자 추가정보 입력 - UI 트리거 없음, 호환만 유지
+ *
+ * 핵심 정책 (요구사항 반영):
+ *   - Google 로그인 완전 제거 (탭/버튼/스크립트 전부)
+ *   - 일반 사용자 ID = 휴대폰 번호 (가입 시 자동으로 username = 숫자만 추출한 휴대폰)
+ *   - 어드민 로그인 = 별도 탭, 이메일 + 비밀번호 (슈퍼어드민 / 직원 계정)
  */
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   X,
@@ -30,7 +35,6 @@ import {
 
 import { useAuthStore } from '@/store/auth'
 import {
-  useGoogleLogin,
   useCompleteProfile,
   usePasswordLogin,
   useSignup,
@@ -38,58 +42,6 @@ import {
   useForgotPassword,
 } from '@/hooks/useAuth'
 import { ApiError } from '@/api/client'
-
-/* ─────────────── Google Identity Services 타입 (간이) ─────────────── */
-declare global {
-  interface Window {
-    google?: {
-      accounts: {
-        id: {
-          initialize: (config: {
-            client_id: string
-            callback: (response: { credential: string }) => void
-            ux_mode?: 'popup' | 'redirect'
-            auto_select?: boolean
-          }) => void
-          renderButton: (
-            parent: HTMLElement,
-            options: {
-              theme?: 'outline' | 'filled_blue' | 'filled_black'
-              size?: 'small' | 'medium' | 'large'
-              text?: 'signin_with' | 'signup_with' | 'continue_with' | 'signin'
-              shape?: 'rectangular' | 'pill' | 'circle' | 'square'
-              width?: number
-              locale?: string
-            },
-          ) => void
-          prompt: () => void
-        }
-      }
-    }
-  }
-}
-
-const GOOGLE_CLIENT_ID = (import.meta.env.VITE_GOOGLE_CLIENT_ID as string | undefined) ?? ''
-const IS_DEV_MOCK = GOOGLE_CLIENT_ID.trim().length === 0
-
-/** 개발용 페이크 Google ID 토큰 생성 */
-function makeDevIdToken(email: string, name: string): string {
-  const header = { alg: 'RS256', typ: 'JWT', kid: 'fake-dev' }
-  const payload = {
-    iss: 'https://accounts.google.com',
-    sub: `dev-${btoa(email).replace(/=/g, '')}`,
-    email,
-    email_verified: true,
-    name,
-    picture: `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(name)}`,
-    aud: 'dev-fake-client-id',
-    iat: Math.floor(Date.now() / 1000),
-    exp: Math.floor(Date.now() / 1000) + 3600,
-  }
-  const b64 = (obj: object) =>
-    btoa(JSON.stringify(obj)).replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_')
-  return `${b64(header)}.${b64(payload)}.dev-fake-signature`
-}
 
 /** 010-XXXX-XXXX 자동 포맷 */
 function formatPhone(input: string): string {
@@ -100,7 +52,6 @@ function formatPhone(input: string): string {
 }
 
 const PHONE_REGEX = /^010-\d{4}-\d{4}$/
-const USERNAME_REGEX = /^[A-Za-z0-9_.]{4,30}$/
 
 /* ═══════════════════════════════════════════════════════════════════
  *   메인 모달
@@ -180,94 +131,58 @@ function ModalHeader({
 }
 
 /* ═══════════════════════════════════════════════════════════════════
- *   Step: 로그인
+ *   Step: 로그인 (일반 사용자 = 휴대폰 / 어드민 = 이메일)
  * ═══════════════════════════════════════════════════════════════════ */
 function LoginStep() {
   const setModalStep = useAuthStore((s) => s.setModalStep)
-  const googleLogin = useGoogleLogin()
   const passwordLogin = usePasswordLogin()
-  const gButtonRef = useRef<HTMLDivElement>(null)
-  const [scriptReady, setScriptReady] = useState(false)
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
-  // 기본 탭: 아이디/비밀번호 로그인 (직접 가입 사용자 우선)
-  const [tab, setTab] = useState<'password' | 'google'>('password')
-  const [pwIdent, setPwIdent] = useState('')
-  const [pwPassword, setPwPassword] = useState('')
+  // 'user' = 일반 사용자 (휴대폰 + 비밀번호)  /  'admin' = 어드민 (이메일·아이디 + 비밀번호)
+  const [tab, setTab] = useState<'user' | 'admin'>('user')
 
-  // GIS 스크립트 로드
-  useEffect(() => {
-    if (IS_DEV_MOCK) return
-    if (window.google?.accounts?.id) {
-      setScriptReady(true)
-      return
-    }
-    const existing = document.querySelector<HTMLScriptElement>(
-      'script[src="https://accounts.google.com/gsi/client"]',
-    )
-    if (existing) {
-      existing.addEventListener('load', () => setScriptReady(true))
-      return
-    }
-    const s = document.createElement('script')
-    s.src = 'https://accounts.google.com/gsi/client'
-    s.async = true
-    s.defer = true
-    s.onload = () => setScriptReady(true)
-    document.head.appendChild(s)
-  }, [])
+  // 일반 사용자 (휴대폰)
+  const [phone, setPhone] = useState('')
+  const [phonePassword, setPhonePassword] = useState('')
 
-  // GIS 버튼 렌더 (Google 탭일 때만)
-  useEffect(() => {
-    if (IS_DEV_MOCK) return
-    if (tab !== 'google') return
-    if (!scriptReady || !gButtonRef.current || !window.google) return
+  // 어드민 (이메일/아이디)
+  const [adminIdent, setAdminIdent] = useState('')
+  const [adminPassword, setAdminPassword] = useState('')
 
-    window.google.accounts.id.initialize({
-      client_id: GOOGLE_CLIENT_ID,
-      callback: (response) => {
-        setErrorMsg(null)
-        googleLogin.mutate(response.credential, {
-          onError: (err) => {
-            const msg = err instanceof ApiError ? err.message : (err as Error).message
-            setErrorMsg(`로그인 실패: ${msg}`)
-          },
-        })
-      },
-      ux_mode: 'popup',
-      auto_select: false,
-    })
-    window.google.accounts.id.renderButton(gButtonRef.current, {
-      theme: 'outline',
-      size: 'large',
-      text: 'continue_with',
-      shape: 'pill',
-      width: 360,
-      locale: 'ko',
-    })
-  }, [scriptReady, googleLogin, tab])
-
-  const handleDevMockLogin = () => {
-    setErrorMsg(null)
-    const email = `dev-${Date.now()}@regionwatch-dev.example.com`
-    const name = '테스트 사용자'
-    const idToken = makeDevIdToken(email, name)
-    googleLogin.mutate(idToken, {
-      onError: (err) => {
-        const msg = err instanceof ApiError ? err.message : (err as Error).message
-        setErrorMsg(`로그인 실패: ${msg}`)
-      },
-    })
-  }
-
-  const handlePasswordSubmit = (e: React.FormEvent) => {
+  const handleUserSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     setErrorMsg(null)
-    if (!pwIdent.trim() || !pwPassword) {
-      setErrorMsg('아이디(또는 이메일)와 비밀번호를 입력해주세요.')
+    const trimmed = phone.trim()
+    if (!trimmed || !phonePassword) {
+      setErrorMsg('휴대폰 번호와 비밀번호를 입력해주세요.')
+      return
+    }
+    if (!PHONE_REGEX.test(trimmed)) {
+      setErrorMsg('휴대폰 번호 형식이 올바르지 않습니다. 예: 010-0000-0000')
+      return
+    }
+    // 백엔드(/auth/login)는 email 필드에 username/email/phone 모두 허용한다.
+    // 가입 시 username 으로 숫자만 추출한 휴대폰번호(예: 01012345678)를 저장하므로 그 값으로 로그인.
+    const ident = trimmed.replace(/\D/g, '')
+    passwordLogin.mutate(
+      { email: ident, password: phonePassword },
+      {
+        onError: (err) => {
+          const msg = err instanceof ApiError ? err.message : (err as Error).message
+          setErrorMsg(msg || '로그인 실패')
+        },
+      },
+    )
+  }
+
+  const handleAdminSubmit = (e: React.FormEvent) => {
+    e.preventDefault()
+    setErrorMsg(null)
+    if (!adminIdent.trim() || !adminPassword) {
+      setErrorMsg('이메일(또는 아이디)과 비밀번호를 입력해주세요.')
       return
     }
     passwordLogin.mutate(
-      { email: pwIdent.trim(), password: pwPassword },
+      { email: adminIdent.trim(), password: adminPassword },
       {
         onError: (err) => {
           const msg = err instanceof ApiError ? err.message : (err as Error).message
@@ -284,7 +199,7 @@ function LoginStep() {
         icon={<ShieldCheck className="text-white" size={24} />}
         title="타지역서비스 로그인"
         subtitle={
-          tab === 'password' ? '아이디 또는 이메일로 로그인' : 'Google 계정으로 1초 로그인'
+          tab === 'user' ? '휴대폰 번호로 로그인' : '어드민 계정 (이메일·아이디) 로그인'
         }
       />
 
@@ -293,51 +208,55 @@ function LoginStep() {
         <button
           type="button"
           onClick={() => {
-            setTab('password')
+            setTab('user')
             setErrorMsg(null)
           }}
           className={`flex-1 py-2 rounded-lg text-caption font-semibold transition-colors ${
-            tab === 'password' ? 'bg-white text-ink shadow-sm' : 'text-ink-muted hover:text-ink'
+            tab === 'user' ? 'bg-white text-ink shadow-sm' : 'text-ink-muted hover:text-ink'
           }`}
         >
-          아이디 로그인
+          일반 사용자
         </button>
         <button
           type="button"
           onClick={() => {
-            setTab('google')
+            setTab('admin')
             setErrorMsg(null)
           }}
           className={`flex-1 py-2 rounded-lg text-caption font-semibold transition-colors ${
-            tab === 'google' ? 'bg-white text-ink shadow-sm' : 'text-ink-muted hover:text-ink'
+            tab === 'admin' ? 'bg-white text-ink shadow-sm' : 'text-ink-muted hover:text-ink'
           }`}
         >
-          Google 로그인
+          어드민 로그인
         </button>
       </div>
 
-      {tab === 'password' && (
-        <form onSubmit={handlePasswordSubmit} className="space-y-3.5">
+      {tab === 'user' && (
+        <form onSubmit={handleUserSubmit} className="space-y-3.5">
           <div>
             <label className="block text-caption font-semibold text-ink mb-1.5">
-              아이디 또는 이메일
+              <Phone size={12} className="inline mr-1 -mt-0.5" /> 휴대폰 번호 (아이디)
             </label>
             <input
-              type="text"
-              value={pwIdent}
-              onChange={(e) => setPwIdent(e.target.value)}
-              placeholder="masol_shop 또는 you@email.com"
-              autoComplete="username"
+              type="tel"
+              value={phone}
+              onChange={(e) => setPhone(formatPhone(e.target.value))}
+              placeholder="010-0000-0000"
+              inputMode="numeric"
+              maxLength={13}
+              autoComplete="tel"
               autoFocus
               className="rm-field-input"
             />
           </div>
           <div>
-            <label className="block text-caption font-semibold text-ink mb-1.5">비밀번호</label>
+            <label className="block text-caption font-semibold text-ink mb-1.5">
+              <Lock size={12} className="inline mr-1 -mt-0.5" /> 비밀번호
+            </label>
             <input
               type="password"
-              value={pwPassword}
-              onChange={(e) => setPwPassword(e.target.value)}
+              value={phonePassword}
+              onChange={(e) => setPhonePassword(e.target.value)}
               placeholder="••••••••"
               autoComplete="current-password"
               className="rm-field-input"
@@ -387,53 +306,55 @@ function LoginStep() {
         </form>
       )}
 
-      {tab === 'google' && (
-        <>
-          {IS_DEV_MOCK ? (
-            <button
-              onClick={handleDevMockLogin}
-              disabled={googleLogin.isPending}
-              className="w-full flex items-center justify-center gap-3 py-3.5 px-4 rounded-2xl bg-white border-2 border-bg-subtle hover:border-brand-200 hover:bg-bg-subtle disabled:opacity-60 disabled:cursor-wait transition-all font-semibold text-ink"
-            >
-              {googleLogin.isPending ? (
-                <Loader2 className="animate-spin" size={18} />
-              ) : (
-                <svg width="20" height="20" viewBox="0 0 24 24">
-                  <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
-                  <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
-                  <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" />
-                  <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" />
-                </svg>
-              )}
-              Google 계정으로 계속하기
-            </button>
-          ) : (
-            <div className="flex flex-col items-center">
-              <div ref={gButtonRef} className="min-h-[44px]" />
-              {!scriptReady && (
-                <div className="text-caption text-ink-muted mt-2 flex items-center gap-1.5">
-                  <Loader2 className="animate-spin" size={14} /> Google 로그인 준비 중…
-                </div>
-              )}
-              {googleLogin.isPending && (
-                <div className="text-caption text-brand-600 mt-2 flex items-center gap-1.5">
-                  <Loader2 className="animate-spin" size={14} /> 인증 처리 중…
-                </div>
-              )}
-            </div>
-          )}
-
-          <div className="mt-6 text-center text-caption text-ink-muted leading-relaxed">
-            처음 로그인 시 <span className="text-ink font-medium">개인정보 수집·이용 동의</span>와<br />
-            <span className="text-ink font-medium">서비스 이용약관</span> 동의를 받습니다.
+      {tab === 'admin' && (
+        <form onSubmit={handleAdminSubmit} className="space-y-3.5">
+          <div className="px-3 py-2 mb-1 rounded-xl bg-bg-subtle/60 border border-bg-subtle text-caption text-ink-muted flex items-start gap-2">
+            <ShieldCheck size={14} className="shrink-0 mt-0.5 text-brand-600" />
+            <span>슈퍼어드민 / 직원 계정 전용 입구입니다.</span>
           </div>
-
-          {IS_DEV_MOCK && (
-            <div className="mt-5 px-3 py-2 rounded-xl bg-amber-50 border border-amber-200 text-caption text-amber-800 text-center">
-              ⚠️ 개발 모드 — VITE_GOOGLE_CLIENT_ID 미설정 (페이크 ID 토큰 사용)
-            </div>
-          )}
-        </>
+          <div>
+            <label className="block text-caption font-semibold text-ink mb-1.5">
+              <AtSign size={12} className="inline mr-1 -mt-0.5" /> 이메일 또는 아이디
+            </label>
+            <input
+              type="text"
+              value={adminIdent}
+              onChange={(e) => setAdminIdent(e.target.value)}
+              placeholder="admin@taziyuk.com 또는 admin_id"
+              autoComplete="username"
+              autoFocus
+              className="rm-field-input"
+            />
+          </div>
+          <div>
+            <label className="block text-caption font-semibold text-ink mb-1.5">
+              <Lock size={12} className="inline mr-1 -mt-0.5" /> 비밀번호
+            </label>
+            <input
+              type="password"
+              value={adminPassword}
+              onChange={(e) => setAdminPassword(e.target.value)}
+              placeholder="••••••••"
+              autoComplete="current-password"
+              className="rm-field-input"
+            />
+          </div>
+          <button
+            type="submit"
+            disabled={passwordLogin.isPending}
+            className="w-full flex items-center justify-center gap-2 py-3 rounded-2xl bg-ink hover:bg-ink/90 disabled:opacity-60 disabled:cursor-wait text-white font-semibold transition-colors"
+          >
+            {passwordLogin.isPending ? (
+              <>
+                <Loader2 className="animate-spin" size={16} /> 로그인 중…
+              </>
+            ) : (
+              <>
+                <ShieldCheck size={16} /> 어드민 로그인
+              </>
+            )}
+          </button>
+        </form>
       )}
 
       {/* 에러 */}
@@ -456,7 +377,7 @@ function SignupStep() {
   const navigate = useNavigate()
   const signup = useSignup()
 
-  const [username, setUsername] = useState('')
+  // 휴대폰 번호 = 아이디 (별도 username 입력 없이 휴대폰의 숫자만 추출하여 username 으로 사용)
   const [password, setPassword] = useState('')
   const [passwordConfirm, setPasswordConfirm] = useState('')
   const [email, setEmail] = useState('')
@@ -472,7 +393,6 @@ function SignupStep() {
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
   const [submitted, setSubmitted] = useState(false)
 
-  const usernameOk = USERNAME_REGEX.test(username)
   const passwordOk = password.length >= 8
   const passwordMatch = password === passwordConfirm && passwordConfirm.length > 0
   const emailOk = /.+@.+\..+/.test(email)
@@ -481,7 +401,6 @@ function SignupStep() {
   const companyOk = company.trim().length >= 1
   const requiredAgreementsOk = agPrivacy && agTerms
   const formValid =
-    usernameOk &&
     passwordOk &&
     passwordMatch &&
     emailOk &&
@@ -496,13 +415,17 @@ function SignupStep() {
     setErrorMsg(null)
     if (!formValid) return
 
+    // 휴대폰 010-1234-5678 → username "01012345678" (숫자 11자리)
+    const phoneTrim = phone.trim()
+    const username = phoneTrim.replace(/\D/g, '')
+
     signup.mutate(
       {
-        username: username.trim(),
+        username,
         password,
         email: email.trim(),
         name: name.trim(),
-        phone: phone.trim(),
+        phone: phoneTrim,
         company: company.trim(),
         job_title: jobTitle.trim() || null,
         agreements: {
@@ -545,28 +468,26 @@ function SignupStep() {
       <ModalHeader
         icon={<UserIcon className="text-white" size={24} />}
         title="회원가입"
-        subtitle="아이디·이메일·휴대폰으로 1분 안에 시작"
+        subtitle="휴대폰 번호가 곧 아이디입니다"
       />
 
       <form onSubmit={handleSubmit} className="space-y-4">
-        {/* 아이디 */}
+        {/* 휴대폰 = 아이디 */}
         <FieldRow
-          icon={<AtSign size={14} />}
-          label="아이디"
+          icon={<Phone size={14} />}
+          label="휴대폰 번호 (아이디)"
           required
-          hint="4~30자 영문/숫자/_/."
-          error={
-            submitted && !usernameOk
-              ? '아이디는 4~30자, 영문/숫자/_/. 만 사용할 수 있습니다'
-              : null
-          }
+          hint="가입 후 이 번호로 로그인합니다"
+          error={submitted && !phoneOk ? '010-0000-0000 형식으로 입력해주세요' : null}
         >
           <input
-            type="text"
-            value={username}
-            onChange={(e) => setUsername(e.target.value.replace(/\s/g, ''))}
-            placeholder="masol_shop"
-            autoComplete="username"
+            type="tel"
+            value={phone}
+            onChange={(e) => setPhone(formatPhone(e.target.value))}
+            placeholder="010-0000-0000"
+            inputMode="numeric"
+            maxLength={13}
+            autoComplete="tel"
             autoFocus
             className="rm-field-input"
           />
@@ -638,25 +559,6 @@ function SignupStep() {
             onChange={(e) => setName(e.target.value)}
             placeholder="홍길동"
             autoComplete="name"
-            className="rm-field-input"
-          />
-        </FieldRow>
-
-        {/* 휴대폰 */}
-        <FieldRow
-          icon={<Phone size={14} />}
-          label="휴대폰 번호"
-          required
-          error={submitted && !phoneOk ? '010-0000-0000 형식으로 입력해주세요' : null}
-        >
-          <input
-            type="tel"
-            value={phone}
-            onChange={(e) => setPhone(formatPhone(e.target.value))}
-            placeholder="010-0000-0000"
-            inputMode="numeric"
-            maxLength={13}
-            autoComplete="tel"
             className="rm-field-input"
           />
         </FieldRow>
@@ -812,7 +714,7 @@ function ForgotIdStep() {
       <ModalHeader
         icon={<Mail className="text-white" size={24} />}
         title="아이디 찾기"
-        subtitle="가입 시 등록한 이메일로 아이디를 보내드립니다"
+        subtitle="가입 이메일로 아이디(휴대폰 번호)를 보내드립니다"
       />
 
       {done ? (
@@ -820,7 +722,7 @@ function ForgotIdStep() {
           title="아이디 안내 메일을 발송했습니다"
           description={
             <>
-              입력하신 이메일로 가입된 계정이 있다면 <b>아이디</b>를 보내드렸습니다.
+              입력하신 이메일로 가입된 계정이 있다면 <b>가입 휴대폰 번호(=아이디)</b>를 보내드렸습니다.
               <br />
               메일이 보이지 않으면 스팸함도 확인해주세요.
             </>
@@ -950,16 +852,16 @@ function ForgotPasswordStep() {
       ) : (
         <form onSubmit={handleSubmit} className="space-y-4">
           <FieldRow
-            icon={<AtSign size={14} />}
-            label="아이디 또는 이메일"
+            icon={<Phone size={14} />}
+            label="휴대폰 번호 또는 이메일"
             required
-            error={submitted && !identOk ? '아이디 또는 이메일을 입력해주세요' : null}
+            error={submitted && !identOk ? '휴대폰 번호 또는 이메일을 입력해주세요' : null}
           >
             <input
               type="text"
               value={ident}
               onChange={(e) => setIdent(e.target.value)}
-              placeholder="masol_shop 또는 you@email.com"
+              placeholder="010-1234-5678 또는 you@email.com"
               autoComplete="username"
               autoFocus
               className="rm-field-input"

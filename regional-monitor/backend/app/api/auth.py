@@ -96,27 +96,44 @@ async def login_with_password(
     body: PasswordLoginRequest,
     db: AsyncSession = Depends(get_db),
 ) -> PasswordLoginResponse:
-    """이메일/아이디 + 비밀번호 로그인.
+    """휴대폰/이메일/아이디 + 비밀번호 로그인.
 
-    body.email 필드에 이메일 또는 아이디(username) 둘 다 허용.
-    슈퍼어드민 계정 또는 직접가입 사용자가 사용. Google OAuth 사용자는 password_hash 가
-    NULL 이라 자동으로 로그인 거부됨.
+    body.email 필드에 다음 형태를 모두 허용:
+      - 휴대폰 번호 (010-1234-5678 / 01012345678 / 010 1234 5678)
+      - 이메일 (you@example.com)
+      - 아이디(username) — 직접가입 사용자의 경우 휴대폰 digit-only 가 자동 저장됨
+
+    슈퍼어드민(이메일+비밀번호) 또는 일반 가입자(휴대폰+비밀번호)가 사용.
+    Google OAuth 사용자는 password_hash 가 NULL 이라 자동으로 로그인 거부됨.
 
     실패 시 401 (어느 쪽이 틀렸는지 알려주지 않음 — enumeration 방지).
     차단된(is_active=False) 사용자는 403.
     """
     ident = body.email.strip()
     ident_lower = ident.lower()
-    # 이메일 형식이면 email 매칭, 아니면 username 매칭. 안전하게 둘 다 시도.
-    result = await db.execute(
-        select(User).where(
-            or_(
-                User.email == ident_lower,
-                User.username == ident,           # username 은 대소문자 보존
-                User.username == ident_lower,    # 호환: 소문자 입력도 허용
-            )
-        )
-    )
+
+    # 휴대폰 번호로 로그인 시도 시: 010-1234-5678 / 01012345678 / 010 1234 5678
+    # 모두 동일하게 매칭하기 위해 dash/공백 제거된 digit-only 형태와 정규화된
+    # 010-XXXX-XXXX 형태를 모두 후보 식별자로 사용한다.
+    digits_only = re.sub(r"\D", "", ident)
+    is_phone_like = len(digits_only) in (10, 11) and digits_only.startswith("01")
+    phone_normalized: str | None = None
+    if is_phone_like:
+        phone_normalized = _normalize_phone(ident)
+
+    where_clauses = [
+        User.email == ident_lower,
+        User.username == ident,        # username 은 대소문자 보존
+        User.username == ident_lower,   # 호환: 소문자 입력도 허용
+    ]
+    if is_phone_like:
+        # username 은 가입 시 digit-only(예: 01012345678)로 저장됨
+        where_clauses.append(User.username == digits_only)
+        # phone 컬럼은 010-XXXX-XXXX 형태로 저장됨
+        if phone_normalized:
+            where_clauses.append(User.phone == phone_normalized)
+
+    result = await db.execute(select(User).where(or_(*where_clauses)))
     user = result.scalar_one_or_none()
 
     # 일정 시간 소비 (timing attack 방지) — 사용자 없을 때도 verify_password 호출
@@ -124,7 +141,7 @@ async def login_with_password(
     if not user or not is_valid:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="이메일 또는 비밀번호가 올바르지 않습니다.",
+            detail="아이디(휴대폰/이메일) 또는 비밀번호가 올바르지 않습니다.",
         )
 
     if not user.is_active:
@@ -394,11 +411,28 @@ async def forgot_password(
     enumeration 방지를 위해 항상 200 반환.
     """
     if not body.username and not body.email:
-        raise HTTPException(400, detail="아이디 또는 이메일을 입력해주세요.")
+        raise HTTPException(400, detail="아이디(휴대폰) 또는 이메일을 입력해주세요.")
 
     user: User | None = None
+    # username 필드는 (1) 옛 영문 아이디 (2) 휴대폰 digit-only (3) 휴대폰 dash 형식
+    # 모두 받을 수 있도록 후보를 생성한다.
     if body.username:
-        result = await db.execute(select(User).where(User.username == body.username))
+        ident = body.username.strip()
+        digits_only = re.sub(r"\D", "", ident)
+        is_phone_like = len(digits_only) in (10, 11) and digits_only.startswith("01")
+        candidates = [
+            User.username == ident,
+            User.username == ident.lower(),
+        ]
+        if is_phone_like:
+            candidates.append(User.username == digits_only)
+            phone_norm = _normalize_phone(ident)
+            if phone_norm:
+                candidates.append(User.phone == phone_norm)
+        # 이메일 형식이면 username 칸으로 들어왔어도 email 매칭
+        if "@" in ident:
+            candidates.append(User.email == ident.lower())
+        result = await db.execute(select(User).where(or_(*candidates)))
         user = result.scalar_one_or_none()
     if user is None and body.email:
         result = await db.execute(

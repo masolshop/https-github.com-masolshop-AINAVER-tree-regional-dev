@@ -153,12 +153,18 @@ def _shell(title: str, headline: str, body_html: str) -> str:
 
 def _render_username(user: User) -> tuple[str, str]:
     name = user.name or user.email
-    username = user.username or "(미설정)"
+    raw_username = user.username or ""
+    # 신규 정책: username = 휴대폰 digit-only (예: 01012345678).
+    # 사용자 친화적으로 010-1234-5678 형태로 표기.
+    if raw_username.isdigit() and len(raw_username) == 11 and raw_username.startswith("01"):
+        display_id = f"{raw_username[:3]}-{raw_username[3:7]}-{raw_username[7:]}"
+    else:
+        display_id = raw_username or (user.phone or "(미설정)")
 
     text = (
         f"{name}님,\n\n"
-        f"요청하신 타지역서비스 계정의 아이디는 다음과 같습니다.\n\n"
-        f"  아이디: {username}\n\n"
+        f"요청하신 타지역서비스 계정의 아이디(휴대폰 번호)는 다음과 같습니다.\n\n"
+        f"  아이디: {display_id}\n\n"
         f"로그인: {_SITE_URL}\n\n"
         f"본인이 요청하지 않았다면 이 메일을 무시해주세요.\n"
         f"— 타지역서비스네이버노출솔루션"
@@ -166,11 +172,11 @@ def _render_username(user: User) -> tuple[str, str]:
 
     body_html = f"""
         <p style="margin:0 0 16px;font-size:14px;color:#1F2D4D;line-height:1.6;">
-          <b>{_html_escape(name)}</b>님, 요청하신 계정의 아이디는 아래와 같습니다.
+          <b>{_html_escape(name)}</b>님, 요청하신 계정의 아이디(휴대폰 번호)는 아래와 같습니다.
         </p>
         <div style="margin:16px 0;padding:18px 20px;background:#F9FAFB;border:1px solid #E5E7EB;border-radius:12px;">
-          <div style="font-size:11px;font-weight:700;color:#6B7280;letter-spacing:.06em;text-transform:uppercase;">아이디</div>
-          <div style="margin-top:6px;font-size:20px;font-weight:800;color:#1F2D4D;font-family:'SF Mono',Consolas,monospace;letter-spacing:.02em;">{_html_escape(username)}</div>
+          <div style="font-size:11px;font-weight:700;color:#6B7280;letter-spacing:.06em;text-transform:uppercase;">아이디 (휴대폰 번호)</div>
+          <div style="margin-top:6px;font-size:20px;font-weight:800;color:#1F2D4D;font-family:'SF Mono',Consolas,monospace;letter-spacing:.02em;">{_html_escape(display_id)}</div>
         </div>
         <p style="margin:0 0 16px;font-size:13px;color:#374151;line-height:1.6;">
           위 아이디와 비밀번호로 로그인해주세요. 비밀번호가 기억나지 않으면 로그인 화면에서 <b>비밀번호 찾기</b> 를 이용하실 수 있습니다.
