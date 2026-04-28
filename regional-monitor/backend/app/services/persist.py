@@ -52,6 +52,11 @@ def classify_event(prev: str, new: str, detail: dict) -> tuple[str, str] | None:
     # 첫 검증(이전이 PENDING/CHECKING)은 변경으로 보지 않음 — baseline 수립
     if prev in {"PENDING", "CHECKING", ""}:
         return None
+    # ⭐ PENDING 전환은 변경 이벤트로 보지 않음 — 네이버 응답 누락/429 throttle 등 일시 오류이며,
+    # 다음 회차에서 OK 또는 명확한 verdict로 회복될 가능성이 높음. 알림 노이즈 방지.
+    # (current_verdict 자체도 PENDING으로 덮어쓰지 않으므로 일관성 유지)
+    if new in {"PENDING", "CHECKING", ""}:
+        return None
 
     actual_dong = (detail or {}).get("actual_dong") or ""
     actual_name = (detail or {}).get("actual_name") or ""
