@@ -5,7 +5,7 @@ import time
 from datetime import datetime
 from app.core.time_utils import now_kst, to_kst, KST
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -35,6 +35,24 @@ from app.services.verify_job_runner import (
 from .deps import get_current_user
 
 router = APIRouter(prefix="/verify", tags=["verify"])
+
+
+# ──────────────────────────────────────────────────────────────
+# 사용자별 동시 수동 검증 락 — 같은 사용자가 다중 청크/탭/새로고침 후
+# 새 검증을 다시 트리거할 때 백엔드에서 동시 실행되는 것을 방지.
+# 동시 실행이 일어나면 phone→place_id 추출 단계가 같은 번호에 대해 두 번
+# 동시 호출되어 네이버에서 403/429 차단을 받고, false-positive DEAD 판정으로
+# 이어진다 (실제 사례: 96건이 한 번에 PAGE_DELETED 로 잘못 판정).
+# ──────────────────────────────────────────────────────────────
+_user_verify_locks: dict[int, asyncio.Lock] = {}
+
+
+def _get_user_lock(user_id: int) -> asyncio.Lock:
+    lock = _user_verify_locks.get(user_id)
+    if lock is None:
+        lock = asyncio.Lock()
+        _user_verify_locks[user_id] = lock
+    return lock
 
 # Verdict 한글 라벨 (XLSX 다운로드용)
 _VERDICT_LABEL_KO = {
@@ -97,6 +115,7 @@ def _job_to_out(job: VerifyJob) -> VerifyJobOut:
 @router.post("/live", response_model=LiveCheckResponse)
 async def run_live_check(
     req: LiveCheckRequest,
+    request: Request,
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> LiveCheckResponse:
@@ -105,7 +124,33 @@ async def run_live_check(
     프론트의 "지금 검증 시작" 버튼이 호출.
     - place_ids 가 None 이면 전체 등록을 검증.
     - 결과는 DB(daily_health_checks)에 기록되고, registered_places.current_verdict 갱신.
+
+    동시성 보호:
+      · 사용자별 asyncio.Lock 으로 같은 user 의 두 번째 요청은 409(Conflict).
+        (예: 새로고침 후 재요청 시 이전 검증이 끝날 때까지 대기하지 않고 빠르게 거절)
     """
+    # 1) 사용자별 락 — 이미 검증 중이면 즉시 409 반환 (waiting 으로 무한 대기 방지)
+    lock = _get_user_lock(user.id)
+    if lock.locked():
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "이전 검증이 아직 진행 중입니다. 잠시 후 다시 시도하거나 "
+                "‘취소’ 후 페이지가 ‘대기’ 상태가 된 뒤 시작해주세요."
+            ),
+        )
+
+    async with lock:
+        return await _run_live_check_locked(req, request, user, db)
+
+
+async def _run_live_check_locked(
+    req: LiveCheckRequest,
+    request: Request,
+    user: User,
+    db: AsyncSession,
+) -> LiveCheckResponse:
+    """실제 검증 본체. lock 안에서만 호출됨."""
     query = select(RegisteredPlace).where(RegisteredPlace.user_id == user.id)
     if req.place_ids:
         query = query.where(RegisteredPlace.id.in_(req.place_ids))

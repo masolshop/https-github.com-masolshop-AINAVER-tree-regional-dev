@@ -42,6 +42,10 @@ async def verify_one(
         dict: 표준 검증 결과 dict (run_live_check 응답에 사용).
     """
     # ── place_id 가 비어있으면 먼저 phone→place 추출 시도 ──
+    # ⚠️ 추출 실패 / 네트워크 오류 / 403·429 차단은 일시적 사유이므로 절대 DEAD 로
+    #    확정짓지 않는다 (DEAD 는 ChangeEvent='PAGE_DELETED' 를 트리거하여 사용자에게
+    #    "페이지가 삭제됐다"고 잘못 알리게 됨). 추출 실패 = PENDING(검증 대기) 처리하여
+    #    다음 회차에서 재시도하고, place.current_verdict 도 덮어쓰지 않는다.
     if not place.place_id:
         try:
             from app.extractors.phone_to_place import (
@@ -61,7 +65,9 @@ async def verify_one(
                 if not place.category and ext.category:
                     place.category = ext.category
             else:
-                # 추출 실패 → 노출 못 찾음 = DEAD
+                # 추출 실패 → 일시 보류(PENDING). 다음 회차에서 재시도.
+                ext_status = getattr(ext, "http_status", 0) if ext else 0
+                ext_error = (getattr(ext, "error", None) if ext else None) or "extract_failed"
                 return {
                     "place_id_ref": place.id,
                     "phone": place.phone,
@@ -78,13 +84,14 @@ async def verify_one(
                         "actual_name": None,
                         "actual_address": None,
                     },
-                    "verdict": "DEAD",
+                    "verdict": "PENDING",
                     "response_ms": 0,
-                    "http_status": getattr(ext, "http_status", 0) if ext else 0,
-                    "error": (getattr(ext, "error", None) if ext else None) or "extract_failed",
+                    "http_status": ext_status,
+                    "error": ext_error,
                     "checked_at": now_kst(),
                 }
         except Exception as e:                                                            # noqa: BLE001
+            # 추출 단계의 모든 예외 = 일시 오류 → PENDING (사용자에게 "삭제" 라고 거짓 보고하지 않음)
             return {
                 "place_id_ref": place.id,
                 "phone": place.phone,
@@ -101,7 +108,7 @@ async def verify_one(
                     "actual_name": None,
                     "actual_address": None,
                 },
-                "verdict": "DEAD",
+                "verdict": "PENDING",
                 "response_ms": 0,
                 "http_status": 0,
                 "error": f"extract_exception: {type(e).__name__}",
@@ -132,7 +139,10 @@ async def verify_one(
     # (NAME_MISMATCH는 단순화 정책에 따라 더 이상 발생하지 않음)
     verdict = cr.verdict if cr.verdict else "PENDING"
     if verdict == "ERROR":
-        verdict = "DEAD"  # 네트워크 오류는 DEAD로 통합 (사용자 입장에서는 같음)
+        # ⚠️ 네트워크 오류 / timeout / 403·429 등 일시 차단은 절대 DEAD 가 아님.
+        # 사용자에게 "페이지 삭제" 알림이 오는 false-positive 의 주범이므로 PENDING 으로
+        # 통일하여 다음 회차에서 재검증하도록 한다.
+        verdict = "PENDING"
     elif verdict == "SUSPICIOUS":
         verdict = "DONG_MISMATCH"  # 보수적
 

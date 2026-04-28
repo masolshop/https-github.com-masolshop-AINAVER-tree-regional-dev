@@ -81,11 +81,16 @@ export class ApiError extends Error {
   }
 }
 
-interface RequestOpts extends Omit<RequestInit, 'body'> {
+interface RequestOpts extends Omit<RequestInit, 'body' | 'signal'> {
   body?: unknown
   timeoutMs?: number
   /** true면 401 시 onUnauthorized 호출하지 않음 (예: /auth/me 폴백 등) */
   skipUnauthorizedHandler?: boolean
+  /**
+   * 외부에서 주입하는 AbortSignal — 사용자가 ‘취소’ 를 눌렀을 때 진행 중인
+   * fetch 도 즉시 중단되도록 한다 (LiveCheck 청크 호출 등에서 사용).
+   */
+  signal?: AbortSignal
 }
 
 export async function request<T>(path: string, opts: RequestOpts = {}): Promise<T> {
@@ -94,11 +99,17 @@ export async function request<T>(path: string, opts: RequestOpts = {}): Promise<
     timeoutMs = 30_000,
     headers,
     skipUnauthorizedHandler = false,
+    signal: externalSignal,
     ...rest
   } = opts
 
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), timeoutMs)
+  // 외부 signal 이 abort 되면 우리 controller 도 abort
+  if (externalSignal) {
+    if (externalSignal.aborted) controller.abort()
+    else externalSignal.addEventListener('abort', () => controller.abort(), { once: true })
+  }
 
   // 인증 토큰 자동 주입
   const token = getToken()
@@ -172,6 +183,10 @@ export async function request<T>(path: string, opts: RequestOpts = {}): Promise<
     return (await res.json()) as T
   } catch (err) {
     if (err instanceof DOMException && err.name === 'AbortError') {
+      // 외부 signal 로 인한 사용자 취소 vs 자체 timeout 구분
+      if (externalSignal?.aborted) {
+        throw new ApiError('aborted by user', 0)
+      }
       throw new ApiError('request timeout', 0)
     }
     if (err instanceof ApiError) throw err

@@ -48,11 +48,14 @@ export default function LiveCheckTab() {
   const [results, setResults] = useState<VerificationResult[]>([])
   const [totalMs, setTotalMs] = useState(0)
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
+  const [cancelling, setCancelling] = useState(false)
   // 검증 모드: 'fast' (페이지 존재 유무만, ~10s/200건) / 'full' (전화·동 풀 검증, ~40s/200건)
   const [mode, setMode] = useState<VerifyMode>('fast')
   // 직전 청크 시간 (ETA 계산용)
   const [lastChunkMs, setLastChunkMs] = useState<number[]>([])
   const cancelRef = useRef(false)
+  // 진행 중인 청크 fetch 를 즉시 abort 시키기 위한 컨트롤러
+  const abortRef = useRef<AbortController | null>(null)
 
   const totalRegistered = placesData?.summary.total ?? 0
   const allPlaceIds = useMemo(
@@ -96,11 +99,14 @@ export default function LiveCheckTab() {
 
     // 초기화
     setRunning(true)
+    setCancelling(false)
     setErrorMsg(null)
     setResults([])
     setTotalMs(0)
     setLastChunkMs([])
     cancelRef.current = false
+    // 새 검증 세션의 AbortController — cancel() 시 진행 중인 청크 fetch 도 즉시 취소
+    abortRef.current = new AbortController()
 
     const ids = [...allPlaceIds]
     const chunks: number[][] = []
@@ -134,7 +140,10 @@ export default function LiveCheckTab() {
         setProgress((p) => ({ ...p, chunk: i + 1 }))
 
         const ts = performance.now()
-        const resp = await runLiveCheck({ place_ids: chunk, mode })
+        const resp = await runLiveCheck(
+          { place_ids: chunk, mode },
+          { signal: abortRef.current?.signal },
+        )
         const elapsed = Math.round(performance.now() - ts)
 
         accMs += resp.total_ms || elapsed
@@ -160,19 +169,32 @@ export default function LiveCheckTab() {
       console.log(
         `[LiveCheck] 완료: ${accResults.length}/${ids.length}건 (총 ${total}ms)`,
       )
-      // Places 캐시 무효화 — verdict 갱신 반영
-      qc.invalidateQueries({ queryKey: placeKeys.all })
+      // 캐시 무효화는 finally 에서 일괄 처리
     } catch (e: unknown) {
-      const msg = formatApiError(e)
-      console.error('[LiveCheck] 실패:', msg, e)
-      setErrorMsg(msg)
+      // 사용자 취소(AbortError) 는 에러로 표시하지 않음
+      if (cancelRef.current || isAbortError(e)) {
+        console.log('[LiveCheck] 취소됨 — 진행 중인 청크 fetch abort')
+      } else {
+        const msg = formatApiError(e)
+        console.error('[LiveCheck] 실패:', msg, e)
+        setErrorMsg(msg)
+      }
     } finally {
       setRunning(false)
+      setCancelling(false)
+      abortRef.current = null
+      // 부분 결과의 verdict/place 상태 반영을 위해 캐시 무효화
+      qc.invalidateQueries({ queryKey: placeKeys.all })
     }
   }
 
   const cancel = () => {
+    if (!running) return
+    console.log('[LiveCheck] 사용자 취소 요청 — abort 신호 전송')
     cancelRef.current = true
+    setCancelling(true)
+    // 진행 중인 청크 fetch 를 즉시 abort (백엔드는 disconnect 감지)
+    abortRef.current?.abort()
   }
 
   const progressPct =
@@ -272,9 +294,18 @@ export default function LiveCheckTab() {
                 <button
                   type="button"
                   onClick={cancel}
-                  className="inline-flex items-center gap-2 px-4 py-3 rounded-pill bg-red-500/90 hover:bg-red-500 text-white font-semibold text-body-sm transition-all"
+                  disabled={cancelling}
+                  className="inline-flex items-center gap-2 px-4 py-3 rounded-pill bg-red-500/90 hover:bg-red-500 text-white font-semibold text-body-sm transition-all disabled:opacity-60 disabled:cursor-wait"
                 >
-                  <StopCircle size={16} /> 취소
+                  {cancelling ? (
+                    <>
+                      <Loader2 size={16} className="animate-spin" /> 취소 중…
+                    </>
+                  ) : (
+                    <>
+                      <StopCircle size={16} /> 취소
+                    </>
+                  )}
                 </button>
               )}
               <button
@@ -564,7 +595,23 @@ function EmptyState() {
 function formatApiError(e: unknown): string {
   if (e instanceof ApiError) {
     if (e.status === 0) return `네트워크 오류 (백엔드 연결 확인): ${e.message}`
+    if (e.status === 409) {
+      // 동일 사용자가 이미 검증 진행 중 — 백엔드 락 충돌
+      return '이전 검증이 아직 진행 중입니다. 잠시 후 다시 시도해 주세요.'
+    }
     return `API ${e.status}: ${e.message}`
   }
   return (e as Error).message ?? '알 수 없는 오류'
+}
+
+/** fetch abort 로 인한 에러를 식별 — 사용자 취소 시 에러로 표시하지 않기 위함 */
+function isAbortError(e: unknown): boolean {
+  if (e instanceof ApiError && e.status === 0) {
+    // ApiError(status=0) 중 message 가 'Aborted' 또는 'aborted' 인 경우
+    return /abort/i.test(e.message)
+  }
+  if (e instanceof Error) {
+    return e.name === 'AbortError' || /abort/i.test(e.message)
+  }
+  return false
 }
