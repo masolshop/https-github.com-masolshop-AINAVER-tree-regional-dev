@@ -172,6 +172,7 @@ async def verify_batch(
     places: Iterable[RegisteredPlace],
     concurrency: int = 10,
     mode: str = "full",
+    pace_ms: int = 0,
 ) -> list[dict]:
     """여러 Place 병렬 검증.
 
@@ -179,6 +180,8 @@ async def verify_batch(
         places: 검증 대상 RegisteredPlace iterable
         concurrency: 동시 요청 수 (full=3, fast=8 권장)
         mode: 'full' (전화+동/로/리 검증) / 'fast' (페이지 존재 유무만)
+        pace_ms: 각 작업 시작 직전 추가 지연 (ms). 자동 검증에서 서버/네이버 부하를
+            추가로 낮추기 위해 사용. 0이면 비활성. (sem 내부에서 sleep → 실제 RPS↓)
     """
     place_list = list(places)
     if not place_list:
@@ -191,11 +194,14 @@ async def verify_batch(
     acquire_verification_slot()
     try:
         sem = asyncio.Semaphore(concurrency)
+        pace_sec = max(0, pace_ms) / 1000.0
 
         async with httpx.AsyncClient(http2=False, follow_redirects=True) as client:
 
             async def _one(p):
                 async with sem:
+                    if pace_sec > 0:
+                        await asyncio.sleep(pace_sec)
                     return await verify_one(client, p, mode=mode)
 
             return await asyncio.gather(*(_one(p) for p in place_list))

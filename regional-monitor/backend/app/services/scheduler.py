@@ -79,9 +79,26 @@ def kst_hour() -> int:
 # ──────────────────────────────────────────────────────────────
 # 튜닝 파라미터
 # ──────────────────────────────────────────────────────────────
+#
+# 자동 검증 정책 (2026.04.28~):
+#   - 모드: fast (페이지 존재 유무만 확인 — 전화/동/이름은 등록 시 1회 정밀 검증으로 충분)
+#   - 속도: 수동 검증의 약 1/2 (서버 + 네이버 리스크 최소화)
+#       · 수동 fast:  concurrency=3, no pace      → 296건 ≈ 30~60s
+#       · 자동 fast:  concurrency=2, pace 200ms   → 296건 ≈ 60~120s (≈2배 느림)
+#   - 글로벌 세마포어가 다중 사용자 시 자동으로 1로 떨어뜨려 추가 보호.
+#
+# 향후 주기 변경 (시간별 → 일/3일/5일)은 SCHEDULE_TRIGGER 한 곳만 수정.
+# ──────────────────────────────────────────────────────────────
 
-# 사용자당 동시 검증 수 (네이버 부하 보호)
-PER_USER_CONCURRENCY = 5
+# 자동 검증 모드 (fast / full). fast 권장 — 정밀 검증은 등록 시 1회로 충분.
+AUTO_VERIFY_MODE = "fast"
+
+# 사용자당 동시 검증 수 (자동 검증; 수동의 절반).
+PER_USER_CONCURRENCY = 2
+
+# 요청 간 페이스 (ms). 수동 검증보다 약 2배 느리게 하기 위한 추가 지연.
+# concurrency=2 + pace=200ms ≈ 평균 RPS 약 5 → 단일 사용자 296건 ≈ 60~120초.
+AUTO_PACE_MS = 200
 
 # 사용자 처리 청크 크기 (메모리 보호)
 USER_CHUNK_SIZE = 50
@@ -113,7 +130,12 @@ async def _verify_user_places(
             if not places:
                 return {"updated": 0, "events": 0, "history": 0}
 
-            results = await verify_batch(places, concurrency=PER_USER_CONCURRENCY)
+            results = await verify_batch(
+                places,
+                concurrency=PER_USER_CONCURRENCY,
+                mode=AUTO_VERIFY_MODE,
+                pace_ms=AUTO_PACE_MS,
+            )
             stats = await persist_results(db, results)
 
             # ── 알림 발송 (best-effort, ChangeEvent 가 있을 때만) ──
@@ -308,7 +330,7 @@ async def run_slot_verification(slot_hour: int | None = None) -> dict:
                 db.add(VerificationRun(
                     user_id=uid,
                     trigger="scheduler",
-                    mode="full",
+                    mode=AUTO_VERIFY_MODE,
                     slot_hour=slot,
                     total_count=user_total,
                     ok_count=ok_n,
@@ -335,20 +357,58 @@ async def run_slot_verification(slot_hour: int | None = None) -> dict:
 _scheduler: AsyncIOScheduler | None = None
 
 
+# ──────────────────────────────────────────────────────────────
+# 자동 검증 주기 (KST)
+# ──────────────────────────────────────────────────────────────
+# 환경변수 AUTO_VERIFY_SCHEDULE 로 한 곳에서 변경 가능. 미설정 시 기본 'hourly'.
+#
+# 지원 값:
+#   "hourly"  — 매 시각 정각 (테스트/디버그용. 현재 기본)
+#   "daily"   — 매일 사용자 verify_slot 시각에 1회
+#   "every3d" — 3일에 1회 (지정 시각 — 기본 03:00 KST)
+#   "every5d" — 5일에 1회 (지정 시각 — 기본 03:00 KST)
+#
+# 변경 절차: AWS 서버의 .env 또는 systemd 환경변수에
+#   AUTO_VERIFY_SCHEDULE=daily   (또는 every3d / every5d)
+# 추가 후 backend 재시작.
+# ──────────────────────────────────────────────────────────────
+import os as _os
+
+AUTO_VERIFY_SCHEDULE = _os.environ.get("AUTO_VERIFY_SCHEDULE", "hourly").lower()
+
+
+def _build_trigger() -> CronTrigger:
+    """AUTO_VERIFY_SCHEDULE 에 따라 CronTrigger 생성."""
+    tz = "Asia/Seoul"
+    if AUTO_VERIFY_SCHEDULE == "daily":
+        # 매일 매 시각 정각 — run_slot_verification 내부에서 verify_slot 시각의 사용자만 처리.
+        # (사용자가 자신의 verify_slot 시각에 1회만 실행되는 효과 — 기존 동작과 동일)
+        return CronTrigger(minute=0, timezone=tz)
+    if AUTO_VERIFY_SCHEDULE == "every3d":
+        # 3일 간격(1, 4, 7, 10, 13, 16, 19, 22, 25, 28일) 03:00 KST
+        return CronTrigger(day="1,4,7,10,13,16,19,22,25,28", hour=3, minute=0, timezone=tz)
+    if AUTO_VERIFY_SCHEDULE == "every5d":
+        # 5일 간격(1, 6, 11, 16, 21, 26일) 03:00 KST
+        return CronTrigger(day="1,6,11,16,21,26", hour=3, minute=0, timezone=tz)
+    # 기본: hourly — 매 시각 정각
+    return CronTrigger(minute=0, timezone=tz)
+
+
 def start_scheduler() -> AsyncIOScheduler:
     """앱 시작 시 호출. 이미 시작돼 있으면 그대로 반환."""
     global _scheduler
     if _scheduler and _scheduler.running:
         return _scheduler
 
-    # KST 기준으로 매 시각 정각 실행
+    # KST 기준으로 자동 검증 트리거 가동
     sched = AsyncIOScheduler(timezone="Asia/Seoul")
+    trigger = _build_trigger()
 
     sched.add_job(
         run_slot_verification,
-        trigger=CronTrigger(minute=0, timezone="Asia/Seoul"),
+        trigger=trigger,
         id="slot_verification",
-        name="hourly slot verification (KST)",
+        name=f"slot verification ({AUTO_VERIFY_SCHEDULE}, KST)",
         replace_existing=True,
         max_instances=1,           # 같은 슬롯 중복 실행 방지
         coalesce=True,             # 미실행분이 누적되면 1번만 실행
@@ -357,7 +417,10 @@ def start_scheduler() -> AsyncIOScheduler:
 
     sched.start()
     _scheduler = sched
-    log.info("scheduler started — hourly slot verification armed (KST)")
+    log.info(
+        "scheduler started — schedule=%s mode=%s concurrency=%d pace=%dms",
+        AUTO_VERIFY_SCHEDULE, AUTO_VERIFY_MODE, PER_USER_CONCURRENCY, AUTO_PACE_MS,
+    )
     return sched
 
 

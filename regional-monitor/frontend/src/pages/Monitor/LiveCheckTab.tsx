@@ -243,9 +243,9 @@ export default function LiveCheckTab() {
                       ? 'bg-white text-brand-700 shadow-sm'
                       : 'text-white/80 hover:text-white'
                   }`}
-                  title="전화번호 + 동/로/리 일치 여부까지 검증 — 정확도 우선"
+                  title="전화번호 + 동/로/리 일치 여부까지 검증 — 등록 직후 최초 1회 권장. 이후 자동 검증은 빠른 검증으로 진행됩니다."
                 >
-                  🔍 정밀 검증
+                  🔍 정밀 검증 <span className="opacity-70">(최초 1회 권장)</span>
                 </button>
               </div>
             )}
