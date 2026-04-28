@@ -169,6 +169,42 @@ def extract_dong_from_address(address: str) -> Optional[str]:
 
 
 # ────────────────────────────────────────────────────────────
+# 캡차/차단 페이지 식별용 시그니처
+#   - 네이버는 IP 단위 레이트리밋에 걸리면 HTTP 200 상태로
+#     "비정상적인 접근이 감지되었습니다" 안내 + 캡차 폼을 내려준다.
+#   - 이 페이지에는 검색 결과 카드가 없으므로 place_id 추출이 100% 실패.
+#   - 단순 키워드 'captcha' 만으로 잡으면 정상 검색 결과의 잔존 키워드와 충돌할 수
+#     있으므로, 캡차 폼 / 차단 안내 / form action 을 함께 검사한다.
+_CAPTCHA_SIGNATURES = (
+    "비정상적인 접근",
+    "captcha.naver.com",
+    "/captcha/",
+    "자동 등록 방지",
+    "automated requests",
+)
+
+
+def _is_naver_captcha_page(html: str) -> bool:
+    """네이버 캡차/차단 페이지 여부 판정.
+
+    True 가 반환되면 place_id 추출을 시도하지 않고 즉시 PENDING 처리.
+    """
+    if not html:
+        return False
+    # 빠른 1차 컷: 검색 결과 페이지의 표식이 전혀 없는데 captcha 시그니처가 있을 때만
+    has_signature = any(sig in html for sig in _CAPTCHA_SIGNATURES)
+    if not has_signature:
+        return False
+    # 2차 보강: 정상 검색 결과에는 'place' / 'sc_new' 같은 컨테이너 클래스가 풍부함.
+    # 캡차 페이지는 form action="/captcha" 같은 명시적 marker 가 존재.
+    if 'captcha.naver.com' in html or '/captcha/' in html:
+        return True
+    if '비정상적인 접근' in html and '자동 등록 방지' in html:
+        return True
+    return False
+
+
+# ────────────────────────────────────────────────────────────
 async def extract_place_from_phone(
     phone: str,
     client: Optional[httpx.AsyncClient] = None,
@@ -219,6 +255,19 @@ async def extract_place_from_phone(
             )
 
         html = r.text
+
+        # 0) 🚨 캡차/차단 페이지 감지
+        #    네이버는 짧은 시간에 너무 많은 요청을 받으면 HTTP 200 으로 응답하면서
+        #    "비정상적인 접근이 감지되었습니다" 캡차 페이지를 내려준다.
+        #    이 경우엔 place_id_not_found 가 아니라 naver_blocked_captcha 로 명확히 표시.
+        #    → verifier.py 가 PENDING 으로 처리, 프론트엔드에서 "잠시 후 재시도" 안내.
+        if _is_naver_captcha_page(html):
+            return ExtractedPlace(
+                success=False,
+                phone=norm_phone,
+                response_ms=elapsed_ms,
+                error="naver_blocked_captcha",
+            )
 
         # 1) Place ID 추출 (가장 중요)
         # 5가지 패턴을 순차 시도하고, 가장 자주 등장하는 ID 를 선택한다.

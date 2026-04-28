@@ -22,7 +22,7 @@
  *
  * 청크 분할: 100건/청크, 글로벌 세마포어로 동시 호출 throttle.
  */
-import { useState, useMemo, useRef } from 'react'
+import { useState, useMemo, useRef, useEffect } from 'react'
 import { Card } from '@/components/ui/Card'
 import { VerdictBadge } from './VerdictBadge'
 import { usePlacesList } from '@/hooks/usePlaces'
@@ -52,6 +52,13 @@ import {
 const CHUNK_SIZE = 100              // 청크당 100건 — 진행률 자주 업데이트 + 청크 오버헤드 최소화
 const CHUNK_DELAY_MS = 0            // 청크 사이 휴식 0ms — 글로벌 세마포어가 throttle 자체적으로 제어
 
+// 검증 직후 쿨다운(초) — 네이버 IP 차단(captcha) 회피용
+//   · 등록 체크 / 재체크가 끝난 직후 같은 버튼을 연타하면 차단이 더 길어진다.
+//   · 5분(300초) 동안 버튼을 비활성화하고 "잠시 후 재시도" 안내 표시.
+//   · 새로고침해도 유지되도록 localStorage 에 다음 가능 시각(epoch ms)을 저장.
+const COOLDOWN_SEC = 300
+const COOLDOWN_KEY = 'liveCheck.cooldownUntil'
+
 /** 어떤 종류의 수동 검증을 실행 중인지 — UI 라벨/진행률 표시에 사용 */
 type CheckKind = 'register' | 'recheck'
 
@@ -73,6 +80,44 @@ export default function LiveCheckTab() {
   const cancelRef = useRef(false)
   // 진행 중인 청크 fetch 를 즉시 abort 시키기 위한 컨트롤러
   const abortRef = useRef<AbortController | null>(null)
+
+  // ── 검증 후 쿨다운 (네이버 captcha/차단 회피) ──────────────────────
+  //   localStorage 에서 epoch(ms) 를 읽어 초기화. 만료되면 0.
+  const [cooldownLeft, setCooldownLeft] = useState<number>(() => {
+    if (typeof window === 'undefined') return 0
+    const raw = window.localStorage.getItem(COOLDOWN_KEY)
+    if (!raw) return 0
+    const until = parseInt(raw, 10)
+    if (!Number.isFinite(until)) return 0
+    const left = Math.ceil((until - Date.now()) / 1000)
+    return left > 0 ? left : 0
+  })
+
+  // 1초마다 카운트다운 — 0 이 되면 자연 종료
+  useEffect(() => {
+    if (cooldownLeft <= 0) return
+    const id = window.setInterval(() => {
+      setCooldownLeft((s) => (s <= 1 ? 0 : s - 1))
+    }, 1000)
+    return () => window.clearInterval(id)
+  }, [cooldownLeft])
+
+  /** 쿨다운 시작 — 검증이 끝난 직후 호출 */
+  const startCooldown = (sec = COOLDOWN_SEC) => {
+    const until = Date.now() + sec * 1000
+    if (typeof window !== 'undefined') {
+      window.localStorage.setItem(COOLDOWN_KEY, String(until))
+    }
+    setCooldownLeft(sec)
+  }
+
+  /** 쿨다운 남은 시간 — 사람이 읽기 좋은 형식 */
+  const cooldownLabel = useMemo(() => {
+    if (cooldownLeft <= 0) return null
+    const m = Math.floor(cooldownLeft / 60)
+    const s = cooldownLeft % 60
+    return m > 0 ? `${m}분 ${s}초` : `${s}초`
+  }, [cooldownLeft])
 
   const totalRegistered = placesData?.summary.total ?? 0
   const allPlaceIds = useMemo(
@@ -232,6 +277,11 @@ export default function LiveCheckTab() {
       abortRef.current = null
       // 부분 결과의 verdict/place 상태 반영을 위해 캐시 무효화
       qc.invalidateQueries({ queryKey: placeKeys.all })
+      // 검증 직후 쿨다운(5분) 시작 — 사용자가 즉시 다시 누르는 것을 방지
+      // (사용자 취소 시에는 쿨다운을 걸지 않음 — 의도적으로 멈춘 것이므로)
+      if (!cancelRef.current) {
+        startCooldown()
+      }
     }
   }
 
@@ -373,10 +423,16 @@ export default function LiveCheckTab() {
             <button
               type="button"
               onClick={() => startCheck('register')}
-              disabled={totalRegistered === 0}
+              disabled={totalRegistered === 0 || cooldownLeft > 0}
               className="inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-pill bg-white text-brand-700 font-bold text-body-sm shadow-card hover:shadow-card-hover disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+              title={
+                cooldownLeft > 0
+                  ? `네이버 차단 회피를 위해 ${cooldownLabel} 후에 다시 시도할 수 있어요.`
+                  : undefined
+              }
             >
-              <Play size={14} /> 등록 체크 시작
+              <Play size={14} />
+              {cooldownLeft > 0 ? `재시도 가능 ${cooldownLabel}` : '등록 체크 시작'}
             </button>
           </Card>
 
@@ -391,15 +447,32 @@ export default function LiveCheckTab() {
               <span className="font-bold text-amber-200">검증 대기</span>로 보류된
               항목만 정밀 모드로 재검증합니다. 일시 차단(429/403)이 풀린 뒤 한
               번에 정리하기 좋은 단계입니다.
+              {cooldownLeft > 0 && (
+                <>
+                  <br />
+                  <span className="text-amber-200 font-semibold">
+                    ⏳ 네이버 차단 회피용 쿨다운 — {cooldownLabel} 후 재시도
+                  </span>
+                </>
+              )}
             </p>
             <button
               type="button"
               onClick={() => startCheck('recheck')}
-              disabled={pendingCount === 0}
+              disabled={pendingCount === 0 || cooldownLeft > 0}
               className="inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-pill bg-white text-brand-700 font-bold text-body-sm shadow-card hover:shadow-card-hover disabled:opacity-40 disabled:cursor-not-allowed transition-all"
-              title={pendingCount === 0 ? '검증 대기 항목이 없습니다.' : undefined}
+              title={
+                pendingCount === 0
+                  ? '검증 대기 항목이 없습니다.'
+                  : cooldownLeft > 0
+                  ? `네이버 차단 회피를 위해 ${cooldownLabel} 후에 다시 시도할 수 있어요.`
+                  : undefined
+              }
             >
-              <RefreshCw size={14} /> 재체크 ({pendingCount}건)
+              <RefreshCw size={14} />
+              {cooldownLeft > 0
+                ? `재시도 가능 ${cooldownLabel}`
+                : `재체크 (${pendingCount}건)`}
             </button>
           </Card>
 
@@ -546,7 +619,14 @@ export default function LiveCheckTab() {
                       <CheckIcon ok={r.detail.name_match} />
                     </td>
                     <td className="px-3 py-3">
-                      <VerdictBadge verdict={r.verdict} />
+                      <div className="flex flex-col gap-0.5" title={errorTooltip(r.error)}>
+                        <VerdictBadge verdict={r.verdict} />
+                        {r.verdict === 'PENDING' && r.error && (
+                          <span className="text-caption text-ink-soft truncate max-w-[140px]">
+                            {errorShortLabel(r.error)}
+                          </span>
+                        )}
+                      </div>
                     </td>
                     <td className="px-card-sm py-3 text-right text-caption text-ink-muted tabular-nums">
                       {r.response_ms}ms
@@ -563,6 +643,30 @@ export default function LiveCheckTab() {
 }
 
 /* ───────────── 서브 컴포넌트 ───────────── */
+
+/** PENDING 상세 라벨 — 표 셀에 짧게 표시 */
+function errorShortLabel(err: string): string {
+  if (err.startsWith('naver_blocked_captcha')) return '네이버 일시 차단'
+  if (err.startsWith('http_403')) return '403 차단'
+  if (err.startsWith('http_429') || err.includes('rate_limited')) return '429 일시 제한'
+  if (err.startsWith('place_id_not_found')) return 'Place ID 추출 실패'
+  if (err.startsWith('network')) return '네트워크 오류'
+  if (err.startsWith('extract_exception')) return '추출 오류'
+  return err
+}
+
+/** PENDING 상세 툴팁 — 사용자에게 안내 메시지 */
+function errorTooltip(err: string | null | undefined): string | undefined {
+  if (!err) return undefined
+  if (err.startsWith('naver_blocked_captcha'))
+    return '네이버가 일시적으로 캡차/차단 페이지를 응답했어요. 5~10분 후 다시 시도해 주세요.'
+  if (err.startsWith('http_403')) return '네이버가 403(접근 차단) 으로 응답했어요. 잠시 후 재시도하세요.'
+  if (err.includes('429') || err.includes('rate_limited'))
+    return '요청량이 일시적으로 많아 429(과도한 요청)로 응답했어요. 5분 후 재시도하세요.'
+  if (err.startsWith('place_id_not_found'))
+    return '전화번호로 Place ID 를 자동 추출하지 못했어요. 등록 관리에서 Place ID 를 직접 입력하시거나 잠시 후 재시도해 주세요.'
+  return err
+}
 
 function CheckIcon({ ok }: { ok: boolean | null | undefined }) {
   // fast 모드에서는 검증을 건너뛰므로 null — "—" 표시
