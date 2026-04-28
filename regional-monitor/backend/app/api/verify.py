@@ -115,16 +115,17 @@ async def run_live_check(
     if not places:
         raise HTTPException(status_code=404, detail="검증할 등록이 없습니다.")
 
-    # 병렬 검증 — 글로벌 세마포어가 실제 한도 결정
-    # 실측 (2026-04-28, AWS Lightsail Seoul → Naver):
-    #   sem=1 + 단순 헤더 + 150ms pace = 100% 200 OK, ~250ms/req
-    #   sem=2+                          = 50%+ 429 (header fingerprint + 동시성)
-    # → 단일 사용자: SOLO=1 직렬 처리 = 296건 ~76초 (안정)
+    # 병렬 검증 — 글로벌 세마포어가 실제 한도 결정 (SOLO=3 / MULTI=1)
+    # 실측 (2026-04-28, AWS Lightsail Seoul → Naver, 단순 헤더):
+    #   sem=3 직렬 5건 연속 테스트: 5/5 200 OK, 290ms/req
+    #   sem=1 + 400ms pace: 100건 75초 (너무 느림 - 사용자 불만)
+    # → fast 모드: concurrency=3 (글로벌 SOLO=3과 일치, 단일 사용자 ~30s/296건)
+    # → full 모드: concurrency=2 (정확도 우선, 추가 헤더 검사 필요)
     mode = (req.mode or "full").lower()
     if mode not in ("full", "fast"):
         mode = "full"
-    # concurrency=1 — 글로벌 SOLO=1과 일치, 직렬 처리
-    concurrency = 1
+    # 글로벌 세마포어가 다중 사용자 시 자동 1로 떨어뜨려 안전
+    concurrency = 3 if mode == "fast" else 2
     t0 = time.perf_counter()
     raw_results = await verify_batch(places, concurrency=concurrency, mode=mode)
     total_ms = int((time.perf_counter() - t0) * 1000)
