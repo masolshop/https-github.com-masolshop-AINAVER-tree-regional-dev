@@ -117,11 +117,11 @@ async def run_live_check(
 
     # 병렬 검증
     #  - mode='full': 전화+동/로/리 풀 검증 (concurrency 3 — 429 방지, 1청크 200건 ≈ 70초)
-    #  - mode='fast': 페이지 존재 유무만 (concurrency 8 — HEAD 요청, 1청크 200건 ≈ 18초)
+    #  - mode='fast': 페이지 존재 유무만 (concurrency 5 — GET 사용, 1청크 200건 ≈ 30초)
     mode = (req.mode or "full").lower()
     if mode not in ("full", "fast"):
         mode = "full"
-    concurrency = 8 if mode == "fast" else 3
+    concurrency = 5 if mode == "fast" else 3
     t0 = time.perf_counter()
     raw_results = await verify_batch(places, concurrency=concurrency, mode=mode)
     total_ms = int((time.perf_counter() - t0) * 1000)

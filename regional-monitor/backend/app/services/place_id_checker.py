@@ -472,16 +472,30 @@ async def check_place(client: httpx.AsyncClient, sample: Dict) -> CheckResult:
 
 
 # ============================================================================
-# Fast 모드: place_id 존재 유무만 체크 (HEAD 요청, ~30% 빠름, 트래픽 95% 절감)
+# Fast 모드: place_id 존재 유무만 체크 — GET 사용 (네이버 SPA는 HEAD/잘못된 ID에도
+# 200 + 정상 HTML 셸을 반환하므로 본문의 dead-page 키워드 검사가 필수)
+#   하지만 본문 파싱(JSON 추출/정규식 phone/주소)은 모두 건너뛰므로 full 대비 빠름
 # ============================================================================
+# Dead page 패턴 (한국어 + JSON state 결핍 동시 검사)
+_FAST_DEAD_PATTERNS = (
+    "존재하지 않는 업체",
+    "존재하지 않는 페이지",
+    "삭제된 업체",
+    "삭제된 장소",
+    "찾을 수 없는 페이지",
+    "페이지를 찾을 수 없습니다",
+)
+
+
 async def check_place_fast(client: httpx.AsyncClient, sample: Dict) -> CheckResult:
     """빠른 검증 모드 — place_id 페이지가 살아있는지만 확인.
 
-    - HEAD 요청을 우선 시도 (본문 다운로드 불필요, ~80KB 절감)
-    - 네이버가 HEAD 차단 시 GET fallback (본문 일부만 읽고 중단)
-    - 전화/동/상호 검증은 건너뜀 (phone_match, dong_match, name_match = None)
-    - 판정: OK (200) / DEAD (404/410) / PENDING (5xx, 429) / ERROR (네트워크)
-    - 1건당 평균 ~250 ms (full 모드 대비 35% 빠름)
+    - GET 요청 후 본문에서 dead 키워드 + JSON state 존재 여부만 확인
+      (네이버 m.place는 잘못된 ID에도 200 + SPA 셸을 반환하므로 status code만으로는 부족)
+    - 전화/동/상호 비교 로직 건너뜀 (phone_match/dong_match/name_match = None)
+    - HTML 파싱(balanced-brace JSON) 생략 → CPU 절감 + 메모리 절감
+    - 판정: OK / DEAD / PENDING (5xx, 429) / ERROR
+    - 1건당 평균 ~280 ms (full 모드 ~400 ms 대비 30% 빠름)
     """
     pid = sample["place_id"]
     phone = sample["phone"]
@@ -507,18 +521,13 @@ async def check_place_fast(client: httpx.AsyncClient, sample: Dict) -> CheckResu
 
     t0 = time.perf_counter()
     r = None
-    # 429 재시도 (full 모드와 동일한 backoff 로직)
+    html = ""
     for attempt in range(4):
         try:
-            # HEAD 우선 시도 — 본문 다운로드 없음
-            r = await client.head(
-                url, headers=headers, follow_redirects=True, timeout=10.0
+            r = await client.get(
+                url, headers=headers, follow_redirects=True, timeout=15.0
             )
-            # 일부 네이버 엔드포인트는 HEAD 미지원(405) → GET 폴백
-            if r.status_code == 405:
-                r = await client.get(
-                    url, headers=headers, follow_redirects=True, timeout=10.0
-                )
+            html = r.text
             if r.status_code != 429:
                 break
             if attempt == 3:
@@ -562,13 +571,39 @@ async def check_place_fast(client: httpx.AsyncClient, sample: Dict) -> CheckResu
         result.detail = f"⏳ 일시 오류 (HTTP {r.status_code}) — 재검증 권장"
         return result
 
-    # 200 — 페이지 살아있음
-    # fast 모드는 본문을 보지 않으므로 전화/동/상호 비교 생략
+    # 200 — body 검사로 dead page 판별
+    # ① 응답 본문이 너무 작거나 비어있으면 dead
+    is_dead = False
+    if not html or len(html) < 1000:
+        is_dead = True
+    else:
+        # ② 한국어 dead 키워드 검사 (단순 in — 대소문자 무관)
+        for pattern in _FAST_DEAD_PATTERNS:
+            if pattern in html:
+                is_dead = True
+                break
+        # ③ 정상 page는 반드시 window.__APOLLO_STATE__ 또는 window.__PLACE_STATE__ 가 있음
+        #    (잘못된 place_id 의 SPA 셸은 빈 state 만 보내거나 아예 없음)
+        if not is_dead:
+            if (
+                "window.__APOLLO_STATE__" not in html
+                and "window.__PLACE_STATE__" not in html
+            ):
+                is_dead = True
+
+    if is_dead:
+        result.place_alive = False
+        result.verdict = "DEAD"
+        result.severity = "CRITICAL"
+        result.detail = f"❌ Place 페이지 삭제·미존재 (status={result.http_status}, body={len(html)})"
+        return result
+
+    # 정상 — 페이지 살아있음, 전화/동/상호 비교 생략
     result.place_alive = True
     result.verdict = "OK"
     result.severity = "OK"
     result.detail = "✅ 페이지 정상 노출 (빠른 검증 — 전화/동 비교 생략)"
-    # 빠른 검증임을 표시 — UI에서 "—" 처리
+    # fast 모드 표시 — UI에서 "—" 처리
     result.phone_match = None  # type: ignore[assignment]
     result.dong_match = None  # type: ignore[assignment]
     result.name_match = None  # type: ignore[assignment]

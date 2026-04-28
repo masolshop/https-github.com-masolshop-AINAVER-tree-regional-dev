@@ -196,8 +196,8 @@ export default function LiveCheckTab() {
               <span className="text-caption text-white/60">
                 {chunkSize}건씩 청크로 나눠 순차 호출 · 청크당 약{' '}
                 {mode === 'fast'
-                  ? `${Math.ceil(chunkSize / 8 / 4)}~${Math.ceil(chunkSize / 8 / 2)}초`
-                  : `${Math.ceil(chunkSize / 3 / 4)}~${Math.ceil(chunkSize / 3 / 2)}초`}{' '}
+                  ? `${Math.ceil(chunkSize * 0.06)}~${Math.ceil(chunkSize * 0.1)}초`
+                  : `${Math.ceil(chunkSize * 0.13)}~${Math.ceil(chunkSize * 0.2)}초`}{' '}
                 · 청크 사이 {CHUNK_DELAY_MS}ms 휴식
               </span>
             </p>
