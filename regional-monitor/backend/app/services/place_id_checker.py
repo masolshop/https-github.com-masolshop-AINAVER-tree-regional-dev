@@ -86,7 +86,7 @@ MOBILE_UA = (
 # Naver의 IP 단위 throttle 정책상 동시 호출은 거의 즉시 차단되며,
 # 직렬 호출은 안정적으로 200 OK. 따라서 단일 사용자도 1로 시작 (직렬화).
 # 296건 × 270ms = 약 80초 — 안정적이고 예측 가능한 성능.
-NAVER_SOLO_LIMIT = 2    # 활성 사용자 1명일 때 (sem=2 + pace=150ms → 154ms/req, 296건 ~46초)
+NAVER_SOLO_LIMIT = 1    # 활성 사용자 1명일 때 (직렬 + pace=400ms → 400ms/req, 296건 ~120초)
 NAVER_MULTI_LIMIT = 1   # 활성 사용자 2명 이상일 때 (직렬 큐잉, 안전 우선)
 
 # 활성 검증 작업 카운터 (verify_batch 시작 시 +1, 종료 시 -1)
@@ -123,7 +123,7 @@ def get_current_naver_limit() -> int:
 
 _last_naver_call_time: float = 0.0
 _pace_lock: asyncio.Lock | None = None
-NAVER_MIN_INTERVAL_SEC = 0.15  # 호출 간 최소 간격 (실측: 150ms로도 100% OK)
+NAVER_MIN_INTERVAL_SEC = 0.4   # 호출 간 최소 간격 (실측: 100건 연속 시 150ms는 부족, 400ms로 안전)
 
 
 async def _pace_naver_call() -> None:
