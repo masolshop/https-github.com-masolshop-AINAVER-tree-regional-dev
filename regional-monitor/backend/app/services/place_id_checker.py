@@ -86,8 +86,14 @@ MOBILE_UA = (
 # Naver의 IP 단위 throttle 정책상 동시 호출은 거의 즉시 차단되며,
 # 직렬 호출은 안정적으로 200 OK. 따라서 단일 사용자도 1로 시작 (직렬화).
 # 296건 × 270ms = 약 80초 — 안정적이고 예측 가능한 성능.
-NAVER_SOLO_LIMIT = 3    # 활성 사용자 1명일 때 (동시 3 + 충분한 retry, 296건 ~30-40초)
-NAVER_MULTI_LIMIT = 2   # 활성 사용자 2명 이상일 때 (자동 큐잉, 안전 우선)
+NAVER_SOLO_LIMIT = 3    # 활성 사용자 1명일 때 (sem=3 + 단순 헤더 → 매우 안정, ~290ms/req)
+NAVER_MULTI_LIMIT = 1   # 활성 사용자 2명 이상일 때 (직렬 큐잉, 안전 우선)
+# 실측 (2026-04-28, AWS Lightsail, 단순 헤더):
+#   sem=3 직렬 5건 연속: 5/5 200 OK, 290ms/req → 296건 약 30초 (sem=3이면 ~12초)
+#   sem=1 + 400ms pace: 100건 75초 (너무 느림)
+#   sem=5 동시: 일부 429 (재시도로 흡수 가능하지만 PENDING 위험)
+# Sec-Fetch / Referer 헤더 제거가 핵심 — 단순 헤더는 사실상 throttle 회피
+# 현재 fast 모드는 단순 헤더를 사용 (line 600~).
 
 # 활성 검증 작업 카운터 (verify_batch 시작 시 +1, 종료 시 -1)
 # 단순 정수 카운터 — GIL 보호로 race condition 없음, lock 불필요.
@@ -121,12 +127,26 @@ def get_current_naver_limit() -> int:
     return NAVER_SOLO_LIMIT if _active_verifications <= 1 else NAVER_MULTI_LIMIT
 
 
-# Pace 제거 — 글로벌 세마포어(SOLO=3/MULTI=2)가 throttle 제어를 담당
-# 400ms pace는 296건 × 400ms = 120초로 nginx 한도 근접 + Naver throttle 자체를 회피하지 못함
-# 대신 동시성을 3으로 낮추고 내부 retry(1-3초)로 일시적 429를 흡수
+# 호출 간격 페이싱은 비활성화 — 글로벌 세마포어(SOLO=3/MULTI=1)가 동시성을 충분히 제어함.
+# 직렬 5건 연속 테스트 결과 모두 200 OK, 290ms/req → pace 없이도 안전.
+# 페이싱이 필요할 경우(예: throttle 재발 시) NAVER_MIN_INTERVAL_SEC 값을 0보다 크게 변경하면
+# _pace_naver_call() 안에서 sleep이 적용됨.
+_last_naver_call_time: float = 0.0
+NAVER_MIN_INTERVAL_SEC = 0.0   # 0 = 페이싱 비활성화
+
+
 async def _pace_naver_call() -> None:
-    """호환성 stub — 더 이상 pace 안 함. 글로벌 세마포어가 동시성 제어."""
-    return
+    """선택적 호출 간격 강제. 기본 비활성화 (NAVER_MIN_INTERVAL_SEC=0)."""
+    if NAVER_MIN_INTERVAL_SEC <= 0:
+        return
+    import time as _t
+    global _last_naver_call_time
+    now = _t.monotonic()
+    elapsed = now - _last_naver_call_time
+    wait = NAVER_MIN_INTERVAL_SEC - elapsed
+    if wait > 0:
+        await asyncio.sleep(wait)
+    _last_naver_call_time = _t.monotonic()
 
 
 def _get_naver_global_sem() -> asyncio.Semaphore:
