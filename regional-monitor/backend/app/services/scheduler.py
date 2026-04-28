@@ -35,12 +35,29 @@ from app.core.config import settings
 from app.core.database import AsyncSessionLocal
 from app.models.user import User
 from app.models.place import RegisteredPlace
+from app.models.check import VerificationRun
 from app.services.verifier import verify_batch
 from app.services.persist import persist_results
 from app.services.notifier import notify_user_events
 
 
 log = logging.getLogger("scheduler")
+# uvicorn 환경에서는 root logger가 WARNING이라 log.info 가 안 보임 → 강제 INFO
+log.setLevel(logging.INFO)
+if not log.handlers:
+    _h = logging.StreamHandler()
+    _h.setFormatter(logging.Formatter("%(asctime)s [%(name)s] %(levelname)s: %(message)s"))
+    log.addHandler(_h)
+    log.propagate = False
+# apscheduler 자체 로그도 살림 (잡 트리거 흔적 추적용)
+logging.getLogger("apscheduler").setLevel(logging.INFO)
+logging.getLogger("apscheduler.scheduler").setLevel(logging.INFO)
+logging.getLogger("apscheduler.executors.default").setLevel(logging.INFO)
+
+
+def _print(msg: str) -> None:
+    """uvicorn stdout 직접 출력 (logging 설정과 무관하게 항상 보이도록)."""
+    print(f"[scheduler] {msg}", flush=True)
 
 
 # ──────────────────────────────────────────────────────────────
@@ -134,6 +151,41 @@ async def _verify_user_places(
                 "user_id": user_id, "error": str(e)}
 
 
+async def _record_run(
+    *,
+    user_id: int,
+    trigger: str,
+    mode: str,
+    slot_hour: int,
+    started_at: datetime,
+    total: int,
+    ok: int,
+    dead: int,
+    pending: int,
+    events: int,
+    elapsed_ms: int,
+) -> None:
+    """VerificationRun 1행 INSERT (best-effort)."""
+    try:
+        async with AsyncSessionLocal() as db:
+            db.add(VerificationRun(
+                user_id=user_id,
+                trigger=trigger,
+                mode=mode,
+                slot_hour=slot_hour,
+                total_count=total,
+                ok_count=ok,
+                dead_count=dead,
+                pending_count=pending,
+                events_count=events,
+                elapsed_ms=elapsed_ms,
+                started_at=started_at,
+            ))
+            await db.commit()
+    except Exception as e:                                                  # noqa: BLE001
+        log.warning("record_run failed user=%d err=%s", user_id, e)
+
+
 async def run_slot_verification(slot_hour: int | None = None) -> dict:
     """현재 KST 시각(또는 지정 시각) 슬롯의 사용자들 일괄 검증.
 
@@ -146,6 +198,7 @@ async def run_slot_verification(slot_hour: int | None = None) -> dict:
     started_at = now_kst()
     slot = slot_hour if slot_hour is not None else kst_hour()
 
+    _print(f"slot {slot} (KST) verification triggered at {started_at}")
     log.info("=== slot %d (KST) verification started ===", slot)
 
     # 1) 해당 슬롯의 활성 사용자 + 그들의 place_id 매핑 한 번에 조회
@@ -158,6 +211,7 @@ async def run_slot_verification(slot_hour: int | None = None) -> dict:
         user_ids = [row[0] for row in q_users.all()]
 
         if not user_ids:
+            _print(f"slot {slot}: no users (skip)")
             log.info("slot %d: no users", slot)
             return {
                 "slot": slot, "users": 0, "places": 0,
@@ -181,15 +235,20 @@ async def run_slot_verification(slot_hour: int | None = None) -> dict:
     total_places = sum(len(pids) for _, pids in user_jobs)
 
     if not user_jobs:
+        _print(f"slot {slot}: {len(user_ids)} users but 0 places")
         log.info("slot %d: %d users but 0 places", slot, len(user_ids))
         return {
             "slot": slot, "users": len(user_ids), "places": 0,
             "events": 0, "elapsed_ms": 0,
         }
 
+    _print(f"slot {slot}: processing {len(user_jobs)} users / {total_places} places")
+
     # 3) USER_CHUNK_SIZE 단위로 동시 실행 (사용자 간 병렬, 사용자 내부도 병렬)
     total_events = 0
     total_updated = 0
+    # 사용자별 결과 저장 (VerificationRun INSERT용)
+    per_user_results: list[dict] = []
     for i in range(0, len(user_jobs), USER_CHUNK_SIZE):
         chunk = user_jobs[i : i + USER_CHUNK_SIZE]
         results = await asyncio.gather(
@@ -199,6 +258,7 @@ async def run_slot_verification(slot_hour: int | None = None) -> dict:
         for r in results:
             total_events += r.get("events", 0)
             total_updated += r.get("updated", 0)
+            per_user_results.append(r)
 
     elapsed_ms = int((now_kst() - started_at).total_seconds() * 1000)
     summary = {
@@ -209,6 +269,47 @@ async def run_slot_verification(slot_hour: int | None = None) -> dict:
         "events": total_events,
         "elapsed_ms": elapsed_ms,
     }
+
+    # 4) 사용자별 VerificationRun 기록 (현재 verdict 분포로)
+    try:
+        async with AsyncSessionLocal() as db:
+            for uid, pids in user_jobs:
+                # 현재 verdict 분포를 다시 한번 정확히 집계
+                from sqlalchemy import func as _f
+                vq = await db.execute(
+                    select(RegisteredPlace.current_verdict, _f.count(RegisteredPlace.id))
+                    .where(RegisteredPlace.user_id == uid)
+                    .group_by(RegisteredPlace.current_verdict)
+                )
+                v_map = {str(k): v for k, v in vq.all()}
+                ok_n = v_map.get("OK", 0) + v_map.get("VerdictKind.OK", 0)
+                dead_n = v_map.get("DEAD", 0) + v_map.get("VerdictKind.DEAD", 0)
+                pend_n = v_map.get("PENDING", 0) + v_map.get("VerdictKind.PENDING", 0)
+                user_total = ok_n + dead_n + pend_n
+                # 매칭된 결과의 events 개수
+                user_events = next(
+                    (r.get("events", 0) for r in per_user_results if r.get("user_id") == uid),
+                    0,
+                )
+                db.add(VerificationRun(
+                    user_id=uid,
+                    trigger="scheduler",
+                    mode="full",
+                    slot_hour=slot,
+                    total_count=user_total,
+                    ok_count=ok_n,
+                    dead_count=dead_n,
+                    pending_count=pend_n,
+                    events_count=user_events,
+                    elapsed_ms=elapsed_ms,
+                    started_at=started_at,
+                ))
+            await db.commit()
+    except Exception as e:                                                  # noqa: BLE001
+        log.warning("verification_run insert failed: %s", e)
+        _print(f"slot {slot}: failed to record verification_run: {e}")
+
+    _print(f"slot {slot} done: {summary}")
     log.info("=== slot %d done: %s ===", slot, summary)
     return summary
 

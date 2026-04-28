@@ -339,6 +339,27 @@ export interface SchedulerStatusOut {
   timezone: string                // "Asia/Seoul (KST, UTC+9)"
 }
 
+/* ─────────────── /verification-runs ─────────────── */
+
+export interface VerificationRunOut {
+  id: number
+  trigger: 'scheduler' | 'manual'   // 자동 / 수동
+  mode: 'fast' | 'full'
+  slot_hour: number                 // 0~23 (자동), -1 (수동)
+  total_count: number
+  ok_count: number
+  dead_count: number
+  pending_count: number
+  events_count: number              // ChangeEvent 발생 건수
+  elapsed_ms: number
+  started_at: string                // ISO (KST)
+}
+
+export interface VerificationRunListOut {
+  items: VerificationRunOut[]
+  total: number
+}
+
 /* ─────────────── /settings ─────────────── */
 
 export type ChannelKey = 'email_alerts' | 'sheet_sync' | 'kakao_number' | 'slack_webhook'

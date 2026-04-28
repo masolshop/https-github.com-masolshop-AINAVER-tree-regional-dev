@@ -21,7 +21,7 @@ from sqlalchemy import select, func, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core import get_db
-from app.models.check import ChangeEvent
+from app.models.check import ChangeEvent, VerificationRun
 from app.models.place import RegisteredPlace
 from app.models.user import User
 from app.services.scheduler import KST, get_next_run_at
@@ -195,4 +195,62 @@ async def scheduler_status(
         next_run_at=next_run,
         verify_slot=user.verify_slot,
         verify_slot_label=f"매일 {user.verify_slot:02d}:00 (KST)",
+    )
+
+
+# ──────────────────────────────────────────────────────────────
+# 자동검증 회차별 요약 (History 페이지)
+# ──────────────────────────────────────────────────────────────
+
+
+class VerificationRunOut(BaseModel):
+    id: int
+    trigger: str               # 'scheduler' | 'manual'
+    mode: str                  # 'fast' | 'full'
+    slot_hour: int             # 0~23 (스케줄러), -1 (수동)
+    total_count: int
+    ok_count: int
+    dead_count: int
+    pending_count: int
+    events_count: int
+    elapsed_ms: int
+    started_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class VerificationRunListOut(BaseModel):
+    items: list[VerificationRunOut]
+    total: int
+
+
+@router.get("/verification-runs", response_model=VerificationRunListOut)
+async def list_verification_runs(
+    limit: int = Query(50, ge=1, le=500),
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> VerificationRunListOut:
+    """내 자동검증 회차 목록 (최근순).
+
+    History 페이지에서 회차별 요약 카드를 표시하기 위한 데이터.
+    `trigger='scheduler'` = 자동, `trigger='manual'` = 사용자 직접 실행.
+    """
+    q = await db.execute(
+        select(VerificationRun)
+        .where(VerificationRun.user_id == user.id)
+        .order_by(VerificationRun.started_at.desc())
+        .limit(limit)
+    )
+    runs = list(q.scalars().all())
+
+    cnt_q = await db.execute(
+        select(func.count(VerificationRun.id))
+        .where(VerificationRun.user_id == user.id)
+    )
+    total = int(cnt_q.scalar_one() or 0)
+
+    return VerificationRunListOut(
+        items=[VerificationRunOut.model_validate(r) for r in runs],
+        total=total,
     )

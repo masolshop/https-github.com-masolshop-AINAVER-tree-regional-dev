@@ -65,3 +65,16 @@ export function useSchedulerStatus() {
     staleTime: 5 * 60_000,             // 5분
   })
 }
+
+/** 자동검증 회차 목록 (History 페이지) */
+export function useVerificationRuns(limit = 50) {
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated)
+  return useQuery({
+    queryKey: ['verification-runs', limit],
+    queryFn: () => eventsApi.verificationRuns(limit),
+    enabled: isAuthenticated,
+    staleTime: 30_000,
+    refetchInterval: 60_000,           // 1분마다 갱신 (자동검증 회차 새로 생기면 표시)
+    refetchOnWindowFocus: true,
+  })
+}

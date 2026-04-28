@@ -141,6 +141,31 @@ async def run_live_check(
             addr = r["detail"].get("actual_address")
             if addr:
                 place.full_address = addr
+
+    # ── 수동 검증 회차 기록 (History 페이지 데이터) ──
+    try:
+        from app.models.check import VerificationRun
+        from app.core.time_utils import now_kst
+        ok_n = sum(1 for r in raw_results if str(r["verdict"]).endswith("OK"))
+        dead_n = sum(1 for r in raw_results if str(r["verdict"]).endswith("DEAD"))
+        pend_n = sum(1 for r in raw_results if str(r["verdict"]).endswith("PENDING"))
+        db.add(VerificationRun(
+            user_id=user.id,
+            trigger="manual",
+            mode=mode,
+            slot_hour=-1,
+            total_count=len(raw_results),
+            ok_count=ok_n,
+            dead_count=dead_n,
+            pending_count=pend_n,
+            events_count=len(persist_stats.get("new_events") or [])
+                         if isinstance(persist_stats.get("new_events"), list) else 0,
+            elapsed_ms=total_ms,
+            started_at=now_kst(),
+        ))
+    except Exception:                                                        # noqa: BLE001
+        pass  # 회차 기록 실패해도 검증 응답은 정상 반환
+
     await db.commit()
 
     # ── 변경 이벤트가 발생했을 때만 알림 발송 (best-effort) ──

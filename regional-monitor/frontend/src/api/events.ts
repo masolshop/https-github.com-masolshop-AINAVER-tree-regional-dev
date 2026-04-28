@@ -1,5 +1,5 @@
 /**
- * 변경 이벤트 API — /api/v1/events/*, /api/v1/scheduler/*
+ * 변경 이벤트 API — /api/v1/events/*, /api/v1/scheduler/*, /api/v1/verification-runs
  */
 import { api } from './client'
 import type {
@@ -7,6 +7,7 @@ import type {
   UnreadCountOut,
   SchedulerStatusOut,
   MessageResponse,
+  VerificationRunListOut,
 } from './types'
 
 export const eventsApi = {
@@ -23,4 +24,8 @@ export const eventsApi = {
   /** 내 검증 슬롯 + 다음 실행 시각 */
   schedulerStatus: () =>
     api.get<SchedulerStatusOut>('/api/v1/scheduler/status'),
+
+  /** 자동검증 회차 목록 (History 페이지) */
+  verificationRuns: (limit = 50) =>
+    api.get<VerificationRunListOut>(`/api/v1/verification-runs?limit=${limit}`),
 }

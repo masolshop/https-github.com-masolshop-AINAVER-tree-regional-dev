@@ -1,10 +1,48 @@
-"""DailyHealthCheck + ChangeEvent 모델."""
+"""DailyHealthCheck + ChangeEvent + VerificationRun 모델."""
 from datetime import datetime
 from app.core.time_utils import now_kst, KSTDateTime
 from sqlalchemy import String, Integer, DateTime, ForeignKey, Boolean, Index
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.database import Base
+
+
+class VerificationRun(Base):
+    """자동검증 회차 (스케줄러 슬롯 1회 실행 = 1 row).
+
+    History 페이지에서 "자동검증 회차별 요약"을 표시하는 데이터 소스.
+    수동 검증(verify/live)은 trigger='manual', 스케줄러는 trigger='scheduler'.
+    """
+    __tablename__ = "verification_runs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False, index=True,
+    )
+
+    # 'scheduler' (자동) | 'manual' (사용자가 직접 실행)
+    trigger: Mapped[str] = mapped_column(String(20), nullable=False, index=True)
+    # 'fast' | 'full'
+    mode: Mapped[str] = mapped_column(String(10), nullable=False, default="full")
+    # 슬롯 번호 (스케줄러일 때만 의미 있음, 수동은 -1)
+    slot_hour: Mapped[int] = mapped_column(Integer, nullable=False, default=-1)
+
+    # 결과 통계
+    total_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    ok_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    dead_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    pending_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    # 변경 이벤트가 발생한 건수
+    events_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+
+    # 소요시간 (ms)
+    elapsed_ms: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+
+    # 시작 시각 (KST 기준 저장)
+    started_at: Mapped[datetime] = mapped_column(
+        KSTDateTime, default=now_kst, nullable=False, index=True,
+    )
 
 
 class DailyHealthCheck(Base):
