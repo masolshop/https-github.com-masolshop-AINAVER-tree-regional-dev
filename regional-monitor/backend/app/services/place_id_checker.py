@@ -86,8 +86,8 @@ MOBILE_UA = (
 # Naver의 IP 단위 throttle 정책상 동시 호출은 거의 즉시 차단되며,
 # 직렬 호출은 안정적으로 200 OK. 따라서 단일 사용자도 1로 시작 (직렬화).
 # 296건 × 270ms = 약 80초 — 안정적이고 예측 가능한 성능.
-NAVER_SOLO_LIMIT = 1    # 활성 사용자 1명일 때 (직렬 + pace=400ms → 400ms/req, 296건 ~120초)
-NAVER_MULTI_LIMIT = 1   # 활성 사용자 2명 이상일 때 (직렬 큐잉, 안전 우선)
+NAVER_SOLO_LIMIT = 3    # 활성 사용자 1명일 때 (동시 3 + 충분한 retry, 296건 ~30-40초)
+NAVER_MULTI_LIMIT = 2   # 활성 사용자 2명 이상일 때 (자동 큐잉, 안전 우선)
 
 # 활성 검증 작업 카운터 (verify_batch 시작 시 +1, 종료 시 -1)
 # 단순 정수 카운터 — GIL 보호로 race condition 없음, lock 불필요.
@@ -121,33 +121,12 @@ def get_current_naver_limit() -> int:
     return NAVER_SOLO_LIMIT if _active_verifications <= 1 else NAVER_MULTI_LIMIT
 
 
-_last_naver_call_time: float = 0.0
-_pace_lock: asyncio.Lock | None = None
-NAVER_MIN_INTERVAL_SEC = 0.4   # 호출 간 최소 간격 (실측: 100건 연속 시 150ms는 부족, 400ms로 안전)
-
-
+# Pace 제거 — 글로벌 세마포어(SOLO=3/MULTI=2)가 throttle 제어를 담당
+# 400ms pace는 296건 × 400ms = 120초로 nginx 한도 근접 + Naver throttle 자체를 회피하지 못함
+# 대신 동시성을 3으로 낮추고 내부 retry(1-3초)로 일시적 429를 흡수
 async def _pace_naver_call() -> None:
-    """호출 간 최소 간격 강제 — Naver의 IP burst 검출 우회.
-
-    글로벌 세마포어가 2(SOLO)라 동시 2개 진입 가능 → mutex 필요.
-    lock으로 last 시간 갱신을 직렬화하여 실제 호출 간격이 NAVER_MIN_INTERVAL_SEC 이상 보장.
-
-    실측 (2026-04-28, AWS Lightsail Seoul → Naver m.place):
-      - 50ms 직렬: 20/20 OK, 243ms/req
-      - 100ms 직렬: 30/30 OK, 164ms/req
-      - 150ms + sem=2: 30/30 OK, 154ms/req ✅ (현재 설정)
-    """
-    import time as _t
-    global _last_naver_call_time, _pace_lock
-    if _pace_lock is None:
-        _pace_lock = asyncio.Lock()
-    async with _pace_lock:
-        now = _t.monotonic()
-        elapsed = now - _last_naver_call_time
-        wait = NAVER_MIN_INTERVAL_SEC - elapsed
-        if wait > 0:
-            await asyncio.sleep(wait)
-        _last_naver_call_time = _t.monotonic()
+    """호환성 stub — 더 이상 pace 안 함. 글로벌 세마포어가 동시성 제어."""
+    return
 
 
 def _get_naver_global_sem() -> asyncio.Semaphore:
@@ -622,10 +601,11 @@ async def check_place_fast(client: httpx.AsyncClient, sample: Dict) -> CheckResu
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
         "Accept-Language": "ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7",
         "Accept-Encoding": "gzip, deflate",
-        "Sec-Fetch-Dest": "document",
-        "Sec-Fetch-Mode": "navigate",
-        "Sec-Fetch-Site": "same-site",
-        "Referer": "https://m.search.naver.com/",
+        # Sec-Fetch-* 와 Referer 헤더는 의도적으로 제거함.
+        # 실측 (2026-04-28, AWS Lightsail): 같은 직렬 호출 패턴에서
+        #   - 헤더 단순: 5/5 200 OK (avg 255ms)
+        #   - 헤더 풍부(Sec-Fetch+Referer): 2/5만 OK, 3/5 429
+        # Naver의 봇 검출이 "데스크탑 브라우저처럼 보이는" 헤더를 더 의심함.
     }
 
     t0 = time.perf_counter()

@@ -115,16 +115,15 @@ async def run_live_check(
     if not places:
         raise HTTPException(status_code=404, detail="검증할 등록이 없습니다.")
 
-    # 병렬 검증 — 글로벌 세마포어 + 호출 간격 페이싱이 실제 한도 결정
-    # 실측 (2026-04-28 Lightsail Seoul → Naver, 150ms pacing 적용):
-    #   sem=1 + pace=150ms → ~270ms/req, 296건 ~80초
-    #   sem=2 + pace=150ms → ~154ms/req, 296건 ~46초 ✅
-    #   sem=3+            → 30%+ 429 (페이싱이 충분치 않음)
-    # concurrency=2 — 글로벌 SOLO=2 한도 완전 활용
+    # 병렬 검증 — 글로벌 세마포어가 throttle 제어 담당
+    # 적응형 한도:
+    #   active=1 (단일 사용자): SOLO=3 → 296건 ~30-40초
+    #   active>=2 (다중 사용자): MULTI=2 → 사용자별 자동 큐잉
+    # fast 모드는 더 가벼운 호출이라 fast=5, full=3 시도
     mode = (req.mode or "full").lower()
     if mode not in ("full", "fast"):
         mode = "full"
-    concurrency = 2
+    concurrency = 5 if mode == "fast" else 3
     t0 = time.perf_counter()
     raw_results = await verify_batch(places, concurrency=concurrency, mode=mode)
     total_ms = int((time.perf_counter() - t0) * 1000)
