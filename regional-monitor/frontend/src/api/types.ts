@@ -147,6 +147,11 @@ export interface LiveCheckRequest {
    * 'fast'        — 페이지 존재 유무만, ~10s/200건 (트래픽 95% 절감)
    */
   mode?: VerifyMode
+  /**
+   * 2단계 "재체크" — true 시 current_verdict='PENDING' 인 등록만 검증.
+   * 1단계 "등록 체크" 후 일시 차단(429/403)으로 보류된 항목을 풀어주는 용도.
+   */
+  only_pending?: boolean
 }
 
 export interface VerificationDetail {

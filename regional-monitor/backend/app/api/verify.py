@@ -154,10 +154,19 @@ async def _run_live_check_locked(
     query = select(RegisteredPlace).where(RegisteredPlace.user_id == user.id)
     if req.place_ids:
         query = query.where(RegisteredPlace.id.in_(req.place_ids))
+    # 2단계 "재체크" — current_verdict='PENDING' 인 항목만 검증
+    if req.only_pending:
+        query = query.where(RegisteredPlace.current_verdict == "PENDING")
     result = await db.execute(query)
     places = list(result.scalars().all())
 
     if not places:
+        # only_pending 모드일 때는 메시지를 더 친절하게
+        if req.only_pending:
+            raise HTTPException(
+                status_code=404,
+                detail="재체크할 검증 대기 항목이 없습니다.",
+            )
         raise HTTPException(status_code=404, detail="검증할 등록이 없습니다.")
 
     # 병렬 검증 — 글로벌 세마포어가 실제 한도 결정 (SOLO=3 / MULTI=1)

@@ -43,9 +43,20 @@ class VerificationResult(BaseModel):
 
 
 class LiveCheckRequest(BaseModel):
-    """즉시 검증 요청."""
+    """즉시 검증 요청.
+
+    검증 프로세스 (UI 3단계):
+      · 1단계 "등록 체크": place_ids=None, mode='full', only_pending=False
+        → 사용자의 모든 등록을 정밀 검증.
+      · 2단계 "재체크 (N건)": place_ids=None, mode='full', only_pending=True
+        → current_verdict='PENDING' 인 항목만 정밀 재검증.
+      · 3단계 "자동 정기 체크": 스케줄러가 매일 verify_slot 시각에 fast 모드로 자동 실행.
+        (이 API 가 아닌 services.scheduler.run_slot_verification 이 담당)
+    """
     place_ids: list[int] | None = None   # None = 사용자 등록 전체
     mode: str = "full"                   # "full" (전화+동 검증) / "fast" (페이지 존재 유무만)
+    only_pending: bool = False           # True 시 current_verdict='PENDING' 인 등록만 검증
+                                         # (재체크 버튼) — place_ids 와 동시 지정하면 교집합으로 동작
 
 
 class LiveCheckResponse(BaseModel):

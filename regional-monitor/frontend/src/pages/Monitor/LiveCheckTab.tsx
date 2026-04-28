@@ -1,23 +1,36 @@
 /**
- * Monitor — Tab 2: 실시간 노출 확인 (실 API 연동, 청크 분할 호출)
- *  ├─ 상단: 즉시 검증 실행 버튼 + 청크 진행률 + 청크 크기 선택
- *  ├─ 4중 검증 결과 요약 (정상/주의/심각 + 평균응답/처리량)
- *  └─ 상세 결과 테이블 (등록값 vs 실제값 비교)
+ * Monitor — Tab 2: 실시간 노출 확인 (검증 프로세스 3단계)
  *
- * 백엔드 호출:
- *   POST /api/v1/verify/live    body { place_ids: number[] }
- *   - 1500건 한번에 호출 시 ~3분 소요 → 프론트 axios 타임아웃 위험
- *   - 그래서 클라이언트가 200건씩 청크로 나눠 순차 호출
- *   - 청크별 결과는 누적해서 한번에 보여줌
+ *  ┌──────────────────────────────────────────────────────────────┐
+ *  │ 1단계  등록 체크 (수동, 등록 직후 1회)                         │
+ *  │   · 정밀 모드 — 전화 + 동/로/리 일치 검증                      │
+ *  │   · 전체 등록건                                                │
+ *  │   · POST /verify/live { mode: 'full', only_pending: false }   │
+ *  │                                                                │
+ *  │ 2단계  재체크 (수동, PENDING 만)                              │
+ *  │   · 정밀 모드 — 1단계와 동일 검증, 대상만 다름                 │
+ *  │   · current_verdict='PENDING' 인 항목만                        │
+ *  │   · 활성화 조건: PENDING ≥ 1                                   │
+ *  │   · POST /verify/live { mode: 'full', only_pending: true }    │
+ *  │                                                                │
+ *  │ 3단계  자동 정기 체크 (자동, 매일)                             │
+ *  │   · 빠른 모드 — 페이지 헤더만 GET                              │
+ *  │   · 사용자별 verify_slot 시각 (예: 매일 오전 11:00 KST)        │
+ *  │   · APScheduler — services.scheduler.run_slot_verification    │
+ *  │   · 이 화면에서는 안내 카드만 표시 (트리거 버튼 없음)          │
+ *  └──────────────────────────────────────────────────────────────┘
+ *
+ * 청크 분할: 100건/청크, 글로벌 세마포어로 동시 호출 throttle.
  */
 import { useState, useMemo, useRef } from 'react'
 import { Card } from '@/components/ui/Card'
 import { VerdictBadge } from './VerdictBadge'
 import { usePlacesList } from '@/hooks/usePlaces'
+import { useSchedulerStatus } from '@/hooks/useEvents'
 import { useQueryClient } from '@tanstack/react-query'
 import { runLiveCheck } from '@/api/places'
 import { ApiError } from '@/api/client'
-import type { VerificationResult, VerifyMode } from '@/api/types'
+import type { VerificationResult } from '@/api/types'
 import { placeKeys } from '@/hooks/usePlaces'
 import {
   Play,
@@ -32,25 +45,29 @@ import {
   Zap,
   AlertTriangle,
   StopCircle,
+  RefreshCw,
+  CalendarClock,
 } from 'lucide-react'
 
-const DEFAULT_CHUNK_SIZE = 100      // 청크당 100건 (~12초/청크) — 진행률 자주 업데이트 + 청크 오버헤드 최소화
+const CHUNK_SIZE = 100              // 청크당 100건 — 진행률 자주 업데이트 + 청크 오버헤드 최소화
 const CHUNK_DELAY_MS = 0            // 청크 사이 휴식 0ms — 글로벌 세마포어가 throttle 자체적으로 제어
+
+/** 어떤 종류의 수동 검증을 실행 중인지 — UI 라벨/진행률 표시에 사용 */
+type CheckKind = 'register' | 'recheck'
 
 export default function LiveCheckTab() {
   const qc = useQueryClient()
   const { data: placesData } = usePlacesList()
+  const { data: schedulerData } = useSchedulerStatus()
 
   // 청크 처리 상태
   const [running, setRunning] = useState(false)
-  const [chunkSize, setChunkSize] = useState<number>(DEFAULT_CHUNK_SIZE)
+  const [kind, setKind] = useState<CheckKind>('register')   // 현재 실행 중인 검증 종류
   const [progress, setProgress] = useState({ chunk: 0, totalChunks: 0, done: 0, total: 0 })
   const [results, setResults] = useState<VerificationResult[]>([])
   const [totalMs, setTotalMs] = useState(0)
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
   const [cancelling, setCancelling] = useState(false)
-  // 검증 모드: 'fast' (페이지 존재 유무만, ~10s/200건) / 'full' (전화·동 풀 검증, ~40s/200건)
-  const [mode, setMode] = useState<VerifyMode>('fast')
   // 직전 청크 시간 (ETA 계산용)
   const [lastChunkMs, setLastChunkMs] = useState<number[]>([])
   const cancelRef = useRef(false)
@@ -62,6 +79,16 @@ export default function LiveCheckTab() {
     () => (placesData?.items ?? []).map((p) => p.id),
     [placesData?.items],
   )
+
+  // 2단계 "재체크" 활성화 조건 — current_verdict='PENDING' 카운트
+  const pendingPlaceIds = useMemo(
+    () =>
+      (placesData?.items ?? [])
+        .filter((p) => p.current_verdict === 'PENDING')
+        .map((p) => p.id),
+    [placesData?.items],
+  )
+  const pendingCount = pendingPlaceIds.length
 
   // 누적 요약
   const summary = useMemo(() => {
@@ -90,14 +117,29 @@ export default function LiveCheckTab() {
     return Number(((results.length / totalMs) * 1000).toFixed(1))
   }, [results.length, totalMs])
 
-  const startCheck = async () => {
+  /**
+   * 검증 시작 — 1단계 "등록 체크" 또는 2단계 "재체크".
+   * @param checkKind 'register'  → 정밀, 전체 등록 대상
+   *                  'recheck'   → 정밀, current_verdict='PENDING' 만
+   */
+  const startCheck = async (checkKind: CheckKind) => {
     if (totalRegistered === 0) {
       alert('등록된 070 번호가 없습니다. 먼저 "등록 관리" 탭에서 등록해 주세요.')
       return
     }
     if (running) return
 
+    // 검증 대상 ID 결정
+    const targetIds: number[] =
+      checkKind === 'recheck' ? [...pendingPlaceIds] : [...allPlaceIds]
+    if (targetIds.length === 0) {
+      // 재체크인데 PENDING 이 0건일 때 — 버튼이 disabled 라 도달하지 않지만 방어적으로
+      alert('재체크할 검증 대기 항목이 없습니다.')
+      return
+    }
+
     // 초기화
+    setKind(checkKind)
     setRunning(true)
     setCancelling(false)
     setErrorMsg(null)
@@ -108,21 +150,21 @@ export default function LiveCheckTab() {
     // 새 검증 세션의 AbortController — cancel() 시 진행 중인 청크 fetch 도 즉시 취소
     abortRef.current = new AbortController()
 
-    const ids = [...allPlaceIds]
     const chunks: number[][] = []
-    for (let i = 0; i < ids.length; i += chunkSize) {
-      chunks.push(ids.slice(i, i + chunkSize))
+    for (let i = 0; i < targetIds.length; i += CHUNK_SIZE) {
+      chunks.push(targetIds.slice(i, i + CHUNK_SIZE))
     }
 
     setProgress({
       chunk: 0,
       totalChunks: chunks.length,
       done: 0,
-      total: ids.length,
+      total: targetIds.length,
     })
 
+    const kindLabel = checkKind === 'recheck' ? '재체크' : '등록 체크'
     console.log(
-      `[LiveCheck] 시작: ${ids.length}건을 ${chunks.length}개 청크로 분할 (청크 크기: ${chunkSize})`,
+      `[LiveCheck] ${kindLabel} 시작: ${targetIds.length}건을 ${chunks.length}개 청크로 분할 (청크 크기: ${CHUNK_SIZE})`,
     )
 
     let accResults: VerificationResult[] = []
@@ -140,8 +182,13 @@ export default function LiveCheckTab() {
         setProgress((p) => ({ ...p, chunk: i + 1 }))
 
         const ts = performance.now()
+        // 두 단계 모두 정밀(full) 모드. 재체크는 only_pending 으로 백엔드에서도 한 번 더 필터.
         const resp = await runLiveCheck(
-          { place_ids: chunk, mode },
+          {
+            place_ids: chunk,
+            mode: 'full',
+            only_pending: checkKind === 'recheck',
+          },
           { signal: abortRef.current?.signal },
         )
         const elapsed = Math.round(performance.now() - ts)
@@ -155,7 +202,7 @@ export default function LiveCheckTab() {
 
         console.log(
           `[LiveCheck] 청크 ${i + 1}/${chunks.length} 완료 (${elapsed}ms): ` +
-            `누적 ${accResults.length}/${ids.length}, ` +
+            `누적 ${accResults.length}/${targetIds.length}, ` +
             `ok=${resp.summary?.ok ?? 0} warn=${resp.summary?.warning ?? 0} dgr=${resp.summary?.danger ?? 0}`,
         )
 
@@ -167,7 +214,7 @@ export default function LiveCheckTab() {
 
       const total = Math.round(performance.now() - t0)
       console.log(
-        `[LiveCheck] 완료: ${accResults.length}/${ids.length}건 (총 ${total}ms)`,
+        `[LiveCheck] ${kindLabel} 완료: ${accResults.length}/${targetIds.length}건 (총 ${total}ms)`,
       )
       // 캐시 무효화는 finally 에서 일괄 처리
     } catch (e: unknown) {
@@ -209,151 +256,172 @@ export default function LiveCheckTab() {
     return Math.max(0, Math.round(remainingMs / 1000))
   }, [running, lastChunkMs, progress.chunk, progress.totalChunks])
 
+  // 진행 중 상단 카드의 라벨/설명 (kind 에 따라 동적)
+  const runningLabel = kind === 'recheck' ? '재체크' : '등록 체크'
+
+  // 자동 정기 체크 다음 시각 (KST 표시) — 사용자별 verify_slot 기반
+  const nextAutoLabel = useMemo(() => {
+    if (!schedulerData?.next_run_at) {
+      return schedulerData?.verify_slot_label ?? null
+    }
+    const d = new Date(schedulerData.next_run_at)
+    if (Number.isNaN(d.getTime())) return schedulerData.verify_slot_label ?? null
+    return d.toLocaleString('ko-KR', {
+      timeZone: 'Asia/Seoul',
+      month: 'numeric',
+      day: 'numeric',
+      weekday: 'short',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: true,
+    })
+  }, [schedulerData])
+
   return (
     <div className="space-y-6">
-      {/* ───── 즉시 검증 실행 패널 ───── */}
-      <Card variant="dark" className="min-h-[180px]">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-5">
-          <div className="flex-1">
-            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-pill bg-white/15 text-white/90 text-caption font-bold uppercase tracking-wider mb-3">
-              <ShieldCheck size={12} /> live verification
-            </span>
-            <h3 className="text-h2 text-white mb-2">
-              {mode === 'fast' ? '⚡ 빠른 검증 (페이지 존재 유무)' : '🔍 정밀 검증 (전화·동 일치)'}
-            </h3>
-            <p className="text-body-sm text-white/75">
-              등록된 <span className="font-bold text-white">{totalRegistered}</span>개의 070
-              번호에 대해{' '}
-              {mode === 'fast'
-                ? '플레이스 ID 페이지가 살아있는지만 빠르게 확인합니다.'
-                : '플레이스 ID + 전화번호 + 동/로/리 일치 여부까지 정밀 검증합니다.'}
-              <br />
-              <span className="text-caption text-white/60">
-                {chunkSize}건씩 청크로 나눠 순차 호출 · 청크당 약{' '}
-                {mode === 'fast'
-                  ? `${Math.ceil(chunkSize * 0.1)}~${Math.ceil(chunkSize * 0.15)}초`
-                  : `${Math.ceil(chunkSize * 0.13)}~${Math.ceil(chunkSize * 0.2)}초`}
+      {/* ─────────────────────────────────────────────────────────────
+       *   상단 패널 — 검증 진행 상황 / 취소 버튼
+       *   (running 일 때만 표시; 검증 종류는 kind 로 라벨 분기)
+       * ───────────────────────────────────────────────────────────── */}
+      {running && (
+        <Card variant="dark" className="min-h-[180px]">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-5">
+            <div className="flex-1">
+              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-pill bg-white/15 text-white/90 text-caption font-bold uppercase tracking-wider mb-3">
+                <ShieldCheck size={12} /> live verification
               </span>
-            </p>
-          </div>
+              <h3 className="text-h2 text-white mb-2">
+                🔍 {runningLabel} 진행 중 (정밀 모드)
+              </h3>
+              <p className="text-body-sm text-white/75">
+                <span className="font-bold text-white">{progress.total}</span>개의 070 번호에
+                대해 플레이스 ID + 전화번호 + 동/로/리 일치 여부까지 정밀 검증합니다.
+                <br />
+                <span className="text-caption text-white/60">
+                  {CHUNK_SIZE}건씩 청크로 나눠 순차 호출 · 청크당 약 13~20초
+                </span>
+              </p>
+            </div>
 
-          <div className="flex flex-col items-end gap-2">
-            {/* 검증 모드 토글 (running이 아닐 때만) */}
-            {!running && (
-              <div
-                className="inline-flex p-0.5 rounded-pill bg-white/10 border border-white/20"
-                role="tablist"
-                aria-label="검증 모드"
-              >
-                <button
-                  type="button"
-                  onClick={() => setMode('fast')}
-                  className={`px-3 py-1.5 rounded-pill text-caption font-semibold transition-all ${
-                    mode === 'fast'
-                      ? 'bg-white text-brand-700 shadow-sm'
-                      : 'text-white/80 hover:text-white'
-                  }`}
-                  title="플레이스 ID 페이지 존재 유무만 확인 — 가장 빠름, 트래픽 95% 절감"
-                >
-                  ⚡ 빠른 검증
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setMode('full')}
-                  className={`px-3 py-1.5 rounded-pill text-caption font-semibold transition-all ${
-                    mode === 'full'
-                      ? 'bg-white text-brand-700 shadow-sm'
-                      : 'text-white/80 hover:text-white'
-                  }`}
-                  title="전화번호 + 동/로/리 일치 여부까지 검증 — 등록 직후 최초 1회 권장. 이후 자동 검증은 빠른 검증으로 진행됩니다."
-                >
-                  🔍 정밀 검증 <span className="opacity-70">(최초 1회 권장)</span>
-                </button>
-              </div>
-            )}
-
-            {/* 청크 크기 선택 (running이 아닐 때만) */}
-            {!running && (
-              <label className="text-caption text-white/70 flex items-center gap-2">
-                청크 크기
-                <select
-                  value={chunkSize}
-                  onChange={(e) => setChunkSize(Number(e.target.value))}
-                  className="px-2 py-1 rounded bg-white/10 text-white text-caption border border-white/20 focus:outline-none focus:ring-2 focus:ring-white/30"
-                >
-                  <option value={50} className="text-ink">50건</option>
-                  <option value={100} className="text-ink">100건 (권장)</option>
-                  <option value={200} className="text-ink">200건</option>
-                  <option value={300} className="text-ink">300건 (한번에)</option>
-                </select>
-              </label>
-            )}
-
-            <div className="flex gap-2">
-              {running && (
-                <button
-                  type="button"
-                  onClick={cancel}
-                  disabled={cancelling}
-                  className="inline-flex items-center gap-2 px-4 py-3 rounded-pill bg-red-500/90 hover:bg-red-500 text-white font-semibold text-body-sm transition-all disabled:opacity-60 disabled:cursor-wait"
-                >
-                  {cancelling ? (
-                    <>
-                      <Loader2 size={16} className="animate-spin" /> 취소 중…
-                    </>
-                  ) : (
-                    <>
-                      <StopCircle size={16} /> 취소
-                    </>
-                  )}
-                </button>
-              )}
+            <div className="flex items-end">
               <button
                 type="button"
-                onClick={startCheck}
-                disabled={running || totalRegistered === 0}
-                className="inline-flex items-center gap-2 px-6 py-3 rounded-pill bg-white text-brand-700 font-bold text-body shadow-card hover:shadow-card-hover disabled:opacity-50 disabled:cursor-not-allowed transition-all whitespace-nowrap"
+                onClick={cancel}
+                disabled={cancelling}
+                className="inline-flex items-center gap-2 px-4 py-3 rounded-pill bg-red-500/90 hover:bg-red-500 text-white font-semibold text-body-sm transition-all disabled:opacity-60 disabled:cursor-wait"
               >
-                {running ? (
+                {cancelling ? (
                   <>
-                    <Loader2 size={16} className="animate-spin" />
-                    검증 진행 중…
+                    <Loader2 size={16} className="animate-spin" /> 취소 중…
                   </>
                 ) : (
                   <>
-                    <Play size={16} /> 지금 검증 시작
+                    <StopCircle size={16} /> 취소
                   </>
                 )}
               </button>
             </div>
           </div>
-        </div>
 
-        {/* 청크별 진행률 막대 + ETA */}
-        {running && progress.totalChunks > 0 && (
-          <div className="mt-5">
-            <div className="flex items-center justify-between text-caption text-white/80 mb-2 tabular-nums">
-              <span>
-                청크 {progress.chunk}/{progress.totalChunks} · {progress.done}/{progress.total}건
-              </span>
-              <div className="flex items-center gap-3">
-                {eta !== null && eta > 0 && (
-                  <span className="text-white/70">
-                    남은 시간 약 {eta < 60 ? `${eta}초` : `${Math.floor(eta / 60)}분 ${eta % 60}초`}
-                  </span>
-                )}
-                <span className="font-bold text-white">{progressPct}%</span>
+          {/* 청크별 진행률 막대 + ETA */}
+          {progress.totalChunks > 0 && (
+            <div className="mt-5">
+              <div className="flex items-center justify-between text-caption text-white/80 mb-2 tabular-nums">
+                <span>
+                  청크 {progress.chunk}/{progress.totalChunks} · {progress.done}/{progress.total}건
+                </span>
+                <div className="flex items-center gap-3">
+                  {eta !== null && eta > 0 && (
+                    <span className="text-white/70">
+                      남은 시간 약 {eta < 60 ? `${eta}초` : `${Math.floor(eta / 60)}분 ${eta % 60}초`}
+                    </span>
+                  )}
+                  <span className="font-bold text-white">{progressPct}%</span>
+                </div>
+              </div>
+              <div className="h-2 bg-white/15 rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-gradient-to-r from-brand-300 to-white rounded-full transition-all duration-300"
+                  style={{ width: `${progressPct}%` }}
+                />
               </div>
             </div>
-            <div className="h-2 bg-white/15 rounded-full overflow-hidden">
-              <div
-                className="h-full bg-gradient-to-r from-brand-300 to-white rounded-full transition-all duration-300"
-                style={{ width: `${progressPct}%` }}
-              />
+          )}
+        </Card>
+      )}
+
+      {/* ─────────────────────────────────────────────────────────────
+       *   3단계 검증 액션 카드 (running 이 아닐 때만 표시)
+       *   1) 등록 체크 — 전체 정밀
+       *   2) 재체크    — PENDING 만 정밀 (PENDING ≥ 1 일 때만 활성)
+       *   3) 자동 정기 체크 — 안내만 (트리거 없음)
+       * ───────────────────────────────────────────────────────────── */}
+      {!running && (
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          {/* 1단계 — 등록 체크 */}
+          <Card variant="dark" className="flex flex-col">
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-pill bg-white/15 text-white/90 text-caption font-bold uppercase tracking-wider self-start mb-3">
+              <ShieldCheck size={12} /> 1단계
+            </span>
+            <h3 className="text-h3 text-white mb-1">🔍 등록 체크</h3>
+            <p className="text-caption text-white/70 mb-4 flex-1">
+              등록된{' '}
+              <span className="font-bold text-white">{totalRegistered}</span>개의 070
+              번호를 정밀 검증합니다 (전화 + 동/로/리). 등록 직후 1회만 권장 — 자주 반복
+              시 네이버 일시 차단으로 검증 대기가 늘어날 수 있습니다.
+            </p>
+            <button
+              type="button"
+              onClick={() => startCheck('register')}
+              disabled={totalRegistered === 0}
+              className="inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-pill bg-white text-brand-700 font-bold text-body-sm shadow-card hover:shadow-card-hover disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+            >
+              <Play size={14} /> 등록 체크 시작
+            </button>
+          </Card>
+
+          {/* 2단계 — 재체크 (PENDING 만) */}
+          <Card variant="dark" className="flex flex-col">
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-pill bg-amber-400/25 text-amber-100 text-caption font-bold uppercase tracking-wider self-start mb-3">
+              <RefreshCw size={12} /> 2단계
+            </span>
+            <h3 className="text-h3 text-white mb-1">🔄 재체크 ({pendingCount}건)</h3>
+            <p className="text-caption text-white/70 mb-4 flex-1">
+              1단계 등록 체크에서{' '}
+              <span className="font-bold text-amber-200">검증 대기</span>로 보류된
+              항목만 정밀 모드로 재검증합니다. 일시 차단(429/403)이 풀린 뒤 한
+              번에 정리하기 좋은 단계입니다.
+            </p>
+            <button
+              type="button"
+              onClick={() => startCheck('recheck')}
+              disabled={pendingCount === 0}
+              className="inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-pill bg-white text-brand-700 font-bold text-body-sm shadow-card hover:shadow-card-hover disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+              title={pendingCount === 0 ? '검증 대기 항목이 없습니다.' : undefined}
+            >
+              <RefreshCw size={14} /> 재체크 ({pendingCount}건)
+            </button>
+          </Card>
+
+          {/* 3단계 — 자동 정기 체크 (안내) */}
+          <Card variant="dark" className="flex flex-col">
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-pill bg-emerald-400/25 text-emerald-100 text-caption font-bold uppercase tracking-wider self-start mb-3">
+              <CalendarClock size={12} /> 3단계
+            </span>
+            <h3 className="text-h3 text-white mb-1">⚡ 자동 정기 체크</h3>
+            <p className="text-caption text-white/70 mb-4 flex-1">
+              매일 사용자별 시각에 빠른 모드(페이지 존재 유무)로 자동 실행됩니다.
+              변경이 감지되면 이메일로 알림을 받으실 수 있습니다.
+            </p>
+            <div className="px-3 py-2 rounded-card bg-white/5 border border-white/10">
+              <div className="text-caption text-white/60 mb-0.5">다음 자동 정기 체크</div>
+              <div className="text-body text-white font-bold tabular-nums">
+                {nextAutoLabel ?? '—'}
+              </div>
             </div>
-          </div>
-        )}
-      </Card>
+          </Card>
+        </div>
+      )}
 
       {/* ───── 에러 표시 ───── */}
       {errorMsg && (
@@ -408,10 +476,9 @@ export default function LiveCheckTab() {
             <h3 className="text-h3 text-ink">상세 검증 결과</h3>
             <p className="text-caption text-ink-muted mt-0.5">
               {results.length === 0
-                ? '"지금 검증 시작" 버튼을 눌러 실시간 검증을 수행하세요.'
-                : mode === 'fast'
-                  ? `빠른 검증: ✓ 페이지 존재 유무만 확인 (총 ${results.length}건)`
-                  : `정밀 검증: ✓ 페이지 생존 / ✓ 전화 / ✓ 동·로·리 (총 ${results.length}건)`}
+                ? '위의 "등록 체크" 또는 "재체크" 버튼을 눌러 정밀 검증을 수행하세요.'
+                : `${kind === 'recheck' ? '재체크' : '등록 체크'} (정밀): ` +
+                  `✓ 페이지 생존 / ✓ 전화 / ✓ 동·로·리 (총 ${results.length}건)`}
             </p>
           </div>
           {totalMs > 0 && (
@@ -586,7 +653,7 @@ function EmptyState() {
         검증 결과가 아직 없습니다
       </div>
       <div className="text-caption text-ink-muted">
-        상단의 "지금 검증 시작" 버튼을 누르면 4중 검증이 실행됩니다.
+        상단의 "등록 체크" 또는 "재체크" 버튼을 누르면 정밀 검증이 실행됩니다.
       </div>
     </div>
   )
