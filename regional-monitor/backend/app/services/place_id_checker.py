@@ -140,6 +140,32 @@ def get_current_naver_limit() -> int:
     return _current_limit
 
 
+_last_naver_call_time: float = 0.0
+NAVER_MIN_INTERVAL_SEC = 0.20  # 직렬 호출 간 최소 간격 (Naver burst 검출 회피)
+
+
+async def _pace_naver_call() -> None:
+    """직렬 호출 간 최소 간격 강제 — Naver의 IP burst 검출 우회.
+
+    글로벌 세마포어가 1이라 직렬이지만, 호출 사이에 충분한 간격이 없으면
+    Naver는 짧은 시간에 같은 IP에서 너무 많은 요청을 받았다고 판단해 throttle함.
+
+    실측 (2026-04-28, AWS Lightsail Seoul → Naver m.place):
+      - 간격 < 100ms (병렬 동시): 50~100% 429
+      - 간격 200ms (직렬 200ms): 100% 200 OK ✅
+      - 간격 300ms (직렬 300ms): 100% 200 OK
+    """
+    import time as _t
+    global _last_naver_call_time
+    # 세마포어가 1이라 동시 진입 없음 → mutex 불필요, 단순 비교만
+    now = _t.monotonic()
+    elapsed = now - _last_naver_call_time
+    wait = NAVER_MIN_INTERVAL_SEC - elapsed
+    if wait > 0:
+        await asyncio.sleep(wait)
+    _last_naver_call_time = _t.monotonic()
+
+
 def _get_naver_global_sem() -> asyncio.Semaphore:
     """이벤트 루프 시작 후 lazy-init.
     acquire/release_verification_slot 으로 세마포어가 재생성될 수 있다.
@@ -616,13 +642,13 @@ async def check_place_fast(client: httpx.AsyncClient, sample: Dict) -> CheckResu
     html = ""
     # fast 모드: 429 시 2회 재시도 (1초, 3초) — 짧게 유지하여 청크 처리 시간 폭증 방지
     # 누적 대기: 1+3 = 4초 (대량 429 시 PENDING으로 남기고 다음 사이클에서 재처리)
-    # 글로벌 세마포어가 동시 호출을 제한하므로 내부 재시도는 짧아도 안전
-    # 🔒 글로벌 세마포어로 시스템 전체 네이버 동시 호출을 적응형 한도(SOLO=5/MULTI=2) 이하로 제한
+    # 🔒 글로벌 세마포어 + 호출 간격 강제(_pace_naver_call): 직렬 호출도 burst 회피
     naver_sem = _get_naver_global_sem()
     _backoff_seconds = [1, 3]
     for attempt in range(2):
         try:
             async with naver_sem:
+                await _pace_naver_call()  # Naver IP burst 회피용 페이싱
                 r = await client.get(
                     url, headers=headers, follow_redirects=True, timeout=10.0
                 )
