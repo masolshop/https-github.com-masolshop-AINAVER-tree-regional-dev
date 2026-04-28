@@ -111,13 +111,16 @@ async def verify_one(
     checker = check_place_fast if mode == "fast" else check_place
     cr = await checker(client, sample)
 
-    # PENDING(429 rate-limit 등 일시 오류) → 최종 1회 재시도 (5~10초 대기)
-    # 청크 간 추가 분산 효과로 PENDING 누수를 줄이기 위함
-    # 단, fast 모드는 이미 check_place_fast 내부에서 4회 재시도(2+4+8s backoff)했으므로
-    # 추가 재시도 시 최악 30초/건 → 200건 12분 폭주. fast 모드에선 스킵.
-    if cr.verdict == "PENDING" and mode != "fast":
+    # PENDING(429 rate-limit 등 일시 오류) → 최종 1회 재시도
+    # 글로벌 세마포어가 있어 폭주 위험은 제거됨 — 이제 fast/full 모두 안전망 적용.
+    # full: 5~10초 대기 (이미 내부 4회 재시도, 추가는 마지막 보루)
+    # fast: 10~20초 대기 (내부 3회 26초 + 추가 15초 ≈ 41초, IP throttle 윈도우 충분히 커버)
+    if cr.verdict == "PENDING":
         import random as _r
-        await asyncio.sleep(5 + _r.uniform(0, 5))
+        if mode == "fast":
+            await asyncio.sleep(10 + _r.uniform(0, 10))
+        else:
+            await asyncio.sleep(5 + _r.uniform(0, 5))
         cr = await checker(client, sample)
 
     # verdict 매핑 — place_id_checker는 OK/PHONE_MISMATCH/DONG_MISMATCH/DEAD/PENDING/ERROR 반환
