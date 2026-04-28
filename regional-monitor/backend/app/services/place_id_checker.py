@@ -61,6 +61,35 @@ MOBILE_UA = (
 )
 
 
+# ============================================================================
+# 글로벌 네이버 동시 호출 제한 — 시스템 전체에서 단일 게이트
+# ============================================================================
+# 모든 사용자/모든 모드/모든 검증 경로(즉시검증, 스케줄러, verify_job_runner)가
+# 이 세마포어를 공유한다. 이 제한이 곧 "네이버로 동시에 나가는 요청 상한"이며
+# 사용자 N명이 동시 클릭해도 네이버에서 보면 동시 요청은 항상 ≤ NAVER_GLOBAL_LIMIT.
+#
+# 실측(Lightsail Seoul → Naver m.place):
+#   동시 1건 (직렬)        → 100% 200 OK, ~175ms/건
+#   동시 2건               → 100% 200 OK, ~120ms/건 평균
+#   동시 3건               → 95%+ 200 OK, 가끔 1건 429
+#   동시 5건               → 80% 즉시 429 (throttle 폭주)
+#   동시 8건               → 100% 429
+#
+# 안전 마진을 위해 3으로 설정. 사용자 1명이 fast 모드(concurrency=2)로 검증해도
+# 글로벌 3 한도 안에 들어오므로 단일 사용자 성능 저하 없음.
+# 사용자 2명 동시 검증 시 둘이 글로벌 3을 공유 (1.5씩) → 안전.
+NAVER_GLOBAL_LIMIT = 3
+_NAVER_GLOBAL_SEM: asyncio.Semaphore | None = None
+
+
+def _get_naver_global_sem() -> asyncio.Semaphore:
+    """이벤트 루프 시작 후 lazy-init (모듈 임포트 시점엔 루프가 없을 수 있음)."""
+    global _NAVER_GLOBAL_SEM
+    if _NAVER_GLOBAL_SEM is None:
+        _NAVER_GLOBAL_SEM = asyncio.Semaphore(NAVER_GLOBAL_LIMIT)
+    return _NAVER_GLOBAL_SEM
+
+
 @dataclass
 class CheckResult:
     place_id: str
@@ -375,10 +404,13 @@ async def check_place(client: httpx.AsyncClient, sample: Dict) -> CheckResult:
     html = ""
     # 429(Rate Limit) 발생 시 exponential backoff 후 최대 4회 재시도
     # 누적 대기: 2 + 4 + 8 = 14초 (충분히 throttle 회복)
+    # 🔒 글로벌 세마포어로 시스템 전체 네이버 동시 호출을 NAVER_GLOBAL_LIMIT 이하로 제한
+    naver_sem = _get_naver_global_sem()
     for attempt in range(4):
         try:
-            r = await client.get(url, headers=headers, follow_redirects=True, timeout=15.0)
-            html = r.text
+            async with naver_sem:
+                r = await client.get(url, headers=headers, follow_redirects=True, timeout=15.0)
+                html = r.text
             if r.status_code != 429:
                 break
             if attempt == 3:
@@ -524,12 +556,15 @@ async def check_place_fast(client: httpx.AsyncClient, sample: Dict) -> CheckResu
     html = ""
     # fast 모드: 429 시 짧게 2회만 재시도 (1s, 2s) — full 모드의 4회보다 가벼움
     # 본문은 dead page 키워드/state 존재 여부 빠른 검사용으로만 사용
+    # 🔒 글로벌 세마포어로 시스템 전체 네이버 동시 호출을 NAVER_GLOBAL_LIMIT 이하로 제한
+    naver_sem = _get_naver_global_sem()
     for attempt in range(2):
         try:
-            r = await client.get(
-                url, headers=headers, follow_redirects=True, timeout=10.0
-            )
-            html = r.text
+            async with naver_sem:
+                r = await client.get(
+                    url, headers=headers, follow_redirects=True, timeout=10.0
+                )
+                html = r.text
             if r.status_code != 429:
                 break
             if attempt == 1:

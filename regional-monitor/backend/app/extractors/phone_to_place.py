@@ -196,7 +196,10 @@ async def extract_place_from_phone(
     try:
         url = f"https://m.search.naver.com/search.naver?query={norm_phone}"
         try:
-            r = await client.get(url, headers={"User-Agent": UA_MOBILE}, timeout=timeout)
+            # 🔒 글로벌 네이버 세마포어 공유 — 시스템 전체 네이버 동시 호출 제한
+            from app.services.place_id_checker import _get_naver_global_sem
+            async with _get_naver_global_sem():
+                r = await client.get(url, headers={"User-Agent": UA_MOBILE}, timeout=timeout)
         except (httpx.TimeoutException, httpx.NetworkError) as e:
             return ExtractedPlace(
                 success=False,
