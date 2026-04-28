@@ -115,24 +115,18 @@ async def run_live_check(
     if not places:
         raise HTTPException(status_code=404, detail="검증할 등록이 없습니다.")
 
-    # 병렬 검증 — 적응형 동시성 (place_id_checker.py 의 글로벌 세마포어가 실제 한도 결정)
-    #  - mode='full': 전화+동/로/리 풀 검증 (요청 concurrency=3, 글로벌 게이트가 단일=5/다중=2로 자동 조정)
-    #  - mode='fast': 페이지 존재 유무만 (요청 concurrency=5, 글로벌 게이트가 단일=5/다중=2로 자동 조정)
-    #    실측 결과 (Lightsail seoul):
-    #      직렬 1건씩 → 100% 200 OK, ~175ms/건
-    #      동시 5건  → 일부 429 (재시도 흡수)
-    #      동시 2건  → 100% 200 OK
-    #    단일 사용자: 5 동시로 ~30초/296건
-    #    다중 사용자: 2 동시로 자동 큐잉 (안전)
+    # 병렬 검증 — 글로벌 세마포어가 실제 한도 결정 (place_id_checker.py)
+    # 실측 결과 (2026-04-28, Lightsail Seoul → Naver):
+    #   직렬 1건씩 (300ms 간격)  → 100% 200 OK, ~270ms/건
+    #   동시 2건                 → 50% 429 발생 (즉시 throttle)
+    #   동시 3건+                → 거의 100% 429 (1분 이상 회복 대기)
+    # 결론: AWS Lightsail IP 단위 throttle이 매우 엄격 → 직렬 처리가 가장 빠름
+    # 296건 × 270ms ≈ 80초 (안정적, PENDING 누수 없음)
     mode = (req.mode or "full").lower()
     if mode not in ("full", "fast"):
         mode = "full"
-    # 글로벌 게이트가 실제 한도를 결정 — 여기 값은 상한 역할
-    # fast 모드: 단일 사용자 시 글로벌 SOLO=3 까지 활용
-    # full 모드: 단일 사용자 시 글로벌 SOLO=3 까지 활용 (full도 동일)
-    # concurrency=3 — 글로벌 게이트(SOLO=3, MULTI=1)와 일치
-    # fast/full 모두 동일: 글로벌 게이트가 자동으로 활성 사용자 수에 맞춰 직렬화함
-    concurrency = 3
+    # concurrency=1 — 글로벌 게이트(SOLO=1)와 일치, 직렬 처리
+    concurrency = 1
     t0 = time.perf_counter()
     raw_results = await verify_batch(places, concurrency=concurrency, mode=mode)
     total_ms = int((time.perf_counter() - t0) * 1000)
