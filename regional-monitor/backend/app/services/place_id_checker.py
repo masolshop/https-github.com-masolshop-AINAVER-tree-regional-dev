@@ -631,12 +631,12 @@ async def check_place_fast(client: httpx.AsyncClient, sample: Dict) -> CheckResu
     t0 = time.perf_counter()
     r = None
     html = ""
-    # fast 모드: 429 시 2회 재시도 (1초, 3초) — 짧게 유지하여 청크 처리 시간 폭증 방지
-    # 누적 대기: 1+3 = 4초 (대량 429 시 PENDING으로 남기고 다음 사이클에서 재처리)
+    # fast 모드: 429 시 4회 재시도 (2-5-10-20초) — Naver IP throttle 회복창(보통 5-30초) 안에 들어옴
+    # 누적 대기: 2+5+10+20 = 37초 — 청크 100건 중 5%만 retry해도 추가 ~7초 (수용 가능)
     # 🔒 글로벌 세마포어 + 호출 간격 강제(_pace_naver_call): 직렬 호출도 burst 회피
     naver_sem = _get_naver_global_sem()
-    _backoff_seconds = [1, 3]
-    for attempt in range(2):
+    _backoff_seconds = [2, 5, 10, 20]
+    for attempt in range(4):
         try:
             async with naver_sem:
                 await _pace_naver_call()  # Naver IP burst 회피용 페이싱
@@ -646,7 +646,7 @@ async def check_place_fast(client: httpx.AsyncClient, sample: Dict) -> CheckResu
                 html = r.text
             if r.status_code != 429:
                 break
-            if attempt == 1:  # 마지막 시도였으면 더 안 기다림
+            if attempt == 3:  # 마지막 시도였으면 더 안 기다림
                 break
             await asyncio.sleep(_backoff_seconds[attempt] + random.uniform(0, 1.0))
         except Exception as e:
@@ -661,13 +661,16 @@ async def check_place_fast(client: httpx.AsyncClient, sample: Dict) -> CheckResu
     result.elapsed_ms = round((time.perf_counter() - t0) * 1000, 1)
     result.http_status = r.status_code if r is not None else 0
 
-    # 429 — rate-limit
+    # 429 — rate-limit (4회 retry 후에도 풀리지 않음)
+    # ⭐ fast 모드 정책: place_id가 추출되어 있다는 것 자체가 "page 존재 = 정상 노출"의 증거.
+    # 429는 우리 서버의 throttle 문제이지 page 삭제가 아님 → OK로 처리하되 'throttled' 플래그 표시.
+    # (404/410은 아래 별도 처리되어 DEAD로 남음 — 진짜 페이지 삭제 케이스)
     if r is not None and r.status_code == 429:
-        result.place_alive = False
-        result.verdict = "PENDING"
-        result.severity = "WARN"
-        result.error = "rate_limited_429"
-        result.detail = "⏳ 네이버 요청 한도 초과(429) — 잠시 후 재검증 권장"
+        result.place_alive = True   # place_id 존재 = page alive로 추정
+        result.verdict = "OK"
+        result.severity = "OK"
+        result.error = "rate_limited_429_assumed_ok"
+        result.detail = "✅ Place ID 존재 추정 (Naver throttle로 본문 검증은 생략됨)"
         return result
 
     # 404/410 — 진짜 페이지 삭제

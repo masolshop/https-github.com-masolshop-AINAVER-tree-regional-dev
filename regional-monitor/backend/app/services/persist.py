@@ -164,8 +164,16 @@ async def persist_results(
             new_event_objs.append(ce)
 
         # 3) RegisteredPlace 갱신
-        place.current_verdict = new
-        place.last_checked_at = now
+        # ⭐ PENDING(429 throttle 등 일시 오류)은 기존의 명확한 verdict를 덮어쓰지 않음.
+        # 예: 어제 OK였는데 오늘 429로 PENDING이면 OK 상태 유지 → 사용자에게 "검증 대기" 노출 안 함.
+        # 다음 사이클에서 확실한 결과(OK/DEAD/MISMATCH) 받으면 그때 갱신.
+        # DailyHealthCheck(시계열)에는 PENDING도 그대로 기록되어 throttle 추적 가능.
+        if new == "PENDING" and prev in {"OK", "DEAD", "PHONE_MISMATCH", "DONG_MISMATCH", "REGION_MISMATCH"}:
+            # 기존 verdict 유지, last_checked_at만 갱신
+            place.last_checked_at = now
+        else:
+            place.current_verdict = new
+            place.last_checked_at = now
         updated += 1
 
     await db.commit()
