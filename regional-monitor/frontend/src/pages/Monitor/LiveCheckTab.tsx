@@ -621,7 +621,7 @@ export default function LiveCheckTab() {
                     <td className="px-3 py-3">
                       <div className="flex flex-col gap-0.5" title={errorTooltip(r.error)}>
                         <VerdictBadge verdict={r.verdict} />
-                        {r.verdict === 'PENDING' && r.error && (
+                        {(r.verdict === 'PENDING' || r.verdict === 'DEAD') && r.error && (
                           <span className="text-caption text-ink-soft truncate max-w-[140px]">
                             {errorShortLabel(r.error)}
                           </span>
@@ -644,27 +644,40 @@ export default function LiveCheckTab() {
 
 /* ───────────── 서브 컴포넌트 ───────────── */
 
-/** PENDING 상세 라벨 — 표 셀에 짧게 표시 */
+/** 검증 실패 사유 짧은 라벨 — 표 셀에 표시 (PENDING / DEAD 공통) */
 function errorShortLabel(err: string): string {
+  // ── 일시 차단 (PENDING) ──
   if (err.startsWith('naver_blocked_captcha')) return '네이버 일시 차단'
   if (err.startsWith('http_403')) return '403 차단'
   if (err.startsWith('http_429') || err.includes('rate_limited')) return '429 일시 제한'
-  if (err.startsWith('place_id_not_found')) return 'Place ID 추출 실패'
+  if (err.startsWith('http_5')) return '네이버 5xx 오류'
   if (err.startsWith('network')) return '네트워크 오류'
   if (err.startsWith('extract_exception')) return '추출 오류'
+  // ── 페이지 누락 (DEAD) ──
+  if (err.startsWith('place_id_not_found')) return '플레이스 미노출'
+  if (err.startsWith('name_not_found_in_search')) return '검색 결과 없음'
   return err
 }
 
-/** PENDING 상세 툴팁 — 사용자에게 안내 메시지 */
+/** 검증 실패 사유 툴팁 — 사용자에게 안내 메시지 */
 function errorTooltip(err: string | null | undefined): string | undefined {
   if (!err) return undefined
+  // ── 일시 차단 (PENDING) ──
   if (err.startsWith('naver_blocked_captcha'))
-    return '네이버가 일시적으로 캡차/차단 페이지를 응답했어요. 5~10분 후 다시 시도해 주세요.'
-  if (err.startsWith('http_403')) return '네이버가 403(접근 차단) 으로 응답했어요. 잠시 후 재시도하세요.'
+    return '네이버가 일시적으로 캡차/차단 페이지를 응답했어요. 5~10분 후 재체크해 주세요.'
+  if (err.startsWith('http_403'))
+    return '네이버가 403(접근 차단) 으로 응답했어요. 잠시 후 재체크하세요.'
   if (err.includes('429') || err.includes('rate_limited'))
-    return '요청량이 일시적으로 많아 429(과도한 요청)로 응답했어요. 5분 후 재시도하세요.'
+    return '요청량이 일시적으로 많아 429(과도한 요청)로 응답했어요. 5분 후 재체크하세요.'
+  if (err.startsWith('http_5'))
+    return '네이버 서버 일시 오류(5xx). 잠시 후 재체크하세요.'
+  if (err.startsWith('network'))
+    return '네트워크 오류로 검색 응답을 받지 못했어요. 잠시 후 재체크하세요.'
+  // ── 페이지 누락 (DEAD) ──
   if (err.startsWith('place_id_not_found'))
-    return '전화번호로 Place ID 를 자동 추출하지 못했어요. 등록 관리에서 Place ID 를 직접 입력하시거나 잠시 후 재시도해 주세요.'
+    return '네이버 검색에 이 070 번호로 매칭되는 플레이스가 없어요. 폐업/삭제됐거나 등록 관리에서 Place ID 를 직접 입력해 주세요.'
+  if (err.startsWith('name_not_found_in_search'))
+    return '검색 결과에서 상호명을 찾지 못했어요. 등록 관리에서 Place ID 를 직접 확인해 주세요.'
   return err
 }
 

@@ -42,10 +42,15 @@ async def verify_one(
         dict: 표준 검증 결과 dict (run_live_check 응답에 사용).
     """
     # ── place_id 가 비어있으면 먼저 phone→place 추출 시도 ──
-    # ⚠️ 추출 실패 / 네트워크 오류 / 403·429 차단은 일시적 사유이므로 절대 DEAD 로
-    #    확정짓지 않는다 (DEAD 는 ChangeEvent='PAGE_DELETED' 를 트리거하여 사용자에게
-    #    "페이지가 삭제됐다"고 잘못 알리게 됨). 추출 실패 = PENDING(검증 대기) 처리하여
-    #    다음 회차에서 재시도하고, place.current_verdict 도 덮어쓰지 않는다.
+    # 분기 정책 (사용자 결정 / 2026-04-28):
+    #   ① 네이버 검색에 결과가 정상 응답되었는데 place_id 가 안 잡히는 경우
+    #      = 그 070 번호의 플레이스 자체가 네이버에 노출되지 않음
+    #      = "페이지 누락(DEAD)" 으로 확정.
+    #        예) error='place_id_not_found', 'name_not_found_in_search'
+    #   ② 네이버가 캡차/차단/네트워크/HTTP 4xx·5xx 로 응답해 검색 자체가 실패한 경우
+    #      = 일시적 차단이므로 PENDING(검증 대기) 으로 보류 → 다음 회차 재시도.
+    #        예) error='naver_blocked_captcha', 'http_429', 'http_403',
+    #            'network: ...', 응답 status_code != 200
     if not place.place_id:
         try:
             from app.extractors.phone_to_place import (
@@ -65,9 +70,26 @@ async def verify_one(
                 if not place.category and ext.category:
                     place.category = ext.category
             else:
-                # 추출 실패 → 일시 보류(PENDING). 다음 회차에서 재시도.
+                # 추출 실패 사유 분류
                 ext_status = getattr(ext, "http_status", 0) if ext else 0
                 ext_error = (getattr(ext, "error", None) if ext else None) or "extract_failed"
+                ext_resp_ms = getattr(ext, "response_ms", 0) if ext else 0
+
+                # 일시 차단 신호 — PENDING 유지
+                # (캡차/네트워크/HTTP 비-200 는 네이버 응답 자체가 비정상)
+                _temporary_signals = (
+                    "naver_blocked_captcha",
+                    "network",
+                    "http_403",
+                    "http_429",
+                    "http_5",        # 5xx 계열 전부
+                )
+                is_temporary = any(ext_error.startswith(sig) for sig in _temporary_signals)
+
+                # ② 일시 차단 → PENDING
+                # ① 검색 응답은 정상인데 결과 없음 → DEAD
+                fail_verdict = "PENDING" if is_temporary else "DEAD"
+
                 return {
                     "place_id_ref": place.id,
                     "phone": place.phone,
@@ -84,14 +106,15 @@ async def verify_one(
                         "actual_name": None,
                         "actual_address": None,
                     },
-                    "verdict": "PENDING",
-                    "response_ms": 0,
+                    "verdict": fail_verdict,
+                    "response_ms": ext_resp_ms,
                     "http_status": ext_status,
                     "error": ext_error,
                     "checked_at": now_kst(),
                 }
         except Exception as e:                                                            # noqa: BLE001
-            # 추출 단계의 모든 예외 = 일시 오류 → PENDING (사용자에게 "삭제" 라고 거짓 보고하지 않음)
+            # 추출 단계의 예기치 못한 예외 = 일시 오류 → PENDING
+            # (코드 버그 / 네이버 응답 포맷 변경 등이므로 사용자에게 "삭제" 단정은 위험)
             return {
                 "place_id_ref": place.id,
                 "phone": place.phone,
