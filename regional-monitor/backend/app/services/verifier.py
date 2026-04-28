@@ -119,17 +119,13 @@ async def verify_one(
     checker = check_place_fast if mode == "fast" else check_place
     cr = await checker(client, sample)
 
-    # PENDING(429 rate-limit 등 일시 오류) → 최종 1회 재시도
-    # 글로벌 세마포어 + 내부 재시도가 throttle을 거의 흡수 → 외부 안전망은 짧게.
-    # fast: 3~5초 대기 (내부 3회 26초 + 추가 5초 ≈ 31초)
-    # full: 5~10초 대기 (이미 내부 4회 재시도, 추가는 마지막 보루)
-    # 긴 대기(10~20초)는 청크 처리 시간을 폭증시키므로 짧게 유지.
-    if cr.verdict == "PENDING":
+    # PENDING(429 rate-limit 등 일시 오류) → fast 모드는 외부 retry 생략
+    # fast 모드: 내부 3회 재시도(3-8-15초)로 충분, 외부 안전망은 청크 시간 폭증 위험
+    #   → PENDING은 다음 검증 사이클에서 자연스럽게 재처리됨 (DB에 PENDING으로 남음)
+    # full 모드: 정확도가 중요하므로 외부 1회 재시도 유지
+    if cr.verdict == "PENDING" and mode == "full":
         import random as _r
-        if mode == "fast":
-            await asyncio.sleep(3 + _r.uniform(0, 2))
-        else:
-            await asyncio.sleep(5 + _r.uniform(0, 5))
+        await asyncio.sleep(5 + _r.uniform(0, 5))
         cr = await checker(client, sample)
 
     # verdict 매핑 — place_id_checker는 OK/PHONE_MISMATCH/DONG_MISMATCH/DEAD/PENDING/ERROR 반환

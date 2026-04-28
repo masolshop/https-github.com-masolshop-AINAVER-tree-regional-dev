@@ -614,13 +614,13 @@ async def check_place_fast(client: httpx.AsyncClient, sample: Dict) -> CheckResu
     t0 = time.perf_counter()
     r = None
     html = ""
-    # fast 모드: 429 시 3회 재시도 (3s, 8s, 15s) — 네이버 IP throttle은 5-30초 회복 시간 필요
-    # 누적 대기: 3+8+15 = 26초 (실측 throttle 윈도우 안에 들어옴)
-    # 본문은 dead page 키워드/state 존재 여부 빠른 검사용으로만 사용
-    # 🔒 글로벌 세마포어로 시스템 전체 네이버 동시 호출을 NAVER_GLOBAL_LIMIT 이하로 제한
+    # fast 모드: 429 시 2회 재시도 (1초, 3초) — 짧게 유지하여 청크 처리 시간 폭증 방지
+    # 누적 대기: 1+3 = 4초 (대량 429 시 PENDING으로 남기고 다음 사이클에서 재처리)
+    # 글로벌 세마포어가 동시 호출을 제한하므로 내부 재시도는 짧아도 안전
+    # 🔒 글로벌 세마포어로 시스템 전체 네이버 동시 호출을 적응형 한도(SOLO=5/MULTI=2) 이하로 제한
     naver_sem = _get_naver_global_sem()
-    _backoff_seconds = [3, 8, 15]
-    for attempt in range(3):
+    _backoff_seconds = [1, 3]
+    for attempt in range(2):
         try:
             async with naver_sem:
                 r = await client.get(
@@ -629,7 +629,7 @@ async def check_place_fast(client: httpx.AsyncClient, sample: Dict) -> CheckResu
                 html = r.text
             if r.status_code != 429:
                 break
-            if attempt == 2:
+            if attempt == 1:  # 마지막 시도였으면 더 안 기다림
                 break
             await asyncio.sleep(_backoff_seconds[attempt] + random.uniform(0, 1.0))
         except Exception as e:
