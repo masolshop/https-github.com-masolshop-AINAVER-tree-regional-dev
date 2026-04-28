@@ -75,10 +75,11 @@ MOBILE_UA = (
 #   동시 5건               → 80% 즉시 429 (throttle 폭주)
 #   동시 8건               → 100% 429
 #
-# 안전 마진을 위해 3으로 설정. 사용자 1명이 fast 모드(concurrency=2)로 검증해도
-# 글로벌 3 한도 안에 들어오므로 단일 사용자 성능 저하 없음.
-# 사용자 2명 동시 검증 시 둘이 글로벌 3을 공유 (1.5씩) → 안전.
-NAVER_GLOBAL_LIMIT = 3
+# 안전 마진을 위해 2로 설정 — verify_batch(concurrency=2)와 정확히 일치.
+# 단일 사용자: 항상 슬롯 가용 (대기 0) — 성능 저하 없음.
+# 다중 사용자: 자동 큐잉 (사용자2는 사용자1 완료 대기, 안전).
+# 3에서 2로 낮춘 이유: 외부 청크 동시 호출 시 슬롯 경쟁이 생겨 throttle 트리거됨.
+NAVER_GLOBAL_LIMIT = 2
 _NAVER_GLOBAL_SEM: asyncio.Semaphore | None = None
 
 

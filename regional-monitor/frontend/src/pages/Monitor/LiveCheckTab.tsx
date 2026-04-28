@@ -32,22 +32,10 @@ import {
   Zap,
   AlertTriangle,
   StopCircle,
-  TrendingUp,
 } from 'lucide-react'
 
-const DEFAULT_CHUNK_SIZE = 50       // 청크당 50건 (~8초/청크) — 진행률 부드럽게 업데이트
-const CHUNK_DELAY_MS = 200          // 청크 사이 휴식 (네이버 부하 분산)
-
-// 청크별 결과 누적 — 실시간 차트용
-interface ChunkSnapshot {
-  index: number       // 청크 번호 (1-based)
-  ok: number          // 정상
-  warning: number     // 주의
-  danger: number      // 심각
-  pending: number     // 대기
-  elapsedMs: number   // 청크 처리 시간
-  cumulativeDone: number // 누적 처리 건수
-}
+const DEFAULT_CHUNK_SIZE = 100      // 청크당 100건 (~12초/청크) — 진행률 자주 업데이트 + 청크 오버헤드 최소화
+const CHUNK_DELAY_MS = 0            // 청크 사이 휴식 0ms — 글로벌 세마포어가 throttle 자체적으로 제어
 
 export default function LiveCheckTab() {
   const qc = useQueryClient()
@@ -62,8 +50,8 @@ export default function LiveCheckTab() {
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
   // 검증 모드: 'fast' (페이지 존재 유무만, ~10s/200건) / 'full' (전화·동 풀 검증, ~40s/200건)
   const [mode, setMode] = useState<VerifyMode>('fast')
-  // 청크별 스냅샷 — 실시간 차트용
-  const [chunkSnapshots, setChunkSnapshots] = useState<ChunkSnapshot[]>([])
+  // 직전 청크 시간 (ETA 계산용)
+  const [lastChunkMs, setLastChunkMs] = useState<number[]>([])
   const cancelRef = useRef(false)
 
   const totalRegistered = placesData?.summary.total ?? 0
@@ -111,7 +99,7 @@ export default function LiveCheckTab() {
     setErrorMsg(null)
     setResults([])
     setTotalMs(0)
-    setChunkSnapshots([])
+    setLastChunkMs([])
     cancelRef.current = false
 
     const ids = [...allPlaceIds]
@@ -154,28 +142,7 @@ export default function LiveCheckTab() {
         setResults([...accResults])
         setTotalMs(accMs)
         setProgress((p) => ({ ...p, done: accResults.length }))
-
-        // 청크별 스냅샷 기록 — 실시간 차트용
-        const chunkResults = resp.results || []
-        const chunkSnap: ChunkSnapshot = {
-          index: i + 1,
-          ok: chunkResults.filter((r) => r.verdict === 'OK').length,
-          warning: chunkResults.filter(
-            (r) =>
-              r.verdict === 'PHONE_MISMATCH' ||
-              r.verdict === 'DONG_MISMATCH' ||
-              r.verdict === 'NAME_MISMATCH',
-          ).length,
-          danger: chunkResults.filter(
-            (r) => r.verdict === 'REGION_MISMATCH' || r.verdict === 'DEAD',
-          ).length,
-          pending: chunkResults.filter(
-            (r) => r.verdict === 'PENDING' || r.verdict === 'CHECKING',
-          ).length,
-          elapsedMs: elapsed,
-          cumulativeDone: accResults.length,
-        }
-        setChunkSnapshots((prev) => [...prev, chunkSnap])
+        setLastChunkMs((prev) => [...prev, elapsed])
 
         console.log(
           `[LiveCheck] 청크 ${i + 1}/${chunks.length} 완료 (${elapsed}ms): ` +
@@ -183,8 +150,8 @@ export default function LiveCheckTab() {
             `ok=${resp.summary?.ok ?? 0} warn=${resp.summary?.warning ?? 0} dgr=${resp.summary?.danger ?? 0}`,
         )
 
-        // 마지막 청크가 아니면 잠시 휴식 (네이버 부하 분산)
-        if (i < chunks.length - 1) {
+        // 마지막 청크가 아니면 잠시 휴식 (글로벌 세마포어가 처리하므로 보통 0)
+        if (i < chunks.length - 1 && CHUNK_DELAY_MS > 0) {
           await new Promise((r) => setTimeout(r, CHUNK_DELAY_MS))
         }
       }
@@ -213,13 +180,12 @@ export default function LiveCheckTab() {
 
   // ETA(남은 예상 시간) 계산 — 평균 청크 처리 시간 × 남은 청크 수
   const eta = useMemo(() => {
-    if (!running || chunkSnapshots.length === 0) return null
-    const avgChunkMs =
-      chunkSnapshots.reduce((a, s) => a + s.elapsedMs, 0) / chunkSnapshots.length
+    if (!running || lastChunkMs.length === 0) return null
+    const avgChunkMs = lastChunkMs.reduce((a, b) => a + b, 0) / lastChunkMs.length
     const remainingChunks = progress.totalChunks - progress.chunk
     const remainingMs = avgChunkMs * remainingChunks + remainingChunks * CHUNK_DELAY_MS
     return Math.max(0, Math.round(remainingMs / 1000))
-  }, [running, chunkSnapshots, progress.chunk, progress.totalChunks])
+  }, [running, lastChunkMs, progress.chunk, progress.totalChunks])
 
   return (
     <div className="space-y-6">
@@ -243,9 +209,8 @@ export default function LiveCheckTab() {
               <span className="text-caption text-white/60">
                 {chunkSize}건씩 청크로 나눠 순차 호출 · 청크당 약{' '}
                 {mode === 'fast'
-                  ? `${Math.ceil(chunkSize * 0.06)}~${Math.ceil(chunkSize * 0.1)}초`
-                  : `${Math.ceil(chunkSize * 0.13)}~${Math.ceil(chunkSize * 0.2)}초`}{' '}
-                · 청크 사이 {CHUNK_DELAY_MS}ms 휴식
+                  ? `${Math.ceil(chunkSize * 0.1)}~${Math.ceil(chunkSize * 0.15)}초`
+                  : `${Math.ceil(chunkSize * 0.13)}~${Math.ceil(chunkSize * 0.2)}초`}
               </span>
             </p>
           </div>
@@ -294,10 +259,10 @@ export default function LiveCheckTab() {
                   onChange={(e) => setChunkSize(Number(e.target.value))}
                   className="px-2 py-1 rounded bg-white/10 text-white text-caption border border-white/20 focus:outline-none focus:ring-2 focus:ring-white/30"
                 >
-                  <option value={25} className="text-ink">25건 (가장 부드러움)</option>
-                  <option value={50} className="text-ink">50건 (권장)</option>
-                  <option value={100} className="text-ink">100건</option>
+                  <option value={50} className="text-ink">50건</option>
+                  <option value={100} className="text-ink">100건 (권장)</option>
                   <option value={200} className="text-ink">200건</option>
+                  <option value={300} className="text-ink">300건 (한번에)</option>
                 </select>
               </label>
             )}
@@ -358,16 +323,6 @@ export default function LiveCheckTab() {
           </div>
         )}
       </Card>
-
-      {/* ───── 실시간 진행 차트 (청크별 누적 결과) ───── */}
-      {chunkSnapshots.length > 0 && (
-        <ChunkProgressChart
-          snapshots={chunkSnapshots}
-          totalChunks={progress.totalChunks}
-          chunkSize={chunkSize}
-          running={running}
-        />
-      )}
 
       {/* ───── 에러 표시 ───── */}
       {errorMsg && (
@@ -510,196 +465,6 @@ export default function LiveCheckTab() {
 }
 
 /* ───────────── 서브 컴포넌트 ───────────── */
-
-interface ChunkProgressChartProps {
-  snapshots: ChunkSnapshot[]
-  totalChunks: number
-  chunkSize: number
-  running: boolean
-}
-
-/**
- * 실시간 진행 차트 — 청크가 완료될 때마다 누적 결과를 막대그래프로 시각화
- *  - 각 청크당 4색 누적 바 (정상/주의/심각/대기)
- *  - 청크별 처리 시간 라인
- *  - 현재 청크는 진행 중 애니메이션
- */
-function ChunkProgressChart({
-  snapshots,
-  totalChunks,
-  chunkSize,
-  running,
-}: ChunkProgressChartProps) {
-  // 가장 큰 청크 처리 시간 → Y축 스케일
-  const maxElapsed = Math.max(...snapshots.map((s) => s.elapsedMs), 1)
-  // 청크별 합계 (각 청크 내 전체 건수)
-  const lastSnap = snapshots[snapshots.length - 1]
-
-  // 누적 카운트 (현재까지)
-  const cumOk = snapshots.reduce((a, s) => a + s.ok, 0)
-  const cumWarn = snapshots.reduce((a, s) => a + s.warning, 0)
-  const cumDgr = snapshots.reduce((a, s) => a + s.danger, 0)
-  const cumPnd = snapshots.reduce((a, s) => a + s.pending, 0)
-  const cumTotal = cumOk + cumWarn + cumDgr + cumPnd
-
-  return (
-    <Card variant="white" className="!p-card-sm">
-      <div className="flex items-center justify-between mb-3">
-        <div className="flex items-center gap-2">
-          <div className="w-7 h-7 rounded-lg bg-brand-50 text-brand-700 flex items-center justify-center">
-            <TrendingUp size={14} />
-          </div>
-          <div>
-            <h3 className="text-body font-bold text-ink">실시간 진행 차트</h3>
-            <p className="text-caption text-ink-muted">
-              청크별 처리 결과 누적 — {snapshots.length}/{totalChunks} 청크 완료
-              {running && ' · 진행 중…'}
-            </p>
-          </div>
-        </div>
-
-        {/* 누적 합계 표시 */}
-        <div className="flex items-center gap-3 text-caption tabular-nums">
-          <span className="text-status-success font-semibold">정상 {cumOk}</span>
-          {cumWarn > 0 && (
-            <span className="text-status-warning font-semibold">주의 {cumWarn}</span>
-          )}
-          {cumDgr > 0 && (
-            <span className="text-status-danger font-semibold">심각 {cumDgr}</span>
-          )}
-          {cumPnd > 0 && (
-            <span className="text-ink-muted font-semibold">대기 {cumPnd}</span>
-          )}
-          <span className="text-ink-soft">/ 합계 {cumTotal}</span>
-        </div>
-      </div>
-
-      {/* 청크별 막대 차트 */}
-      <div className="space-y-2">
-        {/* 막대그래프 — 각 청크가 한 컬럼 */}
-        <div
-          className="grid gap-1.5"
-          style={{
-            gridTemplateColumns: `repeat(${Math.max(snapshots.length, 1)}, minmax(20px, 1fr))`,
-          }}
-        >
-          {snapshots.map((s) => {
-            const total = s.ok + s.warning + s.danger + s.pending || 1
-            const okPct = (s.ok / total) * 100
-            const warnPct = (s.warning / total) * 100
-            const dgrPct = (s.danger / total) * 100
-            const pndPct = (s.pending / total) * 100
-            const elapsedSec = (s.elapsedMs / 1000).toFixed(1)
-
-            return (
-              <div
-                key={s.index}
-                className="flex flex-col items-center group"
-                title={`청크 ${s.index}: 정상 ${s.ok}, 주의 ${s.warning}, 심각 ${s.danger}, 대기 ${s.pending} · ${elapsedSec}초`}
-              >
-                {/* 누적 막대 (위에서 아래로) */}
-                <div className="w-full h-24 flex flex-col rounded overflow-hidden bg-bg-subtle">
-                  {okPct > 0 && (
-                    <div
-                      className="bg-status-success transition-all"
-                      style={{ height: `${okPct}%` }}
-                    />
-                  )}
-                  {warnPct > 0 && (
-                    <div
-                      className="bg-status-warning transition-all"
-                      style={{ height: `${warnPct}%` }}
-                    />
-                  )}
-                  {dgrPct > 0 && (
-                    <div
-                      className="bg-status-danger transition-all"
-                      style={{ height: `${dgrPct}%` }}
-                    />
-                  )}
-                  {pndPct > 0 && (
-                    <div
-                      className="bg-ink-soft/40 transition-all"
-                      style={{ height: `${pndPct}%` }}
-                    />
-                  )}
-                </div>
-                {/* 청크 번호 */}
-                <div className="text-[10px] text-ink-muted mt-1 tabular-nums group-hover:text-ink-strong transition-colors">
-                  {s.index}
-                </div>
-              </div>
-            )
-          })}
-
-          {/* 진행 중 청크 자리 (남은 청크 placeholder) */}
-          {running &&
-            Array.from({ length: Math.max(0, totalChunks - snapshots.length) }).map(
-              (_, idx) => (
-                <div
-                  key={`pending-${idx}`}
-                  className="flex flex-col items-center"
-                  title={`청크 ${snapshots.length + idx + 1} — 대기 중`}
-                >
-                  <div className="w-full h-24 rounded bg-bg-subtle/40 border border-dashed border-bg-strong/30">
-                    {idx === 0 && (
-                      <div className="w-full h-full flex items-center justify-center">
-                        <Loader2
-                          size={12}
-                          className="animate-spin text-ink-muted"
-                        />
-                      </div>
-                    )}
-                  </div>
-                  <div className="text-[10px] text-ink-soft mt-1 tabular-nums">
-                    {snapshots.length + idx + 1}
-                  </div>
-                </div>
-              ),
-            )}
-        </div>
-
-        {/* 청크 처리 시간 라인 (요약 정보) */}
-        {snapshots.length >= 2 && (
-          <div className="flex items-center justify-between text-caption text-ink-muted mt-3 pt-3 border-t border-bg-subtle">
-            <span>
-              평균 청크 시간:{' '}
-              <span className="font-semibold text-ink tabular-nums">
-                {(
-                  snapshots.reduce((a, s) => a + s.elapsedMs, 0) /
-                  snapshots.length /
-                  1000
-                ).toFixed(1)}
-                초
-              </span>
-            </span>
-            <span>
-              가장 빠른 청크:{' '}
-              <span className="font-semibold text-status-success tabular-nums">
-                {(Math.min(...snapshots.map((s) => s.elapsedMs)) / 1000).toFixed(1)}초
-              </span>
-            </span>
-            <span>
-              가장 느린 청크:{' '}
-              <span className="font-semibold text-status-warning tabular-nums">
-                {(maxElapsed / 1000).toFixed(1)}초
-              </span>
-            </span>
-            {lastSnap && (
-              <span>
-                직전 청크:{' '}
-                <span className="font-semibold text-ink tabular-nums">
-                  {(lastSnap.elapsedMs / 1000).toFixed(1)}초
-                </span>{' '}
-                ({chunkSize}건)
-              </span>
-            )}
-          </div>
-        )}
-      </div>
-    </Card>
-  )
-}
 
 function CheckIcon({ ok }: { ok: boolean | null | undefined }) {
   // fast 모드에서는 검증을 건너뛰므로 null — "—" 표시

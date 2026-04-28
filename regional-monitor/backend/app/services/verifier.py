@@ -112,13 +112,14 @@ async def verify_one(
     cr = await checker(client, sample)
 
     # PENDING(429 rate-limit 등 일시 오류) → 최종 1회 재시도
-    # 글로벌 세마포어가 있어 폭주 위험은 제거됨 — 이제 fast/full 모두 안전망 적용.
+    # 글로벌 세마포어 + 내부 재시도가 throttle을 거의 흡수 → 외부 안전망은 짧게.
+    # fast: 3~5초 대기 (내부 3회 26초 + 추가 5초 ≈ 31초)
     # full: 5~10초 대기 (이미 내부 4회 재시도, 추가는 마지막 보루)
-    # fast: 10~20초 대기 (내부 3회 26초 + 추가 15초 ≈ 41초, IP throttle 윈도우 충분히 커버)
+    # 긴 대기(10~20초)는 청크 처리 시간을 폭증시키므로 짧게 유지.
     if cr.verdict == "PENDING":
         import random as _r
         if mode == "fast":
-            await asyncio.sleep(10 + _r.uniform(0, 10))
+            await asyncio.sleep(3 + _r.uniform(0, 2))
         else:
             await asyncio.sleep(5 + _r.uniform(0, 5))
         cr = await checker(client, sample)
