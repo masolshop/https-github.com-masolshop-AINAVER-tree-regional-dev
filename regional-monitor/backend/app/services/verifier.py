@@ -113,7 +113,9 @@ async def verify_one(
 
     # PENDING(429 rate-limit 등 일시 오류) → 최종 1회 재시도 (5~10초 대기)
     # 청크 간 추가 분산 효과로 PENDING 누수를 줄이기 위함
-    if cr.verdict == "PENDING":
+    # 단, fast 모드는 이미 check_place_fast 내부에서 4회 재시도(2+4+8s backoff)했으므로
+    # 추가 재시도 시 최악 30초/건 → 200건 12분 폭주. fast 모드에선 스킵.
+    if cr.verdict == "PENDING" and mode != "fast":
         import random as _r
         await asyncio.sleep(5 + _r.uniform(0, 5))
         cr = await checker(client, sample)

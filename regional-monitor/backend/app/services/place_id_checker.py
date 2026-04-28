@@ -521,18 +521,18 @@ async def check_place_fast(client: httpx.AsyncClient, sample: Dict) -> CheckResu
 
     t0 = time.perf_counter()
     r = None
-    html = ""
-    for attempt in range(4):
+    # fast 모드: 429 시 짧게 2회만 재시도 (1s, 2s) — full 모드의 4회보다 가벼움
+    # 본문을 안 읽으니 r.text는 호출하지 않음 (네트워크/메모리 절감)
+    for attempt in range(2):
         try:
             r = await client.get(
-                url, headers=headers, follow_redirects=True, timeout=15.0
+                url, headers=headers, follow_redirects=True, timeout=10.0
             )
-            html = r.text
             if r.status_code != 429:
                 break
-            if attempt == 3:
+            if attempt == 1:
                 break
-            await asyncio.sleep((2 ** (attempt + 1)) + random.uniform(0, 1.5))
+            await asyncio.sleep(1 + (attempt * 1) + random.uniform(0, 0.5))
         except Exception as e:
             result.elapsed_ms = round((time.perf_counter() - t0) * 1000, 1)
             result.http_status = -1
