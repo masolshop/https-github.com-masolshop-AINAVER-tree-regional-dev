@@ -1,32 +1,26 @@
 /**
- * History — 자동 노출 검증 관리 페이지
+ * History — 자동 노출 검증 관리 페이지 (회차별 요약)
  *
- * 변경(2026-04-28): 개별 ChangeEvent 타임라인 → 자동검증 "회차별 요약" 카드
- *
- * 구성:
- *   1. 상단 KPI: 검증 횟수 / 마지막 OK·DEAD·PENDING / 다음 자동 검증 시각
- *   2. 필터 바: 자동/수동 토글 + 새로고침
- *   3. 회차 카드 리스트 (날짜별 그룹핑, 최근순)
- *      - 각 카드 = 자동검증 1회차 결과 요약
- *      - 시각, OK/DEAD/PENDING 분포, 변경 이벤트 수, 소요 시간
+ * 변경 (2026.04.28):
+ *   기존: 개별 ChangeEvent 1건씩 타임라인 (광주대형렉카 070-XXXX 같은 행이 무수히)
+ *   신규: 자동검증 회차 1회 = 1행 카드 (자동/수동 / OK·DEAD·PENDING / 변경건수 / 소요시간)
  *
  * 데이터:
- *   - useVerificationRuns(100): /api/v1/verification-runs
+ *   - useVerificationRuns(50): /api/v1/verification-runs (1분 polling)
  *   - useSchedulerStatus(): 다음 자동 검증 시각
  */
 import { useMemo, useState } from 'react'
 import {
-  AlertTriangle,
-  CheckCircle2,
-  Clock,
+  Clock3,
   RefreshCw,
   CalendarClock,
   Inbox,
-  Activity,
+  PlayCircle,
   Bot,
-  Hand,
+  User as UserIcon,
   Bell,
   Timer,
+  Activity,
 } from 'lucide-react'
 import clsx from 'clsx'
 
@@ -37,157 +31,150 @@ import {
   useSchedulerStatus,
 } from '@/hooks/useEvents'
 import type { VerificationRunOut } from '@/api/types'
-import { formatKSTRelative } from '@/utils/datetime'
 
 type TriggerFilter = 'all' | 'scheduler' | 'manual'
 
 export default function History() {
-  const runsQuery = useVerificationRuns(100)
+  const runsQuery = useVerificationRuns(50)
   const schedulerQuery = useSchedulerStatus()
 
   const [trigger, setTrigger] = useState<TriggerFilter>('all')
 
-  const allRuns = runsQuery.data?.items ?? []
+  const runs = runsQuery.data?.items ?? []
 
-  // 통계 (전체 기간)
+  // 통계 (필터 적용 전)
   const stats = useMemo(() => {
-    const stat = {
-      total: allRuns.length,
+    const s = {
+      total: runs.length,
       auto: 0,
       manual: 0,
-      latest: allRuns[0] as VerificationRunOut | undefined,
+      events: 0,        // 누적 변경 감지 건수
+      lastRun: null as VerificationRunOut | null,
     }
-    for (const r of allRuns) {
-      if (r.trigger === 'scheduler') stat.auto += 1
-      else stat.manual += 1
+    for (const r of runs) {
+      if (r.trigger === 'scheduler') s.auto += 1
+      else s.manual += 1
+      s.events += r.events_count
     }
-    return stat
-  }, [allRuns])
+    s.lastRun = runs[0] ?? null
+    return s
+  }, [runs])
 
   // 필터 적용
   const filtered = useMemo(() => {
-    if (trigger === 'all') return allRuns
-    return allRuns.filter((r) => r.trigger === trigger)
-  }, [allRuns, trigger])
+    if (trigger === 'all') return runs
+    return runs.filter((r) => r.trigger === trigger)
+  }, [runs, trigger])
 
-  // 날짜별 그룹핑 (KST 기준)
+  // 날짜별 그룹핑
   const grouped = useMemo(() => groupByDateKST(filtered), [filtered])
 
   return (
     <div className="space-y-5">
       <TopBar
         title="자동 노출 검증 관리"
-        subtitle="자동검증 회차별 요약을 시간순으로 확인합니다"
+        subtitle="자동/수동 검증 회차별 결과 요약을 시간순으로 확인합니다"
       />
 
       {/* 1) KPI 카드 */}
       <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-        <KpiTile label="총 검증 횟수" value={stats.total} tone="default" icon={Inbox} />
-        <KpiTile label="자동" value={stats.auto} tone="info" icon={Bot} />
-        <KpiTile label="수동" value={stats.manual} tone="default" icon={Hand} />
-        <KpiTile
-          label="최근 OK"
-          value={stats.latest?.ok_count ?? 0}
-          tone="success"
-          icon={CheckCircle2}
-        />
+        <KpiTile label="전체 회차" value={stats.total} icon={Inbox} tone="default" />
+        <KpiTile label="자동 검증" value={stats.auto} icon={Bot} tone="info" />
+        <KpiTile label="수동 검증" value={stats.manual} icon={UserIcon} tone="default" />
+        <KpiTile label="감지 변경" value={stats.events} icon={Bell} tone={stats.events > 0 ? 'warning' : 'default'} />
         <NextRunTile
           nextRunAt={schedulerQuery.data?.next_run_at ?? null}
-          slotLabel={schedulerQuery.data?.verify_slot_label ?? ''}
+          slotLabel={schedulerQuery.data?.verify_slot_label}
         />
       </div>
 
-      {/* 2) 필터 바 */}
-      <Card variant="white" className="p-3">
+      {/* 2) 필터 + 새로고침 */}
+      <Card variant="white" className="p-3 sm:p-4">
         <div className="flex flex-wrap items-center gap-2">
-          <FilterChip
-            label={`전체 ${allRuns.length}`}
-            active={trigger === 'all'}
-            onClick={() => setTrigger('all')}
-          />
-          <FilterChip
-            label={`자동 ${stats.auto}`}
-            active={trigger === 'scheduler'}
-            tone="info"
-            onClick={() => setTrigger('scheduler')}
-          />
-          <FilterChip
-            label={`수동 ${stats.manual}`}
-            active={trigger === 'manual'}
-            onClick={() => setTrigger('manual')}
-          />
+          <FilterPill active={trigger === 'all'} onClick={() => setTrigger('all')}>
+            전체 {stats.total}
+          </FilterPill>
+          <FilterPill active={trigger === 'scheduler'} onClick={() => setTrigger('scheduler')}>
+            자동 {stats.auto}
+          </FilterPill>
+          <FilterPill active={trigger === 'manual'} onClick={() => setTrigger('manual')}>
+            수동 {stats.manual}
+          </FilterPill>
 
-          <div className="ml-auto">
-            <button
-              onClick={() => runsQuery.refetch()}
-              disabled={runsQuery.isFetching}
-              className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-bg-subtle hover:bg-brand-100 text-caption font-medium text-ink transition-colors disabled:opacity-60"
-            >
-              <RefreshCw size={14} className={clsx(runsQuery.isFetching && 'animate-spin')} />
-              새로고침
-            </button>
-          </div>
+          <div className="flex-1" />
+
+          <button
+            onClick={() => runsQuery.refetch()}
+            disabled={runsQuery.isFetching}
+            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-bg-subtle text-ink-muted text-caption font-medium hover:bg-brand-100 hover:text-brand-700 transition-colors disabled:opacity-60"
+          >
+            <RefreshCw size={14} className={runsQuery.isFetching ? 'animate-spin' : ''} />
+            새로고침
+          </button>
         </div>
       </Card>
 
-      {/* 3) 회차 목록 (날짜별 그룹) */}
-      <div className="space-y-4">
-        {runsQuery.isLoading ? (
-          <Card variant="white" className="py-16 text-center">
-            <RefreshCw className="mx-auto text-ink-muted animate-spin mb-3" size={28} />
-            <div className="text-body text-ink-muted">불러오는 중…</div>
-          </Card>
-        ) : grouped.length === 0 ? (
-          <EmptyState />
-        ) : (
-          grouped.map(({ date, runs }) => (
-            <Card key={date} variant="white" className="p-4 sm:p-5">
-              <div className="flex items-center gap-2 mb-3 pb-3 border-b border-bg-subtle">
-                <CalendarClock size={16} className="text-brand-500" />
-                <span className="text-body-sm font-bold text-ink">{date}</span>
-                <span className="text-caption text-ink-muted">{runs.length}회</span>
+      {/* 3) 회차별 타임라인 */}
+      {runsQuery.isLoading ? (
+        <Card variant="white" className="p-10 text-center">
+          <div className="text-body-sm text-ink-muted">불러오는 중…</div>
+        </Card>
+      ) : filtered.length === 0 ? (
+        <EmptyState />
+      ) : (
+        <div className="space-y-5">
+          {grouped.map((group) => (
+            <div key={group.date} className="space-y-2.5">
+              <div className="flex items-center gap-2 px-1">
+                <CalendarClock size={15} className="text-ink-muted" />
+                <span className="text-body-sm font-bold text-ink">{group.label}</span>
+                <span className="text-caption text-ink-muted">{group.items.length}회</span>
               </div>
-              <div className="space-y-2.5">
-                {runs.map((r) => (
+
+              <div className="space-y-2">
+                {group.items.map((r) => (
                   <RunRow key={r.id} run={r} />
                 ))}
               </div>
-            </Card>
-          ))
-        )}
-      </div>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   )
 }
 
-/* ─────────────── KPI 타일 ─────────────── */
+/* ──────────────────────────────────────────────────────────────
+ * KPI 타일
+ * ────────────────────────────────────────────────────────────── */
 
 function KpiTile({
   label,
   value,
-  tone,
   icon: Icon,
+  tone,
 }: {
   label: string
   value: number
-  tone: 'default' | 'danger' | 'warning' | 'info' | 'success'
   icon: React.ComponentType<{ size?: number; className?: string }>
+  tone: 'default' | 'info' | 'warning' | 'danger'
 }) {
-  const palette: Record<typeof tone, string> = {
-    default: 'bg-white text-ink',
-    danger: 'bg-red-50 text-red-700',
-    warning: 'bg-amber-50 text-amber-700',
-    info: 'bg-emerald-50 text-emerald-700',
-    success: 'bg-emerald-50 text-emerald-700',
-  }
   return (
-    <div className={clsx('rounded-card-lg p-3 sm:p-4 shadow-card transition-colors', palette[tone])}>
-      <div className="flex items-center gap-1.5 mb-1.5">
-        <Icon size={14} className="opacity-70" />
-        <span className="text-caption opacity-80">{label}</span>
+    <Card variant="white" className="p-3 sm:p-4">
+      <div className="flex items-start justify-between">
+        <div className="text-caption text-ink-muted">{label}</div>
+        <Icon
+          size={16}
+          className={clsx(
+            tone === 'info' && 'text-brand-500',
+            tone === 'warning' && 'text-amber-500',
+            tone === 'danger' && 'text-red-500',
+            tone === 'default' && 'text-ink-soft',
+          )}
+        />
       </div>
-      <div className="text-2xl sm:text-3xl font-extrabold leading-none">{value}</div>
-    </div>
+      <div className="mt-2 text-2xl sm:text-h1 font-extrabold text-ink">{value}</div>
+    </Card>
   )
 }
 
@@ -196,251 +183,275 @@ function NextRunTile({
   slotLabel,
 }: {
   nextRunAt: string | null
-  slotLabel: string
+  slotLabel?: string
 }) {
-  const time = nextRunAt ? formatKSTHour(nextRunAt) : '—'
-  const date = nextRunAt ? formatKSTDate(nextRunAt) : ''
+  const label = useMemo(() => {
+    if (!nextRunAt) return '—'
+    const d = new Date(nextRunAt)
+    return d.toLocaleString('ko-KR', {
+      timeZone: 'Asia/Seoul',
+      hour: '2-digit',
+      minute: '2-digit',
+    })
+  }, [nextRunAt])
+
+  const sub = useMemo(() => {
+    if (!nextRunAt) return slotLabel ?? '—'
+    const d = new Date(nextRunAt)
+    return d.toLocaleString('ko-KR', {
+      timeZone: 'Asia/Seoul',
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+      weekday: 'short',
+    })
+  }, [nextRunAt, slotLabel])
 
   return (
-    <div className="rounded-card-lg p-3 sm:p-4 shadow-card-dark bg-brand-800 text-white">
-      <div className="flex items-center gap-1.5 mb-1.5">
-        <Activity size={14} className="opacity-80" />
-        <span className="text-caption opacity-80">다음 자동 검증</span>
+    <Card variant="dark" className="p-3 sm:p-4 col-span-2 md:col-span-1">
+      <div className="flex items-start justify-between">
+        <div className="text-caption text-white/70">다음 자동 검증</div>
+        <Clock3 size={16} className="text-white/70" />
       </div>
-      <div className="text-2xl sm:text-3xl font-extrabold leading-none">{time}</div>
-      <div className="text-[10px] sm:text-caption opacity-70 mt-1.5 truncate">
-        {date} · {slotLabel || '슬롯 미배정'}
+      <div className="mt-2 text-2xl sm:text-h1 font-extrabold">{label}</div>
+      <div className="mt-1 text-[11px] text-white/60 truncate">{sub}</div>
+    </Card>
+  )
+}
+
+/* ──────────────────────────────────────────────────────────────
+ * 회차 1행 (메인)
+ * ────────────────────────────────────────────────────────────── */
+
+function RunRow({ run }: { run: VerificationRunOut }) {
+  const isAuto = run.trigger === 'scheduler'
+  const time = useMemo(() => {
+    const d = new Date(run.started_at)
+    return d.toLocaleString('ko-KR', {
+      timeZone: 'Asia/Seoul',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+    })
+  }, [run.started_at])
+
+  const okRate =
+    run.total_count > 0 ? Math.round((run.ok_count / run.total_count) * 100) : 0
+
+  // 결과 톤: 변경 발생 / DEAD 多 → warning, 모두 OK → success
+  const hasIssue = run.events_count > 0 || run.dead_count > 0
+  const tone = hasIssue ? 'warning' : 'success'
+
+  return (
+    <div
+      className={clsx(
+        'rounded-card border p-3 sm:p-4 transition-colors',
+        tone === 'success' && 'bg-emerald-50/50 border-emerald-100 hover:bg-emerald-50',
+        tone === 'warning' && 'bg-amber-50/50 border-amber-100 hover:bg-amber-50',
+      )}
+    >
+      <div className="flex items-start gap-3">
+        {/* 좌측 아이콘 */}
+        <div
+          className={clsx(
+            'w-10 h-10 rounded-xl flex items-center justify-center shrink-0',
+            tone === 'success' && 'bg-emerald-100 text-emerald-600',
+            tone === 'warning' && 'bg-amber-100 text-amber-600',
+          )}
+        >
+          {isAuto ? <Bot size={20} /> : <PlayCircle size={20} />}
+        </div>
+
+        {/* 본문 */}
+        <div className="min-w-0 flex-1">
+          {/* 1행: 트리거 + 시각 + 모드 */}
+          <div className="flex flex-wrap items-center gap-1.5 mb-1.5">
+            <span
+              className={clsx(
+                'text-[10px] font-bold px-1.5 py-0.5 rounded-md',
+                isAuto ? 'bg-brand-100 text-brand-700' : 'bg-bg-subtle text-ink-muted',
+              )}
+            >
+              {isAuto ? '자동' : '수동'}
+            </span>
+            {isAuto && run.slot_hour >= 0 && (
+              <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-md bg-bg-subtle text-ink-muted">
+                슬롯 {String(run.slot_hour).padStart(2, '0')}시
+              </span>
+            )}
+            <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-md bg-bg-subtle text-ink-muted uppercase">
+              {run.mode}
+            </span>
+            <span className="text-caption text-ink-muted">· {time}</span>
+          </div>
+
+          {/* 2행: 핵심 통계 */}
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mb-1.5 text-body-sm">
+            <Stat label="검증" value={run.total_count} bold />
+            <Stat label="정상" value={run.ok_count} tone="success" />
+            <Stat label="이상" value={run.dead_count} tone={run.dead_count > 0 ? 'danger' : 'muted'} />
+            <Stat label="대기" value={run.pending_count} tone={run.pending_count > 0 ? 'warning' : 'muted'} />
+            {run.events_count > 0 && (
+              <span className="inline-flex items-center gap-1 text-amber-700 font-semibold">
+                <Bell size={12} /> 변경 {run.events_count}건
+              </span>
+            )}
+          </div>
+
+          {/* 3행: 진행 바 + 메타 */}
+          <div className="flex items-center gap-2">
+            <div className="flex-1 h-1.5 rounded-full bg-bg-subtle overflow-hidden">
+              <div
+                className={clsx(
+                  'h-full transition-all',
+                  okRate >= 95 ? 'bg-emerald-500' : okRate >= 80 ? 'bg-amber-500' : 'bg-red-500',
+                )}
+                style={{ width: `${okRate}%` }}
+              />
+            </div>
+            <span className="text-[11px] font-semibold text-ink-muted shrink-0">
+              {okRate}%
+            </span>
+            <span className="hidden sm:inline-flex items-center gap-1 text-[11px] text-ink-soft shrink-0">
+              <Timer size={11} /> {formatElapsed(run.elapsed_ms)}
+            </span>
+          </div>
+        </div>
       </div>
     </div>
   )
 }
 
-/* ─────────────── 필터 칩 ─────────────── */
-
-function FilterChip({
+function Stat({
   label,
-  active,
-  onClick,
-  tone = 'default',
+  value,
+  tone,
+  bold,
 }: {
   label: string
+  value: number
+  tone?: 'success' | 'warning' | 'danger' | 'muted'
+  bold?: boolean
+}) {
+  return (
+    <span className="inline-flex items-baseline gap-1">
+      <span className="text-caption text-ink-muted">{label}</span>
+      <span
+        className={clsx(
+          bold ? 'text-body font-extrabold' : 'font-semibold',
+          tone === 'success' && 'text-emerald-700',
+          tone === 'warning' && 'text-amber-700',
+          tone === 'danger' && 'text-red-700',
+          tone === 'muted' && 'text-ink-muted',
+          !tone && 'text-ink',
+        )}
+      >
+        {value.toLocaleString()}
+      </span>
+    </span>
+  )
+}
+
+/* ──────────────────────────────────────────────────────────────
+ * 보조 컴포넌트
+ * ────────────────────────────────────────────────────────────── */
+
+function FilterPill({
+  active,
+  onClick,
+  children,
+}: {
   active: boolean
   onClick: () => void
-  tone?: 'default' | 'info'
+  children: React.ReactNode
 }) {
   return (
     <button
       onClick={onClick}
       className={clsx(
-        'px-3 py-1.5 rounded-pill text-caption font-semibold transition-colors',
+        'px-3 py-1.5 rounded-full text-caption font-semibold transition-colors',
         active
-          ? tone === 'info'
-            ? 'bg-emerald-600 text-white'
-            : 'bg-brand-800 text-white'
-          : 'bg-bg-subtle text-ink-muted hover:bg-brand-100 hover:text-ink',
+          ? 'bg-brand-800 text-white'
+          : 'bg-bg-subtle text-ink-muted hover:bg-brand-100 hover:text-brand-700',
       )}
     >
-      {label}
+      {children}
     </button>
-  )
-}
-
-/* ─────────────── 회차 카드 ─────────────── */
-
-function RunRow({ run }: { run: VerificationRunOut }) {
-  const isAuto = run.trigger === 'scheduler'
-  const time = formatKSTTime(run.started_at)
-  const relative = formatKSTRelative(run.started_at, run.started_at)
-  const elapsedSec = (run.elapsed_ms / 1000).toFixed(1)
-
-  // 결과 톤 결정 (DEAD 가 있으면 danger, PENDING 만 있으면 warning, OK 만이면 success)
-  const tone: 'success' | 'warning' | 'danger' = (() => {
-    if (run.dead_count > 0) return 'danger'
-    if (run.pending_count > 0) return 'warning'
-    return 'success'
-  })()
-
-  const tonePalette = {
-    success: 'bg-emerald-50 border-emerald-200',
-    warning: 'bg-amber-50 border-amber-200',
-    danger: 'bg-red-50 border-red-200',
-  }
-  const toneIcon = {
-    success: <CheckCircle2 className="text-emerald-600" size={20} />,
-    warning: <Clock className="text-amber-600" size={20} />,
-    danger: <AlertTriangle className="text-red-600" size={20} />,
-  }
-
-  return (
-    <div className={clsx('rounded-card border p-3 sm:p-4 transition-colors', tonePalette[tone])}>
-      <div className="flex items-start gap-3">
-        <div className="shrink-0 w-9 h-9 rounded-xl bg-white shadow-sm flex items-center justify-center">
-          {toneIcon[tone]}
-        </div>
-
-        <div className="min-w-0 flex-1">
-          {/* 헤더: 시간 + 자동/수동 배지 */}
-          <div className="flex items-center flex-wrap gap-1.5 mb-1.5">
-            <span className="text-body-sm font-bold text-ink">{time}</span>
-            <span
-              className={clsx(
-                'text-[10px] font-bold px-1.5 py-0.5 rounded-md',
-                isAuto
-                  ? 'bg-emerald-100 text-emerald-700'
-                  : 'bg-bg-subtle text-ink-muted',
-              )}
-            >
-              {isAuto ? (
-                <span className="inline-flex items-center gap-0.5">
-                  <Bot size={10} /> 자동
-                </span>
-              ) : (
-                <span className="inline-flex items-center gap-0.5">
-                  <Hand size={10} /> 수동
-                </span>
-              )}
-            </span>
-            <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-md bg-white/60 text-ink-muted">
-              {run.mode === 'fast' ? '빠른검증' : '정밀검증'}
-            </span>
-            {run.events_count > 0 && (
-              <span className="inline-flex items-center gap-0.5 text-[10px] font-bold px-1.5 py-0.5 rounded-md bg-red-100 text-red-700">
-                <Bell size={10} /> 변경 {run.events_count}건
-              </span>
-            )}
-          </div>
-
-          {/* 본문: OK / DEAD / PENDING 분포 */}
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-body-sm">
-            <ResultPill
-              icon={<CheckCircle2 size={12} />}
-              label="정상"
-              value={run.ok_count}
-              tone="success"
-            />
-            {run.dead_count > 0 && (
-              <ResultPill
-                icon={<AlertTriangle size={12} />}
-                label="비노출"
-                value={run.dead_count}
-                tone="danger"
-              />
-            )}
-            {run.pending_count > 0 && (
-              <ResultPill
-                icon={<Clock size={12} />}
-                label="대기"
-                value={run.pending_count}
-                tone="warning"
-              />
-            )}
-            <span className="text-caption text-ink-soft">
-              총 {run.total_count}건
-            </span>
-          </div>
-
-          {/* 메타 정보 */}
-          <div className="flex items-center flex-wrap gap-x-2 gap-y-0.5 text-[11px] text-ink-soft mt-1.5">
-            <span className="inline-flex items-center gap-0.5">
-              <Clock size={10} /> {relative}
-            </span>
-            <span>·</span>
-            <span className="inline-flex items-center gap-0.5">
-              <Timer size={10} /> {elapsedSec}초 소요
-            </span>
-            {isAuto && run.slot_hour >= 0 && (
-              <>
-                <span>·</span>
-                <span>슬롯 {String(run.slot_hour).padStart(2, '0')}:00</span>
-              </>
-            )}
-          </div>
-        </div>
-      </div>
-    </div>
-  )
-}
-
-function ResultPill({
-  icon,
-  label,
-  value,
-  tone,
-}: {
-  icon: React.ReactNode
-  label: string
-  value: number
-  tone: 'success' | 'warning' | 'danger'
-}) {
-  const palette = {
-    success: 'bg-white text-emerald-700',
-    warning: 'bg-white text-amber-700',
-    danger: 'bg-white text-red-700',
-  }
-  return (
-    <span
-      className={clsx(
-        'inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-semibold',
-        palette[tone],
-      )}
-    >
-      {icon}
-      <span>{label}</span>
-      <span className="font-bold">{value}</span>
-    </span>
   )
 }
 
 function EmptyState() {
   return (
-    <Card variant="white" className="py-16 text-center">
-      <div className="inline-flex w-16 h-16 rounded-2xl bg-bg-subtle items-center justify-center mb-4">
-        <CheckCircle2 className="text-emerald-500" size={28} />
+    <Card variant="white" className="p-10 text-center">
+      <div className="inline-flex w-14 h-14 rounded-2xl bg-bg-subtle items-center justify-center mb-3">
+        <Activity className="text-ink-muted" size={26} />
       </div>
-      <div className="text-body font-bold text-ink mb-1">
-        아직 검증 기록이 없습니다
+      <div className="text-body font-semibold text-ink mb-1">
+        검증 회차가 없습니다
       </div>
-      <div className="text-body-sm text-ink-muted">
-        자동 검증은 매일 슬롯 시각에 실행되며, 그 결과가 회차별로 표시됩니다
+      <div className="text-caption text-ink-muted">
+        자동 검증은 매시 정각, 슬롯 시간에 자동 실행됩니다.<br />
+        실시간 노출 관리 페이지에서 “지금 검증” 으로 즉시 실행할 수도 있습니다.
       </div>
     </Card>
   )
 }
 
-/* ─────────────── 유틸 ─────────────── */
+/* ──────────────────────────────────────────────────────────────
+ * 헬퍼
+ * ────────────────────────────────────────────────────────────── */
 
-function groupByDateKST(
-  runs: VerificationRunOut[],
-): { date: string; runs: VerificationRunOut[] }[] {
+function formatElapsed(ms: number): string {
+  if (ms < 1000) return `${ms}ms`
+  const sec = ms / 1000
+  if (sec < 60) return `${sec.toFixed(1)}s`
+  const min = Math.floor(sec / 60)
+  const s = Math.round(sec % 60)
+  return `${min}m ${s}s`
+}
+
+/** YYYY-MM-DD (KST) 키로 그룹핑 + 사람 친화 라벨 */
+function groupByDateKST(runs: VerificationRunOut[]) {
   const map = new Map<string, VerificationRunOut[]>()
+  const now = new Date()
+  const todayKey = kstDateKey(now.toISOString())
+  const yesterdayKey = kstDateKey(new Date(now.getTime() - 86400_000).toISOString())
+
   for (const r of runs) {
-    const date = formatKSTDate(r.started_at)
-    if (!map.has(date)) map.set(date, [])
-    map.get(date)!.push(r)
+    const key = kstDateKey(r.started_at)
+    if (!map.has(key)) map.set(key, [])
+    map.get(key)!.push(r)
   }
-  // Map 은 입력 순서 유지 → 이미 최신순 정렬됨
-  return Array.from(map.entries()).map(([date, runs]) => ({ date, runs }))
+
+  return Array.from(map.entries())
+    .sort(([a], [b]) => (a < b ? 1 : -1))      // 최신 날짜부터
+    .map(([key, items]) => ({
+      date: key,
+      label:
+        key === todayKey
+          ? `오늘 (${humanDate(key)})`
+          : key === yesterdayKey
+            ? `어제 (${humanDate(key)})`
+            : humanDate(key),
+      items: items.sort(
+        (a, b) => new Date(b.started_at).getTime() - new Date(a.started_at).getTime(),
+      ),
+    }))
 }
 
-function formatKSTDate(iso: string): string {
-  // ISO 문자열을 KST 로 변환해 "2026.04.28 (화)" 형태로
+function kstDateKey(iso: string): string {
   const d = new Date(iso)
-  const yyyy = d.getFullYear()
-  const mm = String(d.getMonth() + 1).padStart(2, '0')
-  const dd = String(d.getDate()).padStart(2, '0')
-  const days = ['일', '월', '화', '수', '목', '금', '토']
-  return `${yyyy}.${mm}.${dd} (${days[d.getDay()]})`
+  const utc = d.getTime() + d.getTimezoneOffset() * 60_000
+  const kst = new Date(utc + 9 * 3600_000)
+  const y = kst.getFullYear()
+  const m = String(kst.getMonth() + 1).padStart(2, '0')
+  const day = String(kst.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
 }
 
-function formatKSTTime(iso: string): string {
-  const d = new Date(iso)
-  const hh = String(d.getHours()).padStart(2, '0')
-  const mi = String(d.getMinutes()).padStart(2, '0')
-  return `${hh}:${mi}`
-}
-
-function formatKSTHour(iso: string): string {
-  const d = new Date(iso)
-  const hh = String(d.getHours()).padStart(2, '0')
-  return `${hh}:00`
+function humanDate(key: string): string {
+  const [y, m, d] = key.split('-').map(Number)
+  const date = new Date(Date.UTC(y, m - 1, d))
+  const w = ['일', '월', '화', '수', '목', '금', '토'][date.getUTCDay()]
+  return `${y}.${String(m).padStart(2, '0')}.${String(d).padStart(2, '0')} (${w})`
 }
