@@ -115,17 +115,19 @@ async def run_live_check(
     if not places:
         raise HTTPException(status_code=404, detail="검증할 등록이 없습니다.")
 
-    # 병렬 검증
-    #  - mode='full': 전화+동/로/리 풀 검증 (concurrency 3 — 429 방지, 1청크 200건 ≈ 70초)
-    #  - mode='fast': 페이지 존재 유무만 (concurrency 2 — 실측: 직렬은 OK, 동시 5+면 429 폭주)
+    # 병렬 검증 — 적응형 동시성 (place_id_checker.py 의 글로벌 세마포어가 실제 한도 결정)
+    #  - mode='full': 전화+동/로/리 풀 검증 (요청 concurrency=3, 글로벌 게이트가 단일=5/다중=2로 자동 조정)
+    #  - mode='fast': 페이지 존재 유무만 (요청 concurrency=5, 글로벌 게이트가 단일=5/다중=2로 자동 조정)
     #    실측 결과 (Lightsail seoul):
     #      직렬 1건씩 → 100% 200 OK, ~175ms/건
-    #      동시 5건  → 80% 429 발생
-    #    안전한 동시성 = 2, 1건당 ~200ms × 200건 / 2 = ~20초/200건
+    #      동시 5건  → 일부 429 (재시도 흡수)
+    #      동시 2건  → 100% 200 OK
+    #    단일 사용자: 5 동시로 ~30초/296건
+    #    다중 사용자: 2 동시로 자동 큐잉 (안전)
     mode = (req.mode or "full").lower()
     if mode not in ("full", "fast"):
         mode = "full"
-    concurrency = 2 if mode == "fast" else 3
+    concurrency = 5 if mode == "fast" else 3
     t0 = time.perf_counter()
     raw_results = await verify_batch(places, concurrency=concurrency, mode=mode)
     total_ms = int((time.perf_counter() - t0) * 1000)

@@ -62,32 +62,85 @@ MOBILE_UA = (
 
 
 # ============================================================================
-# 글로벌 네이버 동시 호출 제한 — 시스템 전체에서 단일 게이트
+# 적응형 글로벌 네이버 동시 호출 제한
 # ============================================================================
-# 모든 사용자/모든 모드/모든 검증 경로(즉시검증, 스케줄러, verify_job_runner)가
-# 이 세마포어를 공유한다. 이 제한이 곧 "네이버로 동시에 나가는 요청 상한"이며
-# 사용자 N명이 동시 클릭해도 네이버에서 보면 동시 요청은 항상 ≤ NAVER_GLOBAL_LIMIT.
+# "활성 사용자 수"에 따라 자동으로 동시성을 조정한다:
+#
+#   활성 사용자 1명  → 동시 5건 허용 (단일 사용자 빠른 모드, throttle 거의 없음)
+#   활성 사용자 2명  → 각자 2건씩, 합계 4건 (둘 다 안전)
+#   활성 사용자 3명+ → 각자 1건씩, 합계 ≥3건 (큐잉으로 안전)
+#
+# 즉, 단일 사용자는 빠르게(~30s/296건), 다중 사용자는 안전하게 처리.
 #
 # 실측(Lightsail Seoul → Naver m.place):
 #   동시 1건 (직렬)        → 100% 200 OK, ~175ms/건
 #   동시 2건               → 100% 200 OK, ~120ms/건 평균
 #   동시 3건               → 95%+ 200 OK, 가끔 1건 429
-#   동시 5건               → 80% 즉시 429 (throttle 폭주)
-#   동시 8건               → 100% 429
+#   동시 5건               → 80%+ 200 OK, 일부 429 (재시도로 흡수)
+#   동시 8건               → 100% 429 (위험)
 #
-# 안전 마진을 위해 2로 설정 — verify_batch(concurrency=2)와 정확히 일치.
-# 단일 사용자: 항상 슬롯 가용 (대기 0) — 성능 저하 없음.
-# 다중 사용자: 자동 큐잉 (사용자2는 사용자1 완료 대기, 안전).
-# 3에서 2로 낮춘 이유: 외부 청크 동시 호출 시 슬롯 경쟁이 생겨 throttle 트리거됨.
-NAVER_GLOBAL_LIMIT = 2
+# 단일 사용자는 동시 5까지 안전 (간헐적 429는 내부 재시도 3회로 흡수됨).
+NAVER_SOLO_LIMIT = 5    # 활성 사용자 1명일 때
+NAVER_MULTI_LIMIT = 2   # 활성 사용자 2명 이상일 때
+
+# 활성 검증 작업 카운터 (verify_batch 시작 시 +1, 종료 시 -1)
+_active_verifications: int = 0
+_active_lock: asyncio.Lock | None = None
+
+# 동적으로 재생성되는 세마포어 (현재 활성 사용자 수에 따라)
 _NAVER_GLOBAL_SEM: asyncio.Semaphore | None = None
+_current_limit: int = NAVER_SOLO_LIMIT
+
+
+def _get_active_lock() -> asyncio.Lock:
+    global _active_lock
+    if _active_lock is None:
+        _active_lock = asyncio.Lock()
+    return _active_lock
+
+
+async def acquire_verification_slot() -> None:
+    """검증 작업 시작 시 호출 — 활성 카운터 증가 + 세마포어 재조정."""
+    global _active_verifications, _NAVER_GLOBAL_SEM, _current_limit
+    async with _get_active_lock():
+        _active_verifications += 1
+        # 활성자 1명 → 5, 2명+ → 2
+        new_limit = NAVER_SOLO_LIMIT if _active_verifications <= 1 else NAVER_MULTI_LIMIT
+        if new_limit != _current_limit or _NAVER_GLOBAL_SEM is None:
+            # 새 세마포어 생성 (기존에 대기 중인 작업은 그대로 진행됨 — 새 요청만 새 한도 적용)
+            _NAVER_GLOBAL_SEM = asyncio.Semaphore(new_limit)
+            _current_limit = new_limit
+
+
+async def release_verification_slot() -> None:
+    """검증 작업 종료 시 호출 — 활성 카운터 감소 + 세마포어 재조정."""
+    global _active_verifications, _NAVER_GLOBAL_SEM, _current_limit
+    async with _get_active_lock():
+        _active_verifications = max(0, _active_verifications - 1)
+        # 활성자 1명 이하로 떨어지면 다시 SOLO 한도로 확장
+        new_limit = NAVER_SOLO_LIMIT if _active_verifications <= 1 else NAVER_MULTI_LIMIT
+        if new_limit != _current_limit:
+            _NAVER_GLOBAL_SEM = asyncio.Semaphore(new_limit)
+            _current_limit = new_limit
+
+
+def get_active_verification_count() -> int:
+    """현재 진행 중인 검증 작업 수 (디버깅/모니터링용)."""
+    return _active_verifications
+
+
+def get_current_naver_limit() -> int:
+    """현재 적용 중인 네이버 동시 호출 한도 (디버깅/모니터링용)."""
+    return _current_limit
 
 
 def _get_naver_global_sem() -> asyncio.Semaphore:
-    """이벤트 루프 시작 후 lazy-init (모듈 임포트 시점엔 루프가 없을 수 있음)."""
+    """이벤트 루프 시작 후 lazy-init.
+    acquire/release_verification_slot 으로 세마포어가 재생성될 수 있다.
+    """
     global _NAVER_GLOBAL_SEM
     if _NAVER_GLOBAL_SEM is None:
-        _NAVER_GLOBAL_SEM = asyncio.Semaphore(NAVER_GLOBAL_LIMIT)
+        _NAVER_GLOBAL_SEM = asyncio.Semaphore(NAVER_SOLO_LIMIT)
     return _NAVER_GLOBAL_SEM
 
 

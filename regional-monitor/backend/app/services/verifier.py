@@ -14,7 +14,15 @@ from typing import Iterable
 import httpx
 
 from app.models.place import RegisteredPlace
-from app.services.place_id_checker import check_place, check_place_fast, MOBILE_UA
+from app.services.place_id_checker import (
+    check_place,
+    check_place_fast,
+    MOBILE_UA,
+    acquire_verification_slot,
+    release_verification_slot,
+    get_current_naver_limit,
+    get_active_verification_count,
+)
 
 
 # ────────────────────────────────────────────────────────────
@@ -180,15 +188,30 @@ async def verify_batch(
     if not place_list:
         return []
 
-    sem = asyncio.Semaphore(concurrency)
+    # 적응형 동시성 — 활성 사용자 수에 따라 글로벌 세마포어가 자동 조정됨
+    # 단일 사용자: 글로벌 5 슬롯 → concurrency=5 까지 풀로 활용
+    # 다중 사용자: 글로벌 2 슬롯 → 사용자별 concurrency=2 한도 자동 큐잉
+    await acquire_verification_slot()
+    try:
+        # 현재 활성 사용자 수에 맞춰 로컬 동시성도 적응
+        active = get_active_verification_count()
+        global_limit = get_current_naver_limit()
+        # 단일 사용자(active==1): 호출자 지정 concurrency 그대로 사용 (최대 글로벌 한도)
+        # 다중 사용자(active>=2): 글로벌 한도 이하로 강제 (안전)
+        effective_concurrency = (
+            min(concurrency, global_limit) if active <= 1 else global_limit
+        )
+        sem = asyncio.Semaphore(effective_concurrency)
 
-    async with httpx.AsyncClient(http2=False, follow_redirects=True) as client:
+        async with httpx.AsyncClient(http2=False, follow_redirects=True) as client:
 
-        async def _one(p):
-            async with sem:
-                return await verify_one(client, p, mode=mode)
+            async def _one(p):
+                async with sem:
+                    return await verify_one(client, p, mode=mode)
 
-        return await asyncio.gather(*(_one(p) for p in place_list))
+            return await asyncio.gather(*(_one(p) for p in place_list))
+    finally:
+        await release_verification_slot()
 
 
 # ────────────────────────────────────────────────────────────
