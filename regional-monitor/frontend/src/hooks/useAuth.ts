@@ -11,7 +11,14 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
 import { authApi } from '@/api/auth'
 import { useAuthStore } from '@/store/auth'
-import type { PasswordLoginRequest, ProfileCompleteRequest } from '@/api/types'
+import type {
+  PasswordLoginRequest,
+  ProfileCompleteRequest,
+  SignupRequest,
+  ForgotIdRequest,
+  ForgotPasswordRequest,
+  ResetPasswordRequest,
+} from '@/api/types'
 
 export const authKeys = {
   me: ['auth', 'me'] as const,
@@ -27,7 +34,7 @@ export function useGoogleLogin() {
   })
 }
 
-/** 어드민/직접가입 사용자용 — 이메일+비밀번호 로그인 */
+/** 어드민/직접가입 사용자용 — 아이디(또는 이메일)+비밀번호 로그인 */
 export function usePasswordLogin() {
   const setSession = useAuthStore((s) => s.setSession)
   return useMutation({
@@ -35,6 +42,38 @@ export function usePasswordLogin() {
     onSuccess: (data) => {
       setSession(data.access_token, data.user)
     },
+  })
+}
+
+/** 직접 회원가입 (아이디/비밀번호 + 이메일/이름/회사/휴대폰) */
+export function useSignup() {
+  const setSession = useAuthStore((s) => s.setSession)
+  return useMutation({
+    mutationFn: (body: SignupRequest) => authApi.signup(body),
+    onSuccess: (data) => {
+      setSession(data.access_token, data.user)
+    },
+  })
+}
+
+/** 아이디 찾기 (이메일 발송) */
+export function useForgotId() {
+  return useMutation({
+    mutationFn: (body: ForgotIdRequest) => authApi.forgotId(body),
+  })
+}
+
+/** 비밀번호 재설정 링크 발송 */
+export function useForgotPassword() {
+  return useMutation({
+    mutationFn: (body: ForgotPasswordRequest) => authApi.forgotPassword(body),
+  })
+}
+
+/** 비밀번호 재설정 실행 */
+export function useResetPassword() {
+  return useMutation({
+    mutationFn: (body: ResetPasswordRequest) => authApi.resetPassword(body),
   })
 }
 

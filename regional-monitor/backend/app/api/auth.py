@@ -18,11 +18,12 @@
 from __future__ import annotations
 
 import re
-from datetime import datetime
+import secrets
+from datetime import datetime, timedelta
 from app.core.time_utils import now_kst, to_kst, KST
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import select, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core import (
@@ -32,6 +33,7 @@ from app.core import (
     GoogleAuthError,
     verify_password,
 )
+from app.core.security import hash_password
 from app.models.user import User
 from app.schemas.auth import (
     GoogleLoginRequest,
@@ -41,6 +43,12 @@ from app.schemas.auth import (
     UserOut,
     PasswordLoginRequest,
     PasswordLoginResponse,
+    SignupRequest,
+    SignupResponse,
+    ForgotIdRequest,
+    ForgotPasswordRequest,
+    ResetPasswordRequest,
+    ResetPasswordVerifyResponse,
     VerifySlotUpdateRequest,
     VerifySlotUpdateResponse,
 )
@@ -52,6 +60,12 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 
 
 _PHONE_RE = re.compile(r"^01[016789]-?\d{3,4}-?\d{4}$")
+_USERNAME_RE = re.compile(r"^[A-Za-z0-9_.]{4,30}$")
+_RESERVED_USERNAMES = {
+    "admin", "administrator", "root", "superadmin", "system",
+    "support", "help", "info", "noreply", "no-reply", "test",
+    "null", "undefined", "anonymous", "guest", "user",
+}
 
 
 def _normalize_phone(raw: str) -> str:
@@ -82,16 +96,27 @@ async def login_with_password(
     body: PasswordLoginRequest,
     db: AsyncSession = Depends(get_db),
 ) -> PasswordLoginResponse:
-    """이메일 + 비밀번호 로그인.
+    """이메일/아이디 + 비밀번호 로그인.
 
+    body.email 필드에 이메일 또는 아이디(username) 둘 다 허용.
     슈퍼어드민 계정 또는 직접가입 사용자가 사용. Google OAuth 사용자는 password_hash 가
     NULL 이라 자동으로 로그인 거부됨.
 
-    실패 시 401 (이메일/비밀번호 어느 쪽이 틀렸는지 알려주지 않음 — enumeration 방지).
+    실패 시 401 (어느 쪽이 틀렸는지 알려주지 않음 — enumeration 방지).
     차단된(is_active=False) 사용자는 403.
     """
-    email = body.email.strip().lower()
-    result = await db.execute(select(User).where(User.email == email))
+    ident = body.email.strip()
+    ident_lower = ident.lower()
+    # 이메일 형식이면 email 매칭, 아니면 username 매칭. 안전하게 둘 다 시도.
+    result = await db.execute(
+        select(User).where(
+            or_(
+                User.email == ident_lower,
+                User.username == ident,           # username 은 대소문자 보존
+                User.username == ident_lower,    # 호환: 소문자 입력도 허용
+            )
+        )
+    )
     user = result.scalar_one_or_none()
 
     # 일정 시간 소비 (timing attack 방지) — 사용자 없을 때도 verify_password 호출
@@ -229,6 +254,214 @@ async def complete_profile(
     await db.commit()
     await db.refresh(user)
     return MeResponse(user=_user_to_out(user))
+
+
+# ─────────────────────────── 직접 회원가입 (아이디/비밀번호) ───────────────────────────
+
+@router.post("/signup", response_model=SignupResponse)
+async def signup(
+    body: SignupRequest,
+    db: AsyncSession = Depends(get_db),
+) -> SignupResponse:
+    """아이디/비밀번호 기반 직접 회원가입.
+
+    필수: username, password, email, name, phone, company, agreements(privacy/terms)
+    선택: job_title, agreements.marketing
+    """
+    # 1) 약관 검증
+    if not body.agreements.privacy:
+        raise HTTPException(400, detail="개인정보 수집·이용 동의는 필수입니다.")
+    if not body.agreements.terms:
+        raise HTTPException(400, detail="서비스 이용약관 동의는 필수입니다.")
+
+    # 2) 형식 검증
+    if not _USERNAME_RE.match(body.username):
+        raise HTTPException(
+            400, detail="아이디는 4~30자의 영문/숫자/_/. 만 사용할 수 있습니다."
+        )
+    if body.username.lower() in _RESERVED_USERNAMES:
+        raise HTTPException(400, detail="사용할 수 없는 아이디입니다.")
+    if not _PHONE_RE.match(body.phone.replace(" ", "")):
+        raise HTTPException(
+            400, detail="휴대폰 형식이 올바르지 않습니다. 예: 010-1234-5678"
+        )
+    if len(body.password) < 8:
+        raise HTTPException(400, detail="비밀번호는 8자 이상이어야 합니다.")
+
+    # 3) 중복 검사
+    email_lower = body.email.lower().strip()
+    dup = await db.execute(
+        select(User).where(or_(User.email == email_lower, User.username == body.username))
+    )
+    existing = dup.scalar_one_or_none()
+    if existing:
+        if existing.username == body.username:
+            raise HTTPException(409, detail="이미 사용 중인 아이디입니다.")
+        if existing.email == email_lower:
+            raise HTTPException(409, detail="이미 가입된 이메일입니다.")
+
+    # 4) 사용자 생성 — 가입 즉시 is_profile_complete=True (모든 필드를 한 번에 받음)
+    import random
+    slot = random.randint(0, 23)
+    now = now_kst()
+    user = User(
+        email=email_lower,
+        username=body.username,
+        password_hash=hash_password(body.password),
+        name=body.name.strip(),
+        phone=_normalize_phone(body.phone),
+        company=body.company.strip(),
+        job_title=(body.job_title or "").strip() or None,
+        plan="free",
+        quota_places=5,
+        is_profile_complete=True,
+        verify_slot=slot,
+        agreed_privacy=True,
+        agreed_terms=True,
+        agreed_marketing=body.agreements.marketing,
+        agreed_at=now,
+        last_login_at=now,
+    )
+    db.add(user)
+    await db.commit()
+    await db.refresh(user)
+
+    return SignupResponse(
+        access_token=_issue_token(user),
+        user=_user_to_out(user),
+    )
+
+
+# ─────────────────────────── 아이디/비밀번호 찾기 ───────────────────────────
+
+def _mask_email(email: str) -> str:
+    """ceo@femayeon.com → ce***@femayeon.com (앞 2자만 노출)."""
+    try:
+        local, domain = email.split("@", 1)
+    except ValueError:
+        return email
+    if len(local) <= 2:
+        return local[0] + "***@" + domain
+    return local[:2] + "***@" + domain
+
+
+def _mask_username(username: str) -> str:
+    """abcdefg → ab***fg."""
+    if not username:
+        return ""
+    if len(username) <= 3:
+        return username[0] + "***"
+    return username[:2] + "***" + username[-1]
+
+
+@router.post("/forgot-id", response_model=MessageResponse)
+async def forgot_id(
+    body: ForgotIdRequest,
+    db: AsyncSession = Depends(get_db),
+) -> MessageResponse:
+    """가입 시 등록한 이메일로 사용자의 아이디(username)를 발송.
+
+    enumeration 방지를 위해 가입 여부와 무관하게 항상 200을 반환한다.
+    실제 발송은 비동기로 best-effort.
+    """
+    email_lower = body.email.lower().strip()
+    result = await db.execute(select(User).where(User.email == email_lower))
+    user = result.scalar_one_or_none()
+
+    # 사용자 정보가 있고 username이 있으면 메일 전송
+    if user and user.username:
+        try:
+            from app.services.account_mailer import send_username_email
+            await send_username_email(user)
+        except Exception as exc:  # noqa: BLE001
+            # 발송 실패해도 응답은 그대로 — 노출 방지.
+            import logging
+            logging.getLogger("auth").warning("forgot-id mail failed: %s", exc)
+
+    return MessageResponse(
+        message="입력하신 이메일로 가입된 계정이 있다면 아이디를 발송했습니다."
+    )
+
+
+@router.post("/forgot-password", response_model=MessageResponse)
+async def forgot_password(
+    body: ForgotPasswordRequest,
+    db: AsyncSession = Depends(get_db),
+) -> MessageResponse:
+    """이메일로 비밀번호 재설정 링크를 발송.
+
+    아이디 또는 이메일 중 하나가 일치하면 가입된 이메일로 발송.
+    enumeration 방지를 위해 항상 200 반환.
+    """
+    if not body.username and not body.email:
+        raise HTTPException(400, detail="아이디 또는 이메일을 입력해주세요.")
+
+    user: User | None = None
+    if body.username:
+        result = await db.execute(select(User).where(User.username == body.username))
+        user = result.scalar_one_or_none()
+    if user is None and body.email:
+        result = await db.execute(
+            select(User).where(User.email == body.email.lower().strip())
+        )
+        user = result.scalar_one_or_none()
+
+    # 직접가입 사용자만 재설정 가능 (Google OAuth 사용자는 password_hash 없음)
+    if user and user.password_hash and user.email:
+        # 토큰 생성 (32바이트 ≈ 43자 base64url)
+        token = secrets.token_urlsafe(32)
+        user.reset_token = token
+        user.reset_token_expires_at = now_kst() + timedelta(hours=1)
+        await db.commit()
+        try:
+            from app.services.account_mailer import send_password_reset_email
+            await send_password_reset_email(user, token)
+        except Exception as exc:  # noqa: BLE001
+            import logging
+            logging.getLogger("auth").warning("forgot-password mail failed: %s", exc)
+
+    return MessageResponse(
+        message="가입된 계정이 확인되면 이메일로 재설정 링크를 발송했습니다."
+    )
+
+
+@router.get("/reset-password/verify", response_model=ResetPasswordVerifyResponse)
+async def verify_reset_token(
+    token: str,
+    db: AsyncSession = Depends(get_db),
+) -> ResetPasswordVerifyResponse:
+    """비밀번호 재설정 페이지 진입 시 토큰 사전 검증."""
+    if not token or len(token) < 20:
+        return ResetPasswordVerifyResponse(valid=False)
+    result = await db.execute(select(User).where(User.reset_token == token))
+    user = result.scalar_one_or_none()
+    if not user or not user.reset_token_expires_at:
+        return ResetPasswordVerifyResponse(valid=False)
+    if to_kst(user.reset_token_expires_at) < now_kst():
+        return ResetPasswordVerifyResponse(valid=False)
+    return ResetPasswordVerifyResponse(valid=True, email_masked=_mask_email(user.email))
+
+
+@router.post("/reset-password", response_model=MessageResponse)
+async def reset_password(
+    body: ResetPasswordRequest,
+    db: AsyncSession = Depends(get_db),
+) -> MessageResponse:
+    """이메일 링크로 받은 토큰을 사용해 비밀번호 재설정."""
+    result = await db.execute(select(User).where(User.reset_token == body.token))
+    user = result.scalar_one_or_none()
+    if not user or not user.reset_token_expires_at:
+        raise HTTPException(400, detail="유효하지 않은 링크입니다.")
+    if to_kst(user.reset_token_expires_at) < now_kst():
+        raise HTTPException(400, detail="링크가 만료되었습니다. 다시 요청해주세요.")
+    if len(body.new_password) < 8:
+        raise HTTPException(400, detail="비밀번호는 8자 이상이어야 합니다.")
+
+    user.password_hash = hash_password(body.new_password)
+    user.reset_token = None
+    user.reset_token_expires_at = None
+    await db.commit()
+    return MessageResponse(message="비밀번호가 변경되었습니다. 새 비밀번호로 로그인해주세요.")
 
 
 # ─────────────────────────── 조회 / 로그아웃 ───────────────────────────

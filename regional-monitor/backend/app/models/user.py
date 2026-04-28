@@ -39,7 +39,14 @@ class User(Base):
     is_profile_complete: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False, index=True)
 
     # ── 비밀번호 로그인 (어드민/직접가입용, Google OAuth 사용자는 NULL) ──
+    # username: 직접가입 시 사용자가 정한 아이디 (4~30자 영문/숫자/_/.).
+    # 이메일이 아니라 아이디로 로그인할 수 있게 함. Google OAuth 사용자는 NULL.
+    username: Mapped[str | None] = mapped_column(String(60), unique=True, index=True, nullable=True)
     password_hash: Mapped[str | None] = mapped_column(String(255), nullable=True)
+
+    # ── 비밀번호 재설정 (이메일 링크 토큰) ──
+    reset_token: Mapped[str | None] = mapped_column(String(120), unique=True, index=True, nullable=True)
+    reset_token_expires_at: Mapped[datetime | None] = mapped_column(KSTDateTime, nullable=True)
 
     # ── 권한 ──
     is_superadmin: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False, index=True)

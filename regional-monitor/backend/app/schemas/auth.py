@@ -10,6 +10,7 @@ class UserOut(BaseModel):
     # 응답 시 EmailStr 사용 X — Google이 이미 검증한 값이고
     # 개발 환경의 .local TLD 등도 통과시켜야 함
     email: str
+    username: str | None = None              # 직접가입 사용자만 보유
     name: str
     picture: str | None = None
     phone: str | None = None
@@ -66,7 +67,11 @@ class MeResponse(BaseModel):
 # ─────────── 비밀번호 로그인 (어드민/직접가입) ───────────
 
 class PasswordLoginRequest(BaseModel):
-    email: str = Field(..., min_length=3, max_length=255)
+    """이메일 또는 아이디 + 비밀번호 로그인.
+
+    `email` 필드는 호환성 위해 그대로 두되, 내부에서는 이메일/아이디 둘 다 허용.
+    """
+    email: str = Field(..., min_length=3, max_length=255, description="이메일 또는 아이디")
     password: str = Field(..., min_length=4, max_length=200)
 
 
@@ -74,6 +79,60 @@ class PasswordLoginResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
     user: UserOut
+
+
+# ─────────── 직접 회원가입 (아이디/비밀번호) ───────────
+
+class SignupAgreementsIn(BaseModel):
+    privacy: bool = Field(..., description="개인정보 수집·이용 동의 (필수)")
+    terms: bool = Field(..., description="서비스 이용약관 동의 (필수)")
+    marketing: bool = Field(default=False, description="마케팅 정보 수신 동의 (선택)")
+
+
+class SignupRequest(BaseModel):
+    """직접 회원가입 — 아이디/비밀번호 + 이메일/이름/회사/휴대폰."""
+    username: str = Field(..., min_length=4, max_length=30, description="아이디 (4~30자 영문/숫자/_.)")
+    password: str = Field(..., min_length=8, max_length=200, description="비밀번호 (8자 이상)")
+    email: EmailStr
+    name: str = Field(..., min_length=1, max_length=120)
+    phone: str = Field(..., min_length=9, max_length=20, description="010-XXXX-XXXX")
+    company: str = Field(..., min_length=1, max_length=120)
+    job_title: str | None = Field(default=None, max_length=120)
+    agreements: SignupAgreementsIn
+
+
+class SignupResponse(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+    user: UserOut
+
+
+# ─────────── 아이디/비밀번호 찾기 ───────────
+
+class ForgotIdRequest(BaseModel):
+    """가입 시 등록한 이메일로 아이디 안내."""
+    email: EmailStr
+
+
+class ForgotPasswordRequest(BaseModel):
+    """이메일로 비밀번호 재설정 링크 발송.
+
+    아이디(username) 또는 이메일(email) 중 하나는 반드시 보내야 한다.
+    """
+    username: str | None = Field(default=None, max_length=60)
+    email: EmailStr | None = None
+
+
+class ResetPasswordRequest(BaseModel):
+    """이메일 링크로 받은 토큰 + 새 비밀번호."""
+    token: str = Field(..., min_length=20, max_length=120)
+    new_password: str = Field(..., min_length=8, max_length=200)
+
+
+class ResetPasswordVerifyResponse(BaseModel):
+    """토큰 유효성 사전 확인 응답."""
+    valid: bool
+    email_masked: str | None = None  # ex: "ce***@femayeon.com"
 
 
 # ─────────── 검증 시각 변경 ───────────

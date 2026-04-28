@@ -230,6 +230,7 @@ export interface VerifyJobCancelResponse {
 export interface User {
   id: number
   email: string
+  username?: string | null         // 직접가입 사용자만 보유
   name: string
   picture: string | null
   phone: string | null
@@ -293,6 +294,46 @@ export interface ProfileCompleteRequest {
 
 export interface MeResponse {
   user: User
+}
+
+/* ─────────── 직접 회원가입 (아이디/비밀번호) ─────────── */
+
+export interface SignupRequest {
+  username: string
+  password: string
+  email: string
+  name: string
+  phone: string
+  company: string
+  job_title?: string | null
+  agreements: Agreements
+}
+
+export interface SignupResponse {
+  access_token: string
+  token_type: string
+  user: User
+}
+
+/* ─────────── 아이디/비밀번호 찾기 ─────────── */
+
+export interface ForgotIdRequest {
+  email: string
+}
+
+export interface ForgotPasswordRequest {
+  username?: string | null
+  email?: string | null
+}
+
+export interface ResetPasswordRequest {
+  token: string
+  new_password: string
+}
+
+export interface ResetPasswordVerifyResponse {
+  valid: boolean
+  email_masked?: string | null
 }
 
 /* ─────────── /api/v1/events ─────────── */

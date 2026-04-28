@@ -19,7 +19,13 @@ import { persist } from 'zustand/middleware'
 import type { User } from '@/api/types'
 
 /** 로그인 모달의 단계 */
-export type LoginModalStep = 'login' | 'profile' | 'closed'
+export type LoginModalStep =
+  | 'login'         // 로그인 화면 (아이디/비번 또는 Google)
+  | 'signup'        // 직접 회원가입 (아이디/비번 + 이메일/이름/회사/휴대폰)
+  | 'forgot-id'     // 아이디 찾기 (이메일 입력)
+  | 'forgot-pw'     // 비밀번호 찾기 (아이디/이메일 입력)
+  | 'profile'       // Google 로그인 후 추가정보 입력 (구 흐름)
+  | 'closed'
 
 interface AuthState {
   /* persist 대상 */
@@ -38,6 +44,10 @@ interface AuthState {
 
   openLoginModal: (redirectTo?: string | null) => void
   openProfileModal: () => void
+  openSignupModal: () => void
+  openForgotIdModal: () => void
+  openForgotPasswordModal: () => void
+  setModalStep: (step: LoginModalStep) => void
   closeLoginModal: () => void
 }
 
@@ -79,6 +89,10 @@ export const useAuthStore = create<AuthState>()(
         set({ modalStep: 'login', redirectAfterLogin: redirectTo }),
 
       openProfileModal: () => set({ modalStep: 'profile' }),
+      openSignupModal: () => set({ modalStep: 'signup' }),
+      openForgotIdModal: () => set({ modalStep: 'forgot-id' }),
+      openForgotPasswordModal: () => set({ modalStep: 'forgot-pw' }),
+      setModalStep: (step) => set({ modalStep: step }),
 
       closeLoginModal: () => set({ modalStep: 'closed' }),
     }),

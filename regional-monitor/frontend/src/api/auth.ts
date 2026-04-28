@@ -10,6 +10,12 @@ import type {
   ProfileCompleteRequest,
   PasswordLoginRequest,
   PasswordLoginResponse,
+  SignupRequest,
+  SignupResponse,
+  ForgotIdRequest,
+  ForgotPasswordRequest,
+  ResetPasswordRequest,
+  ResetPasswordVerifyResponse,
   VerifySlotUpdateRequest,
   VerifySlotUpdateResponse,
 } from './types'
@@ -19,9 +25,13 @@ export const authApi = {
   loginWithGoogle: (body: GoogleLoginRequest) =>
     api.post<GoogleLoginResponse>('/api/v1/auth/google', body),
 
-  /** 이메일 + 비밀번호 로그인 (어드민/직접가입 사용자) */
+  /** 이메일/아이디 + 비밀번호 로그인 (어드민/직접가입 사용자) */
   loginWithPassword: (body: PasswordLoginRequest) =>
     api.post<PasswordLoginResponse>('/api/v1/auth/login', body),
+
+  /** 직접 회원가입 (아이디/비밀번호) */
+  signup: (body: SignupRequest) =>
+    api.post<SignupResponse>('/api/v1/auth/signup', body),
 
   /** 신규 가입자 추가정보 + 약관 동의 저장 */
   completeProfile: (body: ProfileCompleteRequest) =>
@@ -32,6 +42,25 @@ export const authApi = {
     api.get<MeResponse>('/api/v1/auth/me', { skipUnauthorizedHandler: true }),
 
   logout: () => api.post<MessageResponse>('/api/v1/auth/logout'),
+
+  /** 아이디 찾기 — 가입 이메일로 username 발송 */
+  forgotId: (body: ForgotIdRequest) =>
+    api.post<MessageResponse>('/api/v1/auth/forgot-id', body),
+
+  /** 비밀번호 재설정 링크 발송 */
+  forgotPassword: (body: ForgotPasswordRequest) =>
+    api.post<MessageResponse>('/api/v1/auth/forgot-password', body),
+
+  /** 재설정 토큰 사전 유효성 확인 */
+  verifyResetToken: (token: string) =>
+    api.get<ResetPasswordVerifyResponse>(
+      `/api/v1/auth/reset-password/verify?token=${encodeURIComponent(token)}`,
+      { skipUnauthorizedHandler: true },
+    ),
+
+  /** 비밀번호 재설정 실행 */
+  resetPassword: (body: ResetPasswordRequest) =>
+    api.post<MessageResponse>('/api/v1/auth/reset-password', body),
 
   /** 내 자동 검증 시각(0~23시) 변경 */
   updateVerifySlot: (body: VerifySlotUpdateRequest) =>

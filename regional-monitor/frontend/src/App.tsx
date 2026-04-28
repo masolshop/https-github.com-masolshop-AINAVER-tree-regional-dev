@@ -21,6 +21,7 @@ import Intro from '@/pages/Intro'
 import Monitor from '@/pages/Monitor'
 import History from '@/pages/History'
 import Admin from '@/pages/Admin'
+import ResetPassword from '@/pages/ResetPassword'
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -102,6 +103,8 @@ export default function App() {
       <BrowserRouter>
         <AuthBootstrap />
         <Routes>
+          {/* 비밀번호 재설정 — 인증 없이 접근, AppLayout 외부 */}
+          <Route path="/reset-password" element={<ResetPassword />} />
           <Route element={<AppLayout />}>
             <Route path="/" element={<Home />} />
             <Route path="/intro" element={<Intro />} />
