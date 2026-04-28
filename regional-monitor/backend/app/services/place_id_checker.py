@@ -521,13 +521,15 @@ async def check_place_fast(client: httpx.AsyncClient, sample: Dict) -> CheckResu
 
     t0 = time.perf_counter()
     r = None
+    html = ""
     # fast 모드: 429 시 짧게 2회만 재시도 (1s, 2s) — full 모드의 4회보다 가벼움
-    # 본문을 안 읽으니 r.text는 호출하지 않음 (네트워크/메모리 절감)
+    # 본문은 dead page 키워드/state 존재 여부 빠른 검사용으로만 사용
     for attempt in range(2):
         try:
             r = await client.get(
                 url, headers=headers, follow_redirects=True, timeout=10.0
             )
+            html = r.text
             if r.status_code != 429:
                 break
             if attempt == 1:
