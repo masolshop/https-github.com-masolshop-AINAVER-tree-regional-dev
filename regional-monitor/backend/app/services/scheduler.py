@@ -282,10 +282,24 @@ async def run_slot_verification(slot_hour: int | None = None) -> dict:
                     .group_by(RegisteredPlace.current_verdict)
                 )
                 v_map = {str(k): v for k, v in vq.all()}
-                ok_n = v_map.get("OK", 0) + v_map.get("VerdictKind.OK", 0)
-                dead_n = v_map.get("DEAD", 0) + v_map.get("VerdictKind.DEAD", 0)
-                pend_n = v_map.get("PENDING", 0) + v_map.get("VerdictKind.PENDING", 0)
-                user_total = ok_n + dead_n + pend_n
+                # 정규화: "VerdictKind.OK" 같은 enum repr도 처리
+                def _v(name: str) -> int:
+                    return v_map.get(name, 0) + v_map.get(f"VerdictKind.{name}", 0)
+                ok_n = _v("OK")
+                dead_n = _v("DEAD")
+                pend_n = _v("PENDING")
+                # ⭐ MISMATCH 계열(PHONE/DONG/NAME/REGION)은 "이상" 카테고리에 포함시켜야
+                # total_count에 누락되지 않음. UI 상으로도 OK가 아닌 모든 verdict는 "이상"으로 표시.
+                mismatch_n = (
+                    _v("PHONE_MISMATCH")
+                    + _v("DONG_MISMATCH")
+                    + _v("NAME_MISMATCH")
+                    + _v("REGION_MISMATCH")
+                )
+                # 그 외 알 수 없는 verdict까지 안전하게 합산 (집계 누락 방지)
+                user_total = sum(v_map.values())
+                # dead_count에는 DEAD + 모든 MISMATCH 포함 (UI "이상" 컬럼 의미와 일치)
+                dead_n = dead_n + mismatch_n
                 # 매칭된 결과의 events 개수
                 user_events = next(
                     (r.get("events", 0) for r in per_user_results if r.get("user_id") == uid),
