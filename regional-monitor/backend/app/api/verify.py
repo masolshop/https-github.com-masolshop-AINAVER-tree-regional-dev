@@ -130,7 +130,9 @@ async def run_live_check(
     # 글로벌 게이트가 실제 한도를 결정 — 여기 값은 상한 역할
     # fast 모드: 단일 사용자 시 글로벌 SOLO=3 까지 활용
     # full 모드: 단일 사용자 시 글로벌 SOLO=3 까지 활용 (full도 동일)
-    concurrency = 3 if mode == "fast" else 3
+    # concurrency=3 — 글로벌 게이트(SOLO=3, MULTI=1)와 일치
+    # fast/full 모두 동일: 글로벌 게이트가 자동으로 활성 사용자 수에 맞춰 직렬화함
+    concurrency = 3
     t0 = time.perf_counter()
     raw_results = await verify_batch(places, concurrency=concurrency, mode=mode)
     total_ms = int((time.perf_counter() - t0) * 1000)
