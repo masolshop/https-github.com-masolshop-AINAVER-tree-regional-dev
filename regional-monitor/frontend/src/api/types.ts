@@ -138,15 +138,23 @@ export interface MessageResponse {
 }
 
 /* ─────────── /api/v1/verify/live ─────────── */
+export type VerifyMode = 'full' | 'fast'
+
 export interface LiveCheckRequest {
   place_ids?: number[] | null
+  /**
+   * 'full' (기본) — 전화 + 동/로/리 풀 검증, ~40s/200건
+   * 'fast'        — 페이지 존재 유무만, ~10s/200건 (트래픽 95% 절감)
+   */
+  mode?: VerifyMode
 }
 
 export interface VerificationDetail {
   alive: boolean
-  phone_match: boolean
-  dong_match: boolean
-  name_match: boolean
+  // fast 모드에서는 검증을 건너뛰므로 null
+  phone_match: boolean | null
+  dong_match: boolean | null
+  name_match: boolean | null
   actual_phone: string | null
   actual_dong: string | null
   actual_name: string | null

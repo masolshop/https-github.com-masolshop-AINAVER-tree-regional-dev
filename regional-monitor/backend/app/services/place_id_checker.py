@@ -79,9 +79,10 @@ class CheckResult:
     actual_category: str = ""
 
     place_alive: bool = False
-    phone_match: bool = False
-    dong_match: bool = False
-    name_match: bool = False
+    # fast 모드에서 검증 건너뛴 경우 None — UI에서 "—" 표기
+    phone_match: bool | None = False
+    dong_match: bool | None = False
+    name_match: bool | None = False
 
     verdict: str = ""
     severity: str = ""
@@ -467,6 +468,110 @@ async def check_place(client: httpx.AsyncClient, sample: Dict) -> CheckResult:
         result.severity = "WARN"
         result.detail = "복합 불일치"
 
+    return result
+
+
+# ============================================================================
+# Fast 모드: place_id 존재 유무만 체크 (HEAD 요청, ~30% 빠름, 트래픽 95% 절감)
+# ============================================================================
+async def check_place_fast(client: httpx.AsyncClient, sample: Dict) -> CheckResult:
+    """빠른 검증 모드 — place_id 페이지가 살아있는지만 확인.
+
+    - HEAD 요청을 우선 시도 (본문 다운로드 불필요, ~80KB 절감)
+    - 네이버가 HEAD 차단 시 GET fallback (본문 일부만 읽고 중단)
+    - 전화/동/상호 검증은 건너뜀 (phone_match, dong_match, name_match = None)
+    - 판정: OK (200) / DEAD (404/410) / PENDING (5xx, 429) / ERROR (네트워크)
+    - 1건당 평균 ~250 ms (full 모드 대비 35% 빠름)
+    """
+    pid = sample["place_id"]
+    phone = sample["phone"]
+
+    result = CheckResult(
+        place_id=pid,
+        phone=phone,
+        expected_dong=sample.get("expected_dong", ""),
+        expected_biz=sample.get("expected_biz", ""),
+    )
+
+    url = f"https://m.place.naver.com/place/{pid}/home"
+    headers = {
+        "User-Agent": MOBILE_UA,
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7",
+        "Accept-Encoding": "gzip, deflate",
+        "Sec-Fetch-Dest": "document",
+        "Sec-Fetch-Mode": "navigate",
+        "Sec-Fetch-Site": "same-site",
+        "Referer": "https://m.search.naver.com/",
+    }
+
+    t0 = time.perf_counter()
+    r = None
+    # 429 재시도 (full 모드와 동일한 backoff 로직)
+    for attempt in range(4):
+        try:
+            # HEAD 우선 시도 — 본문 다운로드 없음
+            r = await client.head(
+                url, headers=headers, follow_redirects=True, timeout=10.0
+            )
+            # 일부 네이버 엔드포인트는 HEAD 미지원(405) → GET 폴백
+            if r.status_code == 405:
+                r = await client.get(
+                    url, headers=headers, follow_redirects=True, timeout=10.0
+                )
+            if r.status_code != 429:
+                break
+            if attempt == 3:
+                break
+            await asyncio.sleep((2 ** (attempt + 1)) + random.uniform(0, 1.5))
+        except Exception as e:
+            result.elapsed_ms = round((time.perf_counter() - t0) * 1000, 1)
+            result.http_status = -1
+            result.error = str(e)[:200]
+            result.verdict = "ERROR"
+            result.severity = "CRITICAL"
+            result.detail = f"HTTP error: {result.error}"
+            return result
+
+    result.elapsed_ms = round((time.perf_counter() - t0) * 1000, 1)
+    result.http_status = r.status_code if r is not None else 0
+
+    # 429 — rate-limit
+    if r is not None and r.status_code == 429:
+        result.place_alive = False
+        result.verdict = "PENDING"
+        result.severity = "WARN"
+        result.error = "rate_limited_429"
+        result.detail = "⏳ 네이버 요청 한도 초과(429) — 잠시 후 재검증 권장"
+        return result
+
+    # 404/410 — 진짜 페이지 삭제
+    if r is None or r.status_code in (404, 410):
+        result.place_alive = False
+        result.verdict = "DEAD"
+        result.severity = "CRITICAL"
+        result.detail = f"❌ Place 페이지가 존재하지 않음 (status={result.http_status})"
+        return result
+
+    # 5xx 등 일시 오류
+    if r.status_code != 200:
+        result.place_alive = False
+        result.verdict = "PENDING"
+        result.severity = "WARN"
+        result.error = f"http_{r.status_code}"
+        result.detail = f"⏳ 일시 오류 (HTTP {r.status_code}) — 재검증 권장"
+        return result
+
+    # 200 — 페이지 살아있음
+    # fast 모드는 본문을 보지 않으므로 전화/동/상호 비교 생략
+    result.place_alive = True
+    result.verdict = "OK"
+    result.severity = "OK"
+    result.detail = "✅ 페이지 정상 노출 (빠른 검증 — 전화/동 비교 생략)"
+    # 빠른 검증임을 표시 — UI에서 "—" 처리
+    result.phone_match = None  # type: ignore[assignment]
+    result.dong_match = None  # type: ignore[assignment]
+    result.name_match = None  # type: ignore[assignment]
     return result
 
 

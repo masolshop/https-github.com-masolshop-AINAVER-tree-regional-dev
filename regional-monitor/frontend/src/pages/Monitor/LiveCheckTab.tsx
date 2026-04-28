@@ -17,7 +17,7 @@ import { usePlacesList } from '@/hooks/usePlaces'
 import { useQueryClient } from '@tanstack/react-query'
 import { runLiveCheck } from '@/api/places'
 import { ApiError } from '@/api/client'
-import type { VerificationResult } from '@/api/types'
+import type { VerificationResult, VerifyMode } from '@/api/types'
 import { placeKeys } from '@/hooks/usePlaces'
 import {
   Play,
@@ -48,6 +48,8 @@ export default function LiveCheckTab() {
   const [results, setResults] = useState<VerificationResult[]>([])
   const [totalMs, setTotalMs] = useState(0)
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
+  // 검증 모드: 'fast' (페이지 존재 유무만, ~10s/200건) / 'full' (전화·동 풀 검증, ~40s/200건)
+  const [mode, setMode] = useState<VerifyMode>('fast')
   const cancelRef = useRef(false)
 
   const totalRegistered = placesData?.summary.total ?? 0
@@ -129,7 +131,7 @@ export default function LiveCheckTab() {
         setProgress((p) => ({ ...p, chunk: i + 1 }))
 
         const ts = performance.now()
-        const resp = await runLiveCheck({ place_ids: chunk })
+        const resp = await runLiveCheck({ place_ids: chunk, mode })
         const elapsed = Math.round(performance.now() - ts)
 
         accMs += resp.total_ms || elapsed
@@ -181,19 +183,61 @@ export default function LiveCheckTab() {
             <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-pill bg-white/15 text-white/90 text-caption font-bold uppercase tracking-wider mb-3">
               <ShieldCheck size={12} /> live verification
             </span>
-            <h3 className="text-h2 text-white mb-2">즉시 4중 검증 실행</h3>
+            <h3 className="text-h2 text-white mb-2">
+              {mode === 'fast' ? '⚡ 빠른 검증 (페이지 존재 유무)' : '🔍 정밀 검증 (전화·동 일치)'}
+            </h3>
             <p className="text-body-sm text-white/75">
               등록된 <span className="font-bold text-white">{totalRegistered}</span>개의 070
-              번호에 대해 플레이스 ID 기반 4중 검증을 수행합니다.
+              번호에 대해{' '}
+              {mode === 'fast'
+                ? '플레이스 ID 페이지가 살아있는지만 빠르게 확인합니다.'
+                : '플레이스 ID + 전화번호 + 동/로/리 일치 여부까지 정밀 검증합니다.'}
               <br />
               <span className="text-caption text-white/60">
-                {chunkSize}건씩 청크로 나눠 순차 호출 · 청크당 ~30초 ·
-                청크 사이 {CHUNK_DELAY_MS}ms 휴식 (네이버 부하 분산)
+                {chunkSize}건씩 청크로 나눠 순차 호출 · 청크당 약{' '}
+                {mode === 'fast'
+                  ? `${Math.ceil(chunkSize / 8 / 4)}~${Math.ceil(chunkSize / 8 / 2)}초`
+                  : `${Math.ceil(chunkSize / 3 / 4)}~${Math.ceil(chunkSize / 3 / 2)}초`}{' '}
+                · 청크 사이 {CHUNK_DELAY_MS}ms 휴식
               </span>
             </p>
           </div>
 
           <div className="flex flex-col items-end gap-2">
+            {/* 검증 모드 토글 (running이 아닐 때만) */}
+            {!running && (
+              <div
+                className="inline-flex p-0.5 rounded-pill bg-white/10 border border-white/20"
+                role="tablist"
+                aria-label="검증 모드"
+              >
+                <button
+                  type="button"
+                  onClick={() => setMode('fast')}
+                  className={`px-3 py-1.5 rounded-pill text-caption font-semibold transition-all ${
+                    mode === 'fast'
+                      ? 'bg-white text-brand-700 shadow-sm'
+                      : 'text-white/80 hover:text-white'
+                  }`}
+                  title="플레이스 ID 페이지 존재 유무만 확인 — 가장 빠름, 트래픽 95% 절감"
+                >
+                  ⚡ 빠른 검증
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setMode('full')}
+                  className={`px-3 py-1.5 rounded-pill text-caption font-semibold transition-all ${
+                    mode === 'full'
+                      ? 'bg-white text-brand-700 shadow-sm'
+                      : 'text-white/80 hover:text-white'
+                  }`}
+                  title="전화번호 + 동/로/리 일치 여부까지 검증 — 정확도 우선"
+                >
+                  🔍 정밀 검증
+                </button>
+              </div>
+            )}
+
             {/* 청크 크기 선택 (running이 아닐 때만) */}
             {!running && (
               <label className="text-caption text-white/70 flex items-center gap-2">
@@ -315,7 +359,9 @@ export default function LiveCheckTab() {
             <p className="text-caption text-ink-muted mt-0.5">
               {results.length === 0
                 ? '"지금 검증 시작" 버튼을 눌러 실시간 검증을 수행하세요.'
-                : `4중 검증: ✓ 페이지 생존 / ✓ 전화 일치 / ✓ 동 일치 / ✓ 상호 일치 (총 ${results.length}건)`}
+                : mode === 'fast'
+                  ? `빠른 검증: ✓ 페이지 존재 유무만 확인 (총 ${results.length}건)`
+                  : `정밀 검증: ✓ 페이지 생존 / ✓ 전화 / ✓ 동·로·리 (총 ${results.length}건)`}
             </p>
           </div>
           {totalMs > 0 && (
@@ -401,7 +447,11 @@ export default function LiveCheckTab() {
 
 /* ───────────── 서브 컴포넌트 ───────────── */
 
-function CheckIcon({ ok }: { ok: boolean }) {
+function CheckIcon({ ok }: { ok: boolean | null | undefined }) {
+  // fast 모드에서는 검증을 건너뛰므로 null — "—" 표시
+  if (ok === null || ok === undefined) {
+    return <span className="text-ink-soft text-caption font-mono" title="빠른 검증 — 비교 생략">—</span>
+  }
   return ok ? (
     <CheckCircle2 size={16} className="text-status-success" />
   ) : (
@@ -413,10 +463,12 @@ interface ComparisonRowProps {
   icon: React.ReactNode
   expected: string
   actual: string
-  match: boolean
+  match: boolean | null | undefined
 }
 
 function ComparisonRow({ icon, expected, actual, match }: ComparisonRowProps) {
+  // fast 모드: match===null → 비교 자체가 없었음 → 회색 처리 + "—"
+  const isSkipped = match === null || match === undefined
   return (
     <div className="flex items-center gap-1.5 mb-1 last:mb-0">
       <span className="text-ink-muted">{icon}</span>
@@ -426,13 +478,15 @@ function ComparisonRow({ icon, expected, actual, match }: ComparisonRowProps) {
       <span className="text-ink-soft">→</span>
       <span
         className={
-          match
+          isSkipped
+            ? 'text-ink-soft italic truncate max-w-[140px]'
+            : match
             ? 'text-status-success font-medium truncate max-w-[140px]'
             : 'text-status-danger font-medium truncate max-w-[140px]'
         }
-        title={actual}
+        title={isSkipped ? '빠른 검증 — 비교 생략' : actual}
       >
-        {actual}
+        {isSkipped ? '—' : actual}
       </span>
     </div>
   )

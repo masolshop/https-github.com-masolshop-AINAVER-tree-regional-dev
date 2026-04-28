@@ -5,11 +5,15 @@ from .common import VerdictType
 
 
 class VerificationDetail(BaseModel):
-    """4중 검증 상세."""
+    """4중 검증 상세.
+
+    fast 모드(페이지 존재 유무만 검증)에서는 phone_match/dong_match/name_match 가
+    None 이며, UI에서 "—" 로 표시됨.
+    """
     alive: bool
-    phone_match: bool
-    dong_match: bool
-    name_match: bool
+    phone_match: bool | None = False
+    dong_match: bool | None = False
+    name_match: bool | None = False
     actual_phone: str | None = None
     actual_dong: str | None = None
     actual_name: str | None = None
@@ -41,6 +45,7 @@ class VerificationResult(BaseModel):
 class LiveCheckRequest(BaseModel):
     """즉시 검증 요청."""
     place_ids: list[int] | None = None   # None = 사용자 등록 전체
+    mode: str = "full"                   # "full" (전화+동 검증) / "fast" (페이지 존재 유무만)
 
 
 class LiveCheckResponse(BaseModel):

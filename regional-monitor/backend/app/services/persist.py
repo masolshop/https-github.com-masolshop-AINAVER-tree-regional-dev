@@ -129,12 +129,13 @@ async def persist_results(
         detail = r.get("detail") or {}
 
         # 1) DailyHealthCheck (시계열 raw)
+        # fast 모드에서 None인 match 필드는 False로 저장 (DB는 bool not null)
         db.add(DailyHealthCheck(
             place_id_ref=place.id,
-            alive=detail.get("alive", False),
-            phone_match=detail.get("phone_match", False),
-            dong_match=detail.get("dong_match", False),
-            name_match=detail.get("name_match", False),
+            alive=bool(detail.get("alive", False)),
+            phone_match=bool(detail.get("phone_match") or False),
+            dong_match=bool(detail.get("dong_match") or False),
+            name_match=bool(detail.get("name_match") or False),
             actual_phone=detail.get("actual_phone"),
             actual_dong=detail.get("actual_dong"),
             actual_name=detail.get("actual_name"),
