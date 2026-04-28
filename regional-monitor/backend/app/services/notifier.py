@@ -290,9 +290,8 @@ def _build_email_body(
 
     # ─── HTML ───
 
-    # 헤더 톤 (위험 1건 이상이면 빨강 라인, 아니면 네이비)
-    has_danger = n_danger > 0
-    accent_color = "#DC2626" if has_danger else "#1F2D4D"
+    # 헤더 톤 — 항상 브랜드 블루(네이비) 사용. 위험은 본문 배지/카드로만 표현.
+    accent_color = "#1F2D4D"
 
     # 1) 회차 요약 카드 HTML (run_summary 있을 때만)
     summary_card_html = ""
