@@ -391,17 +391,14 @@ export function BulkUpload() {
         </div>
       )}
 
-      {/* 푸터 */}
-      <div className="flex items-center justify-between text-caption">
-        <span className="text-ink-muted">
-          컬럼: phone(필수) / dong / name — 헤더 자동 인식
-        </span>
+      {/* 푸터: '샘플 엑셀 다운로드' 버튼만, 좌측 정렬, 글씨 20% 크게 */}
+      <div className="flex items-center">
         <button
           type="button"
           onClick={downloadSample}
-          className="inline-flex items-center gap-1.5 text-brand-600 font-semibold hover:underline"
+          className="inline-flex items-center gap-1.5 text-[1.2em] text-brand-600 font-semibold hover:underline"
         >
-          <Download size={12} /> 샘플 CSV 다운로드
+          <Download size={14} /> 샘플 엑셀 다운로드
         </button>
       </div>
     </div>
@@ -660,19 +657,17 @@ function rowsToParsed(cells: string[][]): ParsedRow[] {
 }
 
 function downloadSample() {
-  const csv = [
-    'phone,dong,name',
-    '070-4534-9862,서울 종로구 홍지동,바비네',
-    '070-1234-5678,경기 분당,홍길동가구',
-    '070-9876-5432,,             ',
-  ].join('\n')
-  const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8' })
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = 'regional-monitor-bulk-sample.csv'
-  document.body.appendChild(a)
-  a.click()
-  document.body.removeChild(a)
-  URL.revokeObjectURL(url)
+  // 샘플 엑셀(.xlsx) 생성 — phone(필수) / dong / name 3컬럼
+  const data = [
+    ['phone', 'dong', 'name'],
+    ['070-4534-9862', '서울 종로구 홍지동', '바비네'],
+    ['070-1234-5678', '경기 분당', '홍길동가구'],
+    ['070-9876-5432', '', ''],
+  ]
+  const ws = XLSX.utils.aoa_to_sheet(data)
+  // 컬럼 폭 보기 좋게
+  ws['!cols'] = [{ wch: 16 }, { wch: 24 }, { wch: 18 }]
+  const wb = XLSX.utils.book_new()
+  XLSX.utils.book_append_sheet(wb, ws, '샘플')
+  XLSX.writeFile(wb, 'regional-monitor-bulk-sample.xlsx')
 }
