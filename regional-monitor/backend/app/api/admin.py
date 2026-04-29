@@ -40,6 +40,14 @@ from app.schemas.admin import (
     AdminMonitorOut,
     AdminMonitorRow,
     AdminMonitorSummary,
+    AdminScheduleUserRow,
+    AdminScheduleSummary,
+    AdminScheduleListOut,
+    AdminScheduleHeatmapCell,
+    AdminScheduleHeatmapOut,
+    AdminScheduleUserPatch,
+    AdminScheduleRebalanceIn,
+    AdminScheduleRebalanceOut,
 )
 from app.schemas.common import MessageResponse
 from .deps import require_superadmin
@@ -591,6 +599,278 @@ async def update_payment(
         gateway_tx_id=p.gateway_tx_id, memo=p.memo,
         period_start=p.period_start, period_end=p.period_end,
         created_at=p.created_at, paid_at=p.paid_at, refunded_at=p.refunded_at,
+    )
+
+
+
+# ──────────────────────────────────────────────────────────────
+# 자동 검증 스케줄 v2 (슈퍼어드민 전용)
+# ──────────────────────────────────────────────────────────────
+
+@router.get("/schedule/users", response_model=AdminScheduleListOut)
+async def list_schedule_users(
+    db: AsyncSession = Depends(get_db),
+    q: str | None = Query(default=None, description="이름/이메일/회사 부분일치"),
+    plan: str | None = Query(default=None),
+    frequency: str | None = Query(default=None, description="daily/every3d/every5d/weekly/paused"),
+    only_with_places: bool = Query(default=False),
+    sort: Literal["slot", "places", "frequency", "last_run"] = Query(default="slot"),
+    limit: int = Query(default=2000, ge=1, le=5000),
+) -> AdminScheduleListOut:
+    """전 회원 자동 검증 스케줄 목록 + 요약."""
+    from app.services.schedule_assigner import (
+        SLOT_COUNT_15M,
+        SLOT_PLACES_LIMIT,
+        FREQUENCY_INTERVAL_SEC,
+        slot_index_to_label,
+        is_due_for_run,
+    )
+    import time as _time
+
+    base = select(User)
+    filters = []
+    if q:
+        like = f"%{q.strip()}%"
+        filters.append(or_(User.email.ilike(like), User.name.ilike(like), User.company.ilike(like)))
+    if plan:
+        filters.append(User.plan == plan)
+    if frequency:
+        filters.append(User.verify_frequency == frequency)
+    if filters:
+        base = base.where(*filters)
+
+    rows = (await db.execute(base.limit(limit))).scalars().all()
+
+    # place_count 일괄 조회
+    if rows:
+        ids = [u.id for u in rows]
+        pc_q = await db.execute(
+            select(RegisteredPlace.user_id, func.count(RegisteredPlace.id))
+            .where(RegisteredPlace.user_id.in_(ids))
+            .group_by(RegisteredPlace.user_id)
+        )
+        pc_map = {uid: int(c) for uid, c in pc_q.all()}
+    else:
+        pc_map = {}
+
+    if only_with_places:
+        rows = [u for u in rows if pc_map.get(u.id, 0) > 0]
+
+    # 행 구성
+    now_dt = now_kst()
+    now_ts = now_dt.timestamp()
+    items: list[AdminScheduleUserRow] = []
+    for u in rows:
+        freq = u.verify_frequency or "every3d"
+        slot = int(u.verify_slot_15m or 0)
+        slot = max(0, min(SLOT_COUNT_15M - 1, slot))
+        interval = FREQUENCY_INTERVAL_SEC.get(freq, FREQUENCY_INTERVAL_SEC["every3d"])
+        next_due = None
+        if u.last_auto_run_at is not None and freq != "paused":
+            next_due = u.last_auto_run_at + timedelta(seconds=interval)
+        due_now, _ = is_due_for_run(u, now_ts=now_ts)
+        items.append(AdminScheduleUserRow(
+            user_id=u.id,
+            email=u.email,
+            name=u.name,
+            company=u.company,
+            plan=u.plan,
+            is_active=u.is_active,
+            verify_frequency=freq,
+            verify_slot_15m=slot,
+            verify_slot_label=slot_index_to_label(slot),
+            place_count=pc_map.get(u.id, 0),
+            last_auto_run_at=u.last_auto_run_at,
+            next_due_at=next_due,
+            is_due_now=due_now,
+        ))
+
+    # 정렬
+    if sort == "slot":
+        items.sort(key=lambda x: (x.verify_slot_15m, -x.place_count))
+    elif sort == "places":
+        items.sort(key=lambda x: x.place_count, reverse=True)
+    elif sort == "frequency":
+        order = {"daily": 0, "every3d": 1, "every5d": 2, "weekly": 3, "paused": 4}
+        items.sort(key=lambda x: (order.get(x.verify_frequency, 9), x.verify_slot_15m))
+    elif sort == "last_run":
+        items.sort(
+            key=lambda x: (x.last_auto_run_at or datetime(1970, 1, 1, tzinfo=KST)),
+        )
+
+    # 요약
+    by_freq: dict[str, int] = {}
+    paused_n = 0
+    for it in items:
+        by_freq[it.verify_frequency] = by_freq.get(it.verify_frequency, 0) + 1
+        if it.verify_frequency == "paused":
+            paused_n += 1
+
+    # 슬롯 부하(활성·!paused 만)
+    slot_load: dict[int, int] = {i: 0 for i in range(SLOT_COUNT_15M)}
+    active_users_n = 0
+    for it in items:
+        if not it.is_active or it.verify_frequency == "paused":
+            continue
+        active_users_n += 1
+        slot_load[it.verify_slot_15m] = slot_load.get(it.verify_slot_15m, 0) + it.place_count
+    loads = list(slot_load.values())
+    max_load = max(loads) if loads else 0
+    avg_load = (sum(loads) / len(loads)) if loads else 0.0
+    over_n = sum(1 for v in loads if v > SLOT_PLACES_LIMIT)
+
+    summary = AdminScheduleSummary(
+        users_total=active_users_n,
+        users_paused=paused_n,
+        places_total=sum(it.place_count for it in items),
+        slot_max_load=max_load,
+        slot_avg_load=round(avg_load, 2),
+        slot_over_limit=over_n,
+        by_frequency=by_freq,
+    )
+    return AdminScheduleListOut(summary=summary, items=items)
+
+
+@router.get("/schedule/heatmap", response_model=AdminScheduleHeatmapOut)
+async def get_schedule_heatmap(db: AsyncSession = Depends(get_db)) -> AdminScheduleHeatmapOut:
+    """96 슬롯 부하 히트맵 (회원 수 + 등록 합계)."""
+    from app.services.schedule_assigner import (
+        SLOT_COUNT_15M,
+        SLOT_PLACES_LIMIT,
+        slot_index_to_label,
+    )
+
+    # 활성 + paused 아닌 회원만
+    user_q = await db.execute(
+        select(User.verify_slot_15m, func.count(User.id))
+        .where(User.is_active.is_(True))
+        .where(User.verify_frequency != "paused")
+        .group_by(User.verify_slot_15m)
+    )
+    user_map: dict[int, int] = {i: 0 for i in range(SLOT_COUNT_15M)}
+    for slot, cnt in user_q.all():
+        idx = max(0, min(SLOT_COUNT_15M - 1, int(slot or 0)))
+        user_map[idx] += int(cnt or 0)
+
+    place_q = await db.execute(
+        select(User.verify_slot_15m, func.count(RegisteredPlace.id))
+        .join(RegisteredPlace, RegisteredPlace.user_id == User.id)
+        .where(User.is_active.is_(True))
+        .where(User.verify_frequency != "paused")
+        .group_by(User.verify_slot_15m)
+    )
+    place_map: dict[int, int] = {i: 0 for i in range(SLOT_COUNT_15M)}
+    for slot, cnt in place_q.all():
+        idx = max(0, min(SLOT_COUNT_15M - 1, int(slot or 0)))
+        place_map[idx] += int(cnt or 0)
+
+    cells = [
+        AdminScheduleHeatmapCell(
+            slot=i,
+            label=slot_index_to_label(i),
+            user_count=user_map[i],
+            place_count=place_map[i],
+        )
+        for i in range(SLOT_COUNT_15M)
+    ]
+    max_load = max(place_map.values()) if place_map else 0
+    over = [i for i, v in place_map.items() if v > SLOT_PLACES_LIMIT]
+    return AdminScheduleHeatmapOut(
+        cells=cells,
+        slot_limit=SLOT_PLACES_LIMIT,
+        max_load=max_load,
+        over_limit_slots=over,
+    )
+
+
+@router.patch("/schedule/users/{user_id}", response_model=AdminScheduleUserRow)
+async def update_schedule_user(
+    user_id: int,
+    body: AdminScheduleUserPatch,
+    db: AsyncSession = Depends(get_db),
+) -> AdminScheduleUserRow:
+    """회원 1명의 frequency / slot 수동 조정 (paused 토글 포함)."""
+    from app.services.schedule_assigner import (
+        SLOT_COUNT_15M,
+        FREQUENCY_INTERVAL_SEC,
+        slot_index_to_label,
+        is_due_for_run,
+        is_valid_frequency,
+    )
+
+    u = (await db.execute(select(User).where(User.id == user_id))).scalar_one_or_none()
+    if not u:
+        raise HTTPException(404, "사용자를 찾을 수 없습니다.")
+
+    if body.verify_frequency is not None:
+        if not is_valid_frequency(body.verify_frequency):
+            raise HTTPException(400, f"유효하지 않은 verify_frequency: {body.verify_frequency}")
+        u.verify_frequency = body.verify_frequency
+    if body.verify_slot_15m is not None:
+        slot = max(0, min(SLOT_COUNT_15M - 1, int(body.verify_slot_15m)))
+        u.verify_slot_15m = slot
+        u.verify_slot = slot // 4   # 호환
+
+    await db.commit()
+    await db.refresh(u)
+
+    pc = (await db.execute(
+        select(func.count(RegisteredPlace.id)).where(RegisteredPlace.user_id == user_id)
+    )).scalar_one()
+
+    now_ts = now_kst().timestamp()
+    interval = FREQUENCY_INTERVAL_SEC.get(u.verify_frequency or "every3d", FREQUENCY_INTERVAL_SEC["every3d"])
+    next_due = None
+    if u.last_auto_run_at is not None and (u.verify_frequency or "") != "paused":
+        next_due = u.last_auto_run_at + timedelta(seconds=interval)
+    due_now, _ = is_due_for_run(u, now_ts=now_ts)
+
+    slot_idx = int(u.verify_slot_15m or 0)
+    return AdminScheduleUserRow(
+        user_id=u.id,
+        email=u.email,
+        name=u.name,
+        company=u.company,
+        plan=u.plan,
+        is_active=u.is_active,
+        verify_frequency=u.verify_frequency or "every3d",
+        verify_slot_15m=slot_idx,
+        verify_slot_label=slot_index_to_label(slot_idx),
+        place_count=int(pc),
+        last_auto_run_at=u.last_auto_run_at,
+        next_due_at=next_due,
+        is_due_now=due_now,
+    )
+
+
+@router.post("/schedule/rebalance", response_model=AdminScheduleRebalanceOut)
+async def rebalance_schedule(
+    body: AdminScheduleRebalanceIn,
+    db: AsyncSession = Depends(get_db),
+) -> AdminScheduleRebalanceOut:
+    """슬롯당 등록 합계가 target_max 를 넘는 경우 자동 리밸런스.
+
+    dry_run=True 면 이동 계획만 반환하고 실제 변경하지 않음.
+    """
+    from app.services.schedule_assigner import rebalance_all_users
+
+    result = await rebalance_all_users(
+        db,
+        target_max=body.target_max,
+        max_passes=body.max_passes,
+        dry_run=body.dry_run,
+    )
+    if not body.dry_run:
+        await db.commit()
+
+    return AdminScheduleRebalanceOut(
+        before_max=int(result["before_max"]),
+        after_max=int(result["after_max"]),
+        moved=int(result["moved"]),
+        passes=int(result["passes"]),
+        target_max=int(result["target_max"]),
+        dry_run=bool(result["dry_run"]),
+        plan=result["plan"],
     )
 
 

@@ -159,6 +159,95 @@ export interface AdminMonitorQuery {
   limit?: number
 }
 
+// ─────────────────────────────────────────────────────────────
+// 자동 검증 스케줄 v2 (슈퍼어드민 전용)
+// ─────────────────────────────────────────────────────────────
+
+export type VerifyFrequency =
+  | 'daily' | 'every3d' | 'every5d' | 'weekly' | 'paused'
+
+export interface AdminScheduleUserRow {
+  user_id: number
+  email: string
+  name: string
+  company: string | null
+  plan: AdminPlanKey
+  is_active: boolean
+  verify_frequency: VerifyFrequency
+  verify_slot_15m: number          // 0~95
+  verify_slot_label: string        // 'HH:MM'
+  place_count: number
+  last_auto_run_at: string | null
+  next_due_at: string | null
+  is_due_now: boolean
+}
+
+export interface AdminScheduleSummary {
+  users_total: number
+  users_paused: number
+  places_total: number
+  slot_max_load: number
+  slot_avg_load: number
+  slot_over_limit: number
+  by_frequency: Record<string, number>
+}
+
+export interface AdminScheduleListOut {
+  summary: AdminScheduleSummary
+  items: AdminScheduleUserRow[]
+}
+
+export interface AdminScheduleHeatmapCell {
+  slot: number
+  label: string
+  user_count: number
+  place_count: number
+}
+
+export interface AdminScheduleHeatmapOut {
+  cells: AdminScheduleHeatmapCell[]
+  slot_limit: number
+  max_load: number
+  over_limit_slots: number[]
+}
+
+export interface AdminScheduleUserPatch {
+  verify_frequency?: VerifyFrequency
+  verify_slot_15m?: number
+}
+
+export interface AdminScheduleRebalanceIn {
+  target_max?: number
+  max_passes?: number
+  dry_run?: boolean
+}
+
+export interface AdminScheduleRebalancePlan {
+  user_id: number
+  from_slot: number
+  to_slot: number
+  place_count: number
+}
+
+export interface AdminScheduleRebalanceOut {
+  before_max: number
+  after_max: number
+  moved: number
+  passes: number
+  target_max: number
+  dry_run: boolean
+  plan: AdminScheduleRebalancePlan[]
+}
+
+export interface AdminScheduleListQuery {
+  q?: string
+  plan?: AdminPlanKey | ''
+  frequency?: VerifyFrequency | ''
+  only_with_places?: boolean
+  sort?: 'slot' | 'places' | 'frequency' | 'last_run'
+  limit?: number
+}
+
 function qs(params: object): string {
   const usp = new URLSearchParams()
   Object.entries(params as Record<string, unknown>).forEach(([k, v]) => {
@@ -195,4 +284,17 @@ export const adminApi = {
   // 회원 모니터링 — 전 회원의 등록건수 + 검증상태 분포 한 번에
   usersMonitor: (q: AdminMonitorQuery = {}) =>
     api.get<AdminMonitorOut>(`/api/v1/admin/users/monitor${qs(q as Record<string, unknown>)}`),
+
+  // 자동 검증 스케줄 v2 ─────────────────────────────────────────
+  scheduleUsers: (q: AdminScheduleListQuery = {}) =>
+    api.get<AdminScheduleListOut>(`/api/v1/admin/schedule/users${qs(q as Record<string, unknown>)}`),
+
+  scheduleHeatmap: () =>
+    api.get<AdminScheduleHeatmapOut>('/api/v1/admin/schedule/heatmap'),
+
+  patchScheduleUser: (id: number, body: AdminScheduleUserPatch) =>
+    api.patch<AdminScheduleUserRow>(`/api/v1/admin/schedule/users/${id}`, body),
+
+  rebalanceSchedule: (body: AdminScheduleRebalanceIn = {}) =>
+    api.post<AdminScheduleRebalanceOut>('/api/v1/admin/schedule/rebalance', body),
 }

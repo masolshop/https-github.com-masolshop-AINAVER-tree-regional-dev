@@ -154,6 +154,14 @@ export default function App() {
                 </AdminRoute>
               }
             />
+            <Route
+              path="/admin/schedule"
+              element={
+                <AdminRoute>
+                  <Admin />
+                </AdminRoute>
+              }
+            />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Route>
         </Routes>

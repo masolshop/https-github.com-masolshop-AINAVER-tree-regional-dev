@@ -150,3 +150,77 @@ class AdminMonitorSummary(BaseModel):
 class AdminMonitorOut(BaseModel):
     summary: AdminMonitorSummary
     items: list[AdminMonitorRow]
+
+
+# ──────────────────────────────────────────────────────────────
+# 자동 검증 스케줄 v2 — 어드민 관리 (슈퍼어드민 전용)
+# ──────────────────────────────────────────────────────────────
+
+class AdminScheduleUserRow(BaseModel):
+    """회원별 스케줄 1행."""
+    user_id: int
+    email: str
+    name: str
+    company: str | None = None
+    plan: str
+    is_active: bool
+    verify_frequency: str            # daily / every3d / every5d / weekly / paused
+    verify_slot_15m: int             # 0~95
+    verify_slot_label: str           # '00:00' 형식
+    place_count: int = 0
+    last_auto_run_at: datetime | None = None
+    next_due_at: datetime | None = None       # 추정 다음 실행 시각
+    is_due_now: bool = False                  # 현재 due 여부
+
+
+class AdminScheduleSummary(BaseModel):
+    """스케줄 요약 카드용."""
+    users_total: int                 # 활성 회원 (paused 제외)
+    users_paused: int
+    places_total: int
+    slot_max_load: int               # 가장 붐비는 슬롯의 등록 합계
+    slot_avg_load: float
+    slot_over_limit: int             # SLOT_PLACES_LIMIT 초과 슬롯 수
+    by_frequency: dict[str, int]     # {'daily': 12, 'every3d': 30, ...}
+
+
+class AdminScheduleListOut(BaseModel):
+    summary: AdminScheduleSummary
+    items: list[AdminScheduleUserRow]
+
+
+class AdminScheduleHeatmapCell(BaseModel):
+    slot: int                        # 0~95
+    label: str                       # '00:00'
+    user_count: int
+    place_count: int
+
+
+class AdminScheduleHeatmapOut(BaseModel):
+    cells: list[AdminScheduleHeatmapCell]   # 길이 96
+    slot_limit: int                          # SLOT_PLACES_LIMIT
+    max_load: int
+    over_limit_slots: list[int]
+
+
+class AdminScheduleUserPatch(BaseModel):
+    """회원 스케줄 수동 조정."""
+    verify_frequency: Literal["daily", "every3d", "every5d", "weekly", "paused"] | None = None
+    verify_slot_15m: int | None = Field(default=None, ge=0, le=95)
+
+
+class AdminScheduleRebalanceIn(BaseModel):
+    """리밸런스 옵션."""
+    target_max: int = Field(default=80, ge=1, le=10000)
+    max_passes: int = Field(default=3, ge=1, le=20)
+    dry_run: bool = False
+
+
+class AdminScheduleRebalanceOut(BaseModel):
+    before_max: int
+    after_max: int
+    moved: int
+    passes: int
+    target_max: int
+    dry_run: bool
+    plan: list[dict]
