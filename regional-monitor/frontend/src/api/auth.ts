@@ -71,4 +71,7 @@ export const authApi = {
   /** 본인 프로필 수정 — 이름/이메일/회사명/직함 */
   updateMyProfile: (body: MyProfileUpdateRequest) =>
     api.patch<MyProfileUpdateResponse>('/api/v1/auth/me', body),
+
+  /** 회원 탈퇴 — 본인 계정 + 모든 데이터 영구 삭제 */
+  deleteMyAccount: () => api.del<MessageResponse>('/api/v1/auth/me'),
 }

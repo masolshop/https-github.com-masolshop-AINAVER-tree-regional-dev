@@ -27,6 +27,8 @@ import {
   Crown,
   Edit3,
   X,
+  UserX,
+  AlertTriangle,
 } from 'lucide-react'
 import clsx from 'clsx'
 import { useAuthStore } from '@/store/auth'
@@ -64,6 +66,7 @@ export function Sidebar({ onItemClick }: SidebarProps = {}) {
   const { user, isAuthenticated, openLoginModal } = useAuthStore()
   const logoutMut = useLogout()
   const [editOpen, setEditOpen] = useState(false)
+  const [withdrawOpen, setWithdrawOpen] = useState(false)
 
   const handleMenuClick = (item: MenuItem, e: React.MouseEvent) => {
     if (item.requireAuth && !isAuthenticated) {
@@ -135,18 +138,26 @@ export function Sidebar({ onItemClick }: SidebarProps = {}) {
                 <Edit3 size={14} /> 정보 수정
               </button>
               <button
-                onClick={() => {
-                  onItemClick?.()
-                  logoutMut.mutate(undefined, {
-                    onSettled: () => navigate('/'),
-                  })
-                }}
-                disabled={logoutMut.isPending}
-                className="flex-1 flex items-center justify-center gap-1.5 py-2 text-caption font-medium rounded-xl bg-white/10 hover:bg-white/20 transition-colors disabled:opacity-60"
+                onClick={() => setWithdrawOpen(true)}
+                disabled={user.is_superadmin}
+                title={user.is_superadmin ? '슈퍼어드민은 본인 탈퇴 불가' : '회원 탈퇴'}
+                className="flex-1 flex items-center justify-center gap-1.5 py-2 text-caption font-medium rounded-xl bg-rose-500/20 hover:bg-rose-500/40 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
               >
-                <LogOut size={14} /> 로그아웃
+                <UserX size={14} /> 탈퇴
               </button>
             </div>
+            <button
+              onClick={() => {
+                onItemClick?.()
+                logoutMut.mutate(undefined, {
+                  onSettled: () => navigate('/'),
+                })
+              }}
+              disabled={logoutMut.isPending}
+              className="w-full flex items-center justify-center gap-1.5 py-2 text-caption font-medium rounded-xl bg-white/10 hover:bg-white/20 transition-colors disabled:opacity-60"
+            >
+              <LogOut size={14} /> 로그아웃
+            </button>
           </div>
         ) : (
           <div className="space-y-3">
@@ -231,6 +242,19 @@ export function Sidebar({ onItemClick }: SidebarProps = {}) {
       {/* 본인 정보 수정 모달 */}
       {editOpen && user && (
         <ProfileEditModal user={user} onClose={() => setEditOpen(false)} />
+      )}
+
+      {/* 회원 탈퇴 확인 모달 */}
+      {withdrawOpen && user && (
+        <WithdrawConfirmModal
+          user={user}
+          onClose={() => setWithdrawOpen(false)}
+          onDone={() => {
+            setWithdrawOpen(false)
+            onItemClick?.()
+            navigate('/')
+          }}
+        />
       )}
     </aside>
   )
@@ -380,6 +404,121 @@ function ProfileEditModal({ user, onClose }: { user: User; onClose: () => void }
               className="rounded-lg bg-brand-500 px-4 py-2 text-sm font-bold text-white hover:bg-brand-600 disabled:opacity-50"
             >
               {mutation.isPending ? '저장 중…' : '저장'}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>,
+    document.body,
+  )
+}
+
+
+// ──────────────────────────────────────────────────────────────
+// 회원 탈퇴 확인 모달 — 이메일 입력으로 확인 후 영구 삭제
+// ──────────────────────────────────────────────────────────────
+
+function WithdrawConfirmModal({
+  user,
+  onClose,
+  onDone,
+}: {
+  user: User
+  onClose: () => void
+  onDone: () => void
+}) {
+  const logout = useAuthStore((s) => s.logout)
+  const [confirm, setConfirm] = useState('')
+  const [errMsg, setErrMsg] = useState('')
+
+  const ok = confirm.trim().toLowerCase() === (user.email || '').toLowerCase() && !!user.email
+
+  const mutation = useMutation({
+    mutationFn: () => authApi.deleteMyAccount(),
+    onSuccess: () => {
+      // 토큰 제거 + 사용자 정보 초기화
+      logout()
+      onDone()
+    },
+    onError: (err: any) => {
+      const msg =
+        err?.response?.data?.detail ||
+        err?.message ||
+        '탈퇴 처리 중 오류가 발생했습니다.'
+      setErrMsg(typeof msg === 'string' ? msg : JSON.stringify(msg))
+    },
+  })
+
+  return createPortal(
+    <div
+      className="fixed inset-0 z-[1000] grid place-items-center bg-black/50 px-4"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose()
+      }}
+    >
+      <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl">
+        <div className="mb-4 flex items-center justify-between">
+          <h3 className="text-lg font-bold text-rose-700 flex items-center gap-2">
+            <AlertTriangle size={18} className="text-rose-600" /> 회원 탈퇴
+          </h3>
+          <button
+            onClick={onClose}
+            className="rounded-lg p-1 text-ink-muted hover:bg-slate-100 hover:text-ink"
+          >
+            <X size={18} />
+          </button>
+        </div>
+
+        <div className="space-y-4">
+          <div className="rounded-lg border border-rose-200 bg-rose-50 p-4 text-sm text-rose-800">
+            <div className="font-bold">⚠️ 되돌릴 수 없는 작업입니다</div>
+            <div className="mt-1 text-rose-700 leading-relaxed">
+              <strong>{user.email}</strong> 계정과 다음 데이터가 영구 삭제됩니다:
+              <ul className="mt-1.5 list-disc pl-5 text-[12.5px]">
+                <li>등록된 070 번호 / 사업장 정보 전체</li>
+                <li>변경 이벤트 / 일일 검증 이력</li>
+                <li>결제 내역</li>
+              </ul>
+              <div className="mt-2 text-[12px]">
+                탈퇴 후 동일 이메일로 재가입은 가능하나, 기존 데이터는 복구할 수 없습니다.
+              </div>
+            </div>
+          </div>
+
+          <label className="block">
+            <div className="mb-1 text-xs font-semibold text-ink-muted">
+              확인을 위해 본인 이메일을 입력하세요
+            </div>
+            <input
+              value={confirm}
+              onChange={(e) => setConfirm(e.target.value)}
+              placeholder={user.email}
+              className="w-full rounded-lg border border-line bg-white px-3 py-2 font-mono text-sm focus:border-rose-400 focus:outline-none"
+            />
+          </label>
+
+          {errMsg && (
+            <div className="rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">
+              {errMsg}
+            </div>
+          )}
+
+          <div className="flex justify-end gap-2 pt-1">
+            <button
+              onClick={onClose}
+              className="rounded-lg border border-line bg-white px-4 py-2 text-sm font-semibold text-ink hover:bg-slate-50"
+            >
+              취소
+            </button>
+            <button
+              onClick={() => {
+                setErrMsg('')
+                mutation.mutate()
+              }}
+              disabled={!ok || mutation.isPending}
+              className="rounded-lg bg-rose-600 px-4 py-2 text-sm font-bold text-white hover:bg-rose-700 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              {mutation.isPending ? '탈퇴 처리 중…' : '영구 탈퇴'}
             </button>
           </div>
         </div>

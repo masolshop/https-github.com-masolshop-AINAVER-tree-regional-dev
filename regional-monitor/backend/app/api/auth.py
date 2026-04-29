@@ -35,6 +35,9 @@ from app.core import (
 )
 from app.core.security import hash_password
 from app.models.user import User
+from app.models.place import RegisteredPlace
+from app.models.check import ChangeEvent, DailyHealthCheck
+from app.models.payment import Payment
 from app.schemas.auth import (
     GoogleLoginRequest,
     GoogleLoginResponse,
@@ -637,4 +640,51 @@ async def update_verify_slot(
     return VerifySlotUpdateResponse(
         user=_user_to_out(user),
         next_run_at=next_run,
+    )
+
+
+# ─────────────────────────── 회원 탈퇴 ───────────────────────────
+
+@router.delete("/me", response_model=MessageResponse)
+async def delete_my_account(
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> MessageResponse:
+    """본인 회원 탈퇴 — 등록 070 / 변경 이벤트 / 검증 이력 / 결제 레코드 영구 삭제.
+
+    - 슈퍼어드민은 본인 탈퇴 차단 (lockout 방지) — 어드민 콘솔에서 다른 어드민이 처리.
+    - 외래키 cascade 보장이 없어 명시적으로 자식 테이블부터 삭제.
+    - 클라이언트는 응답 후 토큰 제거 + 홈으로 이동해야 함.
+    """
+    if user.is_superadmin:
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN,
+            "슈퍼어드민 계정은 본인 탈퇴할 수 없습니다. 다른 어드민에게 요청하세요.",
+        )
+
+    from sqlalchemy import delete as sa_delete
+
+    user_id = user.id
+    user_email = user.email
+
+    # 1) 등록 장소 → 검증 이력/이벤트 함께 삭제
+    place_ids = [
+        pid for (pid,) in (await db.execute(
+            select(RegisteredPlace.id).where(RegisteredPlace.user_id == user_id)
+        )).all()
+    ]
+    if place_ids:
+        await db.execute(sa_delete(DailyHealthCheck).where(DailyHealthCheck.place_id_ref.in_(place_ids)))
+        await db.execute(sa_delete(ChangeEvent).where(ChangeEvent.place_id_ref.in_(place_ids)))
+        await db.execute(sa_delete(RegisteredPlace).where(RegisteredPlace.id.in_(place_ids)))
+
+    # 2) 결제 레코드
+    await db.execute(sa_delete(Payment).where(Payment.user_id == user_id))
+
+    # 3) 사용자 본체
+    await db.delete(user)
+    await db.commit()
+
+    return MessageResponse(
+        message=f"회원 탈퇴가 완료되었습니다. ({user_email}) — 모든 데이터가 영구 삭제되었습니다."
     )
