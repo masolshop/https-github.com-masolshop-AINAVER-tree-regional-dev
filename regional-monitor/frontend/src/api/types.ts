@@ -332,6 +332,23 @@ export interface SignupResponse {
   user: User
 }
 
+/* ─────────── 가입 전 중복 확인 (휴대폰/이메일) ─────────── */
+
+export type CheckDuplicateField = 'phone' | 'email'
+
+export interface CheckDuplicateRequest {
+  field: CheckDuplicateField
+  value: string
+}
+
+export interface CheckDuplicateResponse {
+  field: CheckDuplicateField
+  value_normalized: string
+  available: boolean
+  valid_format: boolean
+  message: string
+}
+
 /* ─────────── 아이디/비밀번호 찾기 ─────────── */
 
 export interface ForgotIdRequest {

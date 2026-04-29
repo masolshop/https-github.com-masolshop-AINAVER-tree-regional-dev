@@ -15,6 +15,7 @@ import type {
   PasswordLoginRequest,
   ProfileCompleteRequest,
   SignupRequest,
+  CheckDuplicateRequest,
   ForgotIdRequest,
   ForgotPasswordRequest,
   ResetPasswordRequest,
@@ -53,6 +54,13 @@ export function useSignup() {
     onSuccess: (data) => {
       setSession(data.access_token, data.user)
     },
+  })
+}
+
+/** 가입 전 휴대폰/이메일 중복 확인 */
+export function useCheckDuplicate() {
+  return useMutation({
+    mutationFn: (body: CheckDuplicateRequest) => authApi.checkDuplicate(body),
   })
 }
 

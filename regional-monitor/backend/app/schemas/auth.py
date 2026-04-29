@@ -107,6 +107,27 @@ class SignupResponse(BaseModel):
     user: UserOut
 
 
+# ─────────── 가입 전 중복 확인 (휴대폰/이메일) ───────────
+
+class CheckDuplicateRequest(BaseModel):
+    """가입 전 휴대폰/이메일 중복 여부 확인.
+
+    `field`:
+      - "phone": value 는 010-XXXX-XXXX / 01012345678 / 10-1234-5678 / 1012345678 등 모든 형식 허용
+      - "email": value 는 이메일 형식
+    """
+    field: str = Field(..., description="'phone' 또는 'email'")
+    value: str = Field(..., min_length=1, max_length=255)
+
+
+class CheckDuplicateResponse(BaseModel):
+    field: str                # "phone" 또는 "email"
+    value_normalized: str     # 정규화된 값 (예: 010-1234-5678 / lowercased email)
+    available: bool           # True = 사용 가능, False = 이미 가입됨
+    message: str              # UI 표시용 한국어 메시지
+    valid_format: bool = True # 형식 유효성 (False 면 정규식 통과 실패)
+
+
 # ─────────── 아이디/비밀번호 찾기 ───────────
 
 class ForgotIdRequest(BaseModel):

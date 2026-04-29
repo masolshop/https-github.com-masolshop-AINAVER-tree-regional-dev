@@ -38,20 +38,39 @@ import {
   useCompleteProfile,
   usePasswordLogin,
   useSignup,
+  useCheckDuplicate,
   useForgotId,
   useForgotPassword,
 } from '@/hooks/useAuth'
 import { ApiError } from '@/api/client'
 
-/** 010-XXXX-XXXX 자동 포맷 */
+/** 모든 입력 형식(010/10/01012345678/10-1234-5678/+82 등)을 010-XXXX-XXXX 로 변환.
+ *  입력 중간 단계도 자연스럽게 보이도록 부분 입력 시 dash 자동 삽입. */
 function formatPhone(input: string): string {
-  const digits = input.replace(/\D/g, '').slice(0, 11)
+  let digits = (input || '').replace(/\D/g, '')
+
+  // +82 / 82 국제번호 → 0 으로 시작
+  if (digits.startsWith('82') && digits.length >= 11) {
+    digits = '0' + digits.slice(2)
+  }
+
+  // 앞 0 누락 (10/11/16/17/18/19) → 0 보강
+  if (
+    digits.length >= 10 &&
+    !digits.startsWith('0') &&
+    /^(10|11|16|17|18|19)/.test(digits)
+  ) {
+    digits = '0' + digits
+  }
+
+  digits = digits.slice(0, 11)
+
   if (digits.length < 4) return digits
   if (digits.length < 8) return `${digits.slice(0, 3)}-${digits.slice(3)}`
   return `${digits.slice(0, 3)}-${digits.slice(3, 7)}-${digits.slice(7)}`
 }
 
-const PHONE_REGEX = /^010-\d{4}-\d{4}$/
+const PHONE_REGEX = /^01[016789]-\d{3,4}-\d{4}$/
 
 /* ═══════════════════════════════════════════════════════════════════
  *   메인 모달
@@ -381,11 +400,20 @@ function LoginStep() {
 /* ═══════════════════════════════════════════════════════════════════
  *   Step: 직접 회원가입
  * ═══════════════════════════════════════════════════════════════════ */
+/** 중복체크 결과 상태 */
+type DupState =
+  | { status: 'idle' }                                              // 미확인 (입력 변경 직후)
+  | { status: 'checking' }                                          // 검증 중
+  | { status: 'available'; message: string; normalized?: string }   // 사용 가능
+  | { status: 'taken'; message: string }                            // 이미 사용 중
+  | { status: 'invalid'; message: string }                          // 형식 오류
+
 function SignupStep() {
   const setModalStep = useAuthStore((s) => s.setModalStep)
   const redirectAfterLogin = useAuthStore((s) => s.redirectAfterLogin)
   const navigate = useNavigate()
   const signup = useSignup()
+  const checkDup = useCheckDuplicate()
 
   // 휴대폰 번호 = 아이디 (별도 username 입력 없이 휴대폰의 숫자만 추출하여 username 으로 사용)
   const [password, setPassword] = useState('')
@@ -403,6 +431,10 @@ function SignupStep() {
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
   const [submitted, setSubmitted] = useState(false)
 
+  // 중복체크 상태 (값 변경 시 idle 로 초기화 → 사용자에게 재확인 강제)
+  const [phoneDup, setPhoneDup] = useState<DupState>({ status: 'idle' })
+  const [emailDup, setEmailDup] = useState<DupState>({ status: 'idle' })
+
   const passwordOk = password.length >= 8
   const passwordMatch = password === passwordConfirm && passwordConfirm.length > 0
   const emailOk = /.+@.+\..+/.test(email)
@@ -410,6 +442,11 @@ function SignupStep() {
   const phoneOk = PHONE_REGEX.test(phone.trim())
   const companyOk = company.trim().length >= 1
   const requiredAgreementsOk = agPrivacy && agTerms
+
+  // 중복확인 통과 여부 — 가입 버튼 활성화 조건
+  const phoneDupOk = phoneDup.status === 'available'
+  const emailDupOk = emailDup.status === 'available'
+
   const formValid =
     passwordOk &&
     passwordMatch &&
@@ -417,12 +454,83 @@ function SignupStep() {
     nameOk &&
     phoneOk &&
     companyOk &&
-    requiredAgreementsOk
+    requiredAgreementsOk &&
+    phoneDupOk &&
+    emailDupOk
+
+  /** 휴대폰 중복확인 버튼 핸들러 */
+  const handleCheckPhone = () => {
+    const value = phone.trim()
+    if (!PHONE_REGEX.test(value)) {
+      setPhoneDup({ status: 'invalid', message: '010-0000-0000 형식으로 입력해주세요' })
+      return
+    }
+    setPhoneDup({ status: 'checking' })
+    checkDup.mutate(
+      { field: 'phone', value },
+      {
+        onSuccess: (data) => {
+          if (!data.valid_format) {
+            setPhoneDup({ status: 'invalid', message: data.message })
+          } else if (data.available) {
+            setPhoneDup({ status: 'available', message: data.message, normalized: data.value_normalized })
+            // 정규화된 값으로 입력란 자동 업데이트 (예: 1012345678 → 010-1234-5678)
+            if (data.value_normalized && data.value_normalized !== value) {
+              setPhone(data.value_normalized)
+            }
+          } else {
+            setPhoneDup({ status: 'taken', message: data.message })
+          }
+        },
+        onError: (err) => {
+          const msg = err instanceof ApiError ? err.message : (err as Error).message
+          setPhoneDup({ status: 'invalid', message: msg || '확인 실패' })
+        },
+      },
+    )
+  }
+
+  /** 이메일 중복확인 버튼 핸들러 */
+  const handleCheckEmail = () => {
+    const value = email.trim()
+    if (!/.+@.+\..+/.test(value)) {
+      setEmailDup({ status: 'invalid', message: '이메일 형식이 올바르지 않습니다' })
+      return
+    }
+    setEmailDup({ status: 'checking' })
+    checkDup.mutate(
+      { field: 'email', value },
+      {
+        onSuccess: (data) => {
+          if (!data.valid_format) {
+            setEmailDup({ status: 'invalid', message: data.message })
+          } else if (data.available) {
+            setEmailDup({ status: 'available', message: data.message })
+          } else {
+            setEmailDup({ status: 'taken', message: data.message })
+          }
+        },
+        onError: (err) => {
+          const msg = err instanceof ApiError ? err.message : (err as Error).message
+          setEmailDup({ status: 'invalid', message: msg || '확인 실패' })
+        },
+      },
+    )
+  }
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     setSubmitted(true)
     setErrorMsg(null)
+
+    if (!phoneDupOk) {
+      setErrorMsg('휴대폰 번호 중복확인을 진행해주세요.')
+      return
+    }
+    if (!emailDupOk) {
+      setErrorMsg('이메일 중복확인을 진행해주세요.')
+      return
+    }
     if (!formValid) return
 
     // 휴대폰 010-1234-5678 → username "01012345678" (숫자 11자리)
@@ -450,6 +558,12 @@ function SignupStep() {
         },
         onError: (err) => {
           const msg = err instanceof ApiError ? err.message : (err as Error).message
+          // 백엔드가 휴대폰/이메일 중복을 반환한 경우 해당 필드 상태도 갱신
+          if (msg && msg.includes('휴대폰')) {
+            setPhoneDup({ status: 'taken', message: msg })
+          } else if (msg && msg.includes('이메일')) {
+            setEmailDup({ status: 'taken', message: msg })
+          }
           setErrorMsg(msg || '가입 실패')
         },
       },
@@ -482,25 +596,49 @@ function SignupStep() {
       />
 
       <form onSubmit={handleSubmit} className="space-y-4">
-        {/* 휴대폰 = 아이디 */}
+        {/* 휴대폰 = 아이디 + 중복확인 */}
         <FieldRow
           icon={<Phone size={14} />}
           label="휴대폰 번호 (아이디)"
           required
-          hint="가입 후 이 번호로 로그인합니다"
-          error={submitted && !phoneOk ? '010-0000-0000 형식으로 입력해주세요' : null}
+          hint="가입 후 이 번호로 로그인 / 010·10·dash·공백 모두 자동 인식"
+          error={
+            submitted && !phoneOk
+              ? '010-0000-0000 형식으로 입력해주세요'
+              : submitted && !phoneDupOk
+                ? '휴대폰 중복확인을 진행해주세요'
+                : null
+          }
         >
-          <input
-            type="tel"
-            value={phone}
-            onChange={(e) => setPhone(formatPhone(e.target.value))}
-            placeholder="010-0000-0000"
-            inputMode="numeric"
-            maxLength={13}
-            autoComplete="tel"
-            autoFocus
-            className="rm-field-input"
-          />
+          <div className="flex gap-2">
+            <input
+              type="tel"
+              value={phone}
+              onChange={(e) => {
+                setPhone(formatPhone(e.target.value))
+                setPhoneDup({ status: 'idle' })
+              }}
+              placeholder="010-0000-0000"
+              inputMode="numeric"
+              maxLength={13}
+              autoComplete="tel"
+              autoFocus
+              className="rm-field-input flex-1"
+            />
+            <button
+              type="button"
+              onClick={handleCheckPhone}
+              disabled={!phoneOk || phoneDup.status === 'checking'}
+              className="shrink-0 px-3.5 rounded-xl bg-brand-50 hover:bg-brand-100 disabled:opacity-50 disabled:cursor-not-allowed text-brand-700 text-caption font-semibold border border-brand-200 transition-colors"
+            >
+              {phoneDup.status === 'checking' ? (
+                <Loader2 className="animate-spin" size={14} />
+              ) : (
+                '중복확인'
+              )}
+            </button>
+          </div>
+          <DupStatusBadge state={phoneDup} />
         </FieldRow>
 
         {/* 비밀번호 */}
@@ -538,22 +676,46 @@ function SignupStep() {
           />
         </FieldRow>
 
-        {/* 이메일 */}
+        {/* 이메일 + 중복확인 */}
         <FieldRow
           icon={<Mail size={14} />}
           label="이메일"
           required
           hint="아이디·비번 찾기에 사용"
-          error={submitted && !emailOk ? '이메일 형식이 올바르지 않습니다' : null}
+          error={
+            submitted && !emailOk
+              ? '이메일 형식이 올바르지 않습니다'
+              : submitted && !emailDupOk
+                ? '이메일 중복확인을 진행해주세요'
+                : null
+          }
         >
-          <input
-            type="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            placeholder="you@email.com"
-            autoComplete="email"
-            className="rm-field-input"
-          />
+          <div className="flex gap-2">
+            <input
+              type="email"
+              value={email}
+              onChange={(e) => {
+                setEmail(e.target.value)
+                setEmailDup({ status: 'idle' })
+              }}
+              placeholder="you@email.com"
+              autoComplete="email"
+              className="rm-field-input flex-1"
+            />
+            <button
+              type="button"
+              onClick={handleCheckEmail}
+              disabled={!emailOk || emailDup.status === 'checking'}
+              className="shrink-0 px-3.5 rounded-xl bg-brand-50 hover:bg-brand-100 disabled:opacity-50 disabled:cursor-not-allowed text-brand-700 text-caption font-semibold border border-brand-200 transition-colors"
+            >
+              {emailDup.status === 'checking' ? (
+                <Loader2 className="animate-spin" size={14} />
+              ) : (
+                '중복확인'
+              )}
+            </button>
+          </div>
+          <DupStatusBadge state={emailDup} />
         </FieldRow>
 
         {/* 이름 */}
@@ -1127,6 +1289,38 @@ function ProfileStep() {
 }
 
 /* ─────────────── 보조 컴포넌트 ─────────────── */
+
+/** 중복확인 결과 뱃지 — 입력 필드 아래에 표시 */
+function DupStatusBadge({ state }: { state: DupState }) {
+  if (state.status === 'idle') {
+    return (
+      <p className="mt-1.5 text-caption text-ink-muted flex items-center gap-1">
+        <AlertCircle size={11} />
+        가입 전 <b className="text-ink">중복확인</b> 버튼을 눌러주세요
+      </p>
+    )
+  }
+  if (state.status === 'checking') {
+    return (
+      <p className="mt-1.5 text-caption text-ink-muted flex items-center gap-1">
+        <Loader2 size={11} className="animate-spin" /> 확인 중…
+      </p>
+    )
+  }
+  if (state.status === 'available') {
+    return (
+      <p className="mt-1.5 text-caption text-emerald-600 flex items-center gap-1 font-semibold">
+        <CheckCircle2 size={12} /> {state.message}
+      </p>
+    )
+  }
+  // taken / invalid
+  return (
+    <p className="mt-1.5 text-caption text-red-600 flex items-center gap-1 font-semibold">
+      <AlertCircle size={12} /> {state.message}
+    </p>
+  )
+}
 
 interface FieldRowProps {
   icon: React.ReactNode

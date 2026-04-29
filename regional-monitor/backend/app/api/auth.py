@@ -66,6 +66,7 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 
 _PHONE_RE = re.compile(r"^01[016789]-?\d{3,4}-?\d{4}$")
 _USERNAME_RE = re.compile(r"^[A-Za-z0-9_.]{4,30}$")
+_EMAIL_RE = re.compile(r"^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$")
 _RESERVED_USERNAMES = {
     "admin", "administrator", "root", "superadmin", "system",
     "support", "help", "info", "noreply", "no-reply", "test",
@@ -74,13 +75,38 @@ _RESERVED_USERNAMES = {
 
 
 def _normalize_phone(raw: str) -> str:
-    """01012345678 / 010 1234 5678 → 010-1234-5678 형태로 정규화."""
-    digits = re.sub(r"\D", "", raw)
+    """모든 입력 형식을 010-XXXX-XXXX 로 통일.
+
+    허용 입력 (모두 동일하게 인식):
+      - "010-1234-5678"  / "01012345678"  / "010 1234 5678"
+      - "10-1234-5678"   / "1012345678"   / "10 1234 5678"   (앞 0 누락)
+      - "+82-10-1234-5678" / "+8210-1234-5678"               (국가번호)
+
+    실패 시: digits-only 추출 후 regex 매칭 안 되면 원본 반환.
+    """
+    digits = re.sub(r"\D", "", raw or "")
+
+    # +82 / 82 국제번호 → 0 으로 시작하도록 변환
+    if digits.startswith("82") and len(digits) in (11, 12):
+        digits = "0" + digits[2:]
+
+    # 앞에 0 누락 (10... / 11... 등) → 0 prefix 보강
+    if len(digits) == 10 and digits.startswith(("10", "11", "16", "17", "18", "19")):
+        digits = "0" + digits          # → 01012345678 (11자리)
+    elif len(digits) == 9 and digits.startswith(("10", "11", "16", "17", "18", "19")):
+        digits = "0" + digits          # → 0101234567  (10자리, 구형 8자리 번호용)
+
     if len(digits) == 11 and digits.startswith("01"):
         return f"{digits[:3]}-{digits[3:7]}-{digits[7:]}"
     if len(digits) == 10 and digits.startswith("01"):
         return f"{digits[:3]}-{digits[3:6]}-{digits[6:]}"
-    return raw  # validation은 정규식이 이미 통과한 것만 들어옴
+    return raw  # 정규식이 이미 통과한 것만 들어옴 — fallback
+
+
+def _is_valid_phone(raw: str) -> bool:
+    """모든 입력 형식(010/10/dash/공백/국제번호)을 정규화 후 010-XXXX-XXXX 형식 검증."""
+    normalized = _normalize_phone(raw)
+    return bool(_PHONE_RE.match(normalized.replace(" ", "")))
 
 
 def _user_to_out(u: User) -> UserOut:
@@ -307,6 +333,103 @@ async def complete_profile(
     return MeResponse(user=_user_to_out(user))
 
 
+# ─────────────────────────── 가입 전 중복 확인 (휴대폰/이메일) ───────────────────────────
+
+@router.post("/check-duplicate")
+async def check_duplicate(
+    body: dict,
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """가입 전 휴대폰/이메일 중복 여부 확인.
+
+    body:
+      - field: "phone" 또는 "email"
+      - value: 검사할 값 (휴대폰은 모든 형식 허용 — 010/10/dash/공백/국제번호 모두 정규화)
+
+    응답:
+      - valid_format: 형식 유효성
+      - value_normalized: 정규화된 값 (UI 입력란에 그대로 채워넣기 가능)
+      - available: True = 사용 가능 / False = 이미 가입됨
+      - message: UI 표시용 한국어 메시지
+    """
+    field = (body.get("field") or "").strip().lower()
+    value = (body.get("value") or "").strip()
+
+    if field not in ("phone", "email"):
+        raise HTTPException(400, detail="field 는 'phone' 또는 'email' 이어야 합니다.")
+    if not value:
+        raise HTTPException(400, detail="검사할 값을 입력해주세요.")
+
+    # ── 1) 휴대폰 ──────────────────────────────────────
+    if field == "phone":
+        if not _is_valid_phone(value):
+            return {
+                "field": "phone",
+                "value_normalized": value,
+                "available": False,
+                "valid_format": False,
+                "message": "휴대폰 형식이 올바르지 않습니다. 예: 010-1234-5678",
+            }
+        normalized = _normalize_phone(value)
+        digits_only = re.sub(r"\D", "", value)
+        # +82 / 앞 0 누락 등은 _normalize_phone 이 이미 처리 → 정규화된 디지트 재추출
+        norm_digits = re.sub(r"\D", "", normalized)
+
+        result = await db.execute(
+            select(User).where(
+                or_(
+                    User.phone == normalized,
+                    User.username == norm_digits,
+                    User.username == digits_only,
+                )
+            )
+        )
+        existing = result.scalars().first()
+        if existing:
+            return {
+                "field": "phone",
+                "value_normalized": normalized,
+                "available": False,
+                "valid_format": True,
+                "message": "이미 가입된 휴대폰 번호입니다.",
+            }
+        return {
+            "field": "phone",
+            "value_normalized": normalized,
+            "available": True,
+            "valid_format": True,
+            "message": "사용 가능한 휴대폰 번호입니다.",
+        }
+
+    # ── 2) 이메일 ──────────────────────────────────────
+    email_lower = value.lower()
+    if not _EMAIL_RE.match(email_lower):
+        return {
+            "field": "email",
+            "value_normalized": email_lower,
+            "available": False,
+            "valid_format": False,
+            "message": "이메일 형식이 올바르지 않습니다.",
+        }
+    result = await db.execute(select(User).where(User.email == email_lower))
+    existing = result.scalars().first()
+    if existing:
+        return {
+            "field": "email",
+            "value_normalized": email_lower,
+            "available": False,
+            "valid_format": True,
+            "message": "이미 가입된 이메일입니다.",
+        }
+    return {
+        "field": "email",
+        "value_normalized": email_lower,
+        "available": True,
+        "valid_format": True,
+        "message": "사용 가능한 이메일입니다.",
+    }
+
+
 # ─────────────────────────── 직접 회원가입 (아이디/비밀번호) ───────────────────────────
 
 @router.post("/signup", response_model=SignupResponse)
@@ -332,24 +455,35 @@ async def signup(
         )
     if body.username.lower() in _RESERVED_USERNAMES:
         raise HTTPException(400, detail="사용할 수 없는 아이디입니다.")
-    if not _PHONE_RE.match(body.phone.replace(" ", "")):
+    if not _is_valid_phone(body.phone):
         raise HTTPException(
             400, detail="휴대폰 형식이 올바르지 않습니다. 예: 010-1234-5678"
         )
     if len(body.password) < 8:
         raise HTTPException(400, detail="비밀번호는 8자 이상이어야 합니다.")
 
-    # 3) 중복 검사
+    # 3) 중복 검사 — username / email / phone 모두 검사
     email_lower = body.email.lower().strip()
+    phone_normalized = _normalize_phone(body.phone)
+    phone_digits = re.sub(r"\D", "", body.phone)
     dup = await db.execute(
-        select(User).where(or_(User.email == email_lower, User.username == body.username))
+        select(User).where(
+            or_(
+                User.email == email_lower,
+                User.username == body.username,
+                User.username == phone_digits,    # 휴대폰 digit-only 도 username 으로 사용됨
+                User.phone == phone_normalized,
+            )
+        )
     )
-    existing = dup.scalar_one_or_none()
+    existing = dup.scalars().first()
     if existing:
         if existing.username == body.username:
             raise HTTPException(409, detail="이미 사용 중인 아이디입니다.")
         if existing.email == email_lower:
             raise HTTPException(409, detail="이미 가입된 이메일입니다.")
+        if existing.phone == phone_normalized or existing.username == phone_digits:
+            raise HTTPException(409, detail="이미 가입된 휴대폰 번호입니다.")
 
     # 4) 사용자 생성 — 가입 즉시 is_profile_complete=True (모든 필드를 한 번에 받음)
     #    verify_slot/verify_slot_15m 은 flush 후 schedule_assigner 가 plan 매핑 + 균등 해시로 배정.

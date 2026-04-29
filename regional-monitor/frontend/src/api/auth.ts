@@ -12,6 +12,8 @@ import type {
   PasswordLoginResponse,
   SignupRequest,
   SignupResponse,
+  CheckDuplicateRequest,
+  CheckDuplicateResponse,
   ForgotIdRequest,
   ForgotPasswordRequest,
   ResetPasswordRequest,
@@ -34,6 +36,10 @@ export const authApi = {
   /** 직접 회원가입 (아이디/비밀번호) */
   signup: (body: SignupRequest) =>
     api.post<SignupResponse>('/api/v1/auth/signup', body),
+
+  /** 가입 전 휴대폰/이메일 중복 확인 */
+  checkDuplicate: (body: CheckDuplicateRequest) =>
+    api.post<CheckDuplicateResponse>('/api/v1/auth/check-duplicate', body),
 
   /** 신규 가입자 추가정보 + 약관 동의 저장 */
   completeProfile: (body: ProfileCompleteRequest) =>
