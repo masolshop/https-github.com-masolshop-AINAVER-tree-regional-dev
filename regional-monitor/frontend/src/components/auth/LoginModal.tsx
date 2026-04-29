@@ -197,13 +197,11 @@ function LoginStep() {
       <CloseButton />
       <ModalHeader
         icon={<ShieldCheck className="text-white" size={24} />}
-        title="타지역서비스 로그인"
-        subtitle={
-          tab === 'user' ? '휴대폰 번호로 로그인' : '어드민 계정 (이메일·아이디) 로그인'
-        }
+        title="타지역서비스 네이버노출"
+        subtitle="자동체크 솔루션 회원가입 및 로그인"
       />
 
-      {/* 탭 */}
+      {/* 탭: 회원로그인 / 회원가입 — 어드민 로그인은 하단 링크로 이동 */}
       <div className="flex gap-1 p-1 bg-bg-subtle rounded-xl mb-5">
         <button
           type="button"
@@ -215,19 +213,14 @@ function LoginStep() {
             tab === 'user' ? 'bg-white text-ink shadow-sm' : 'text-ink-muted hover:text-ink'
           }`}
         >
-          일반 사용자
+          회원로그인
         </button>
         <button
           type="button"
-          onClick={() => {
-            setTab('admin')
-            setErrorMsg(null)
-          }}
-          className={`flex-1 py-2 rounded-lg text-caption font-semibold transition-colors ${
-            tab === 'admin' ? 'bg-white text-ink shadow-sm' : 'text-ink-muted hover:text-ink'
-          }`}
+          onClick={() => setModalStep('signup')}
+          className="flex-1 py-2 rounded-lg text-caption font-semibold transition-colors text-ink-muted hover:text-ink"
         >
-          어드민 로그인
+          회원가입
         </button>
       </div>
 
@@ -276,14 +269,17 @@ function LoginStep() {
             )}
           </button>
 
-          {/* 회원가입 / 찾기 링크 */}
+          {/* 어드민 로그인 / 찾기 링크 */}
           <div className="flex items-center justify-between pt-1 text-caption">
             <button
               type="button"
-              onClick={() => setModalStep('signup')}
-              className="text-brand-600 hover:text-brand-700 font-semibold"
+              onClick={() => {
+                setTab('admin')
+                setErrorMsg(null)
+              }}
+              className="text-brand-600 hover:text-brand-700 font-semibold inline-flex items-center gap-1"
             >
-              회원가입
+              <ShieldCheck size={12} /> 어드민 로그인
             </button>
             <div className="flex items-center gap-3 text-ink-muted">
               <button
@@ -354,6 +350,20 @@ function LoginStep() {
               </>
             )}
           </button>
+
+          {/* 회원로그인으로 돌아가기 */}
+          <div className="text-center pt-1 text-caption">
+            <button
+              type="button"
+              onClick={() => {
+                setTab('user')
+                setErrorMsg(null)
+              }}
+              className="text-ink-muted hover:text-ink"
+            >
+              ← 회원 <span className="text-brand-600 font-semibold">로그인으로 돌아가기</span>
+            </button>
+          </div>
         </form>
       )}
 
