@@ -399,7 +399,21 @@ async def update_user(
         if body.is_superadmin:
             u.verify_frequency = "paused"
     if body.name is not None:
-        u.name = body.name
+        u.name = body.name.strip()
+    if body.email is not None:
+        new_email = body.email.strip().lower()
+        if not new_email or "@" not in new_email:
+            raise HTTPException(400, "유효한 이메일 형식이 아닙니다.")
+        if new_email != (u.email or "").lower():
+            # 중복 검사
+            dup = (await db.execute(
+                select(User).where(User.email == new_email, User.id != u.id)
+            )).scalar_one_or_none()
+            if dup:
+                raise HTTPException(409, f"이미 사용 중인 이메일입니다: {new_email}")
+            u.email = new_email
+    if body.company is not None:
+        u.company = body.company.strip() or None
 
     # 플랜이 바뀌면 자동 검증 주기도 새 플랜의 기본값으로 갱신.
     # ("항상 자동" 정책 — 회원이 paused 로 직접 바꿨으면 그건 보존되도록 overwrite=False)

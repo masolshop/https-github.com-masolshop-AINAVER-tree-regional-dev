@@ -42,6 +42,8 @@ class AdminUserPatch(BaseModel):
     blocked_reason: str | None = Field(default=None, max_length=500)
     is_superadmin: bool | None = None
     name: str | None = Field(default=None, min_length=1, max_length=120)
+    email: str | None = Field(default=None, min_length=3, max_length=255)
+    company: str | None = Field(default=None, max_length=120)
 
 
 # ──────────────────────────────────────────────────────────────

@@ -232,6 +232,9 @@ function EditUserModal({
   isSelf: boolean
 }) {
   const queryClient = useQueryClient()
+  const [name, setName] = useState<string>(user.name || '')
+  const [email, setEmail] = useState<string>(user.email || '')
+  const [company, setCompany] = useState<string>(user.company || '')
   const [plan, setPlan] = useState<AdminPlanKey>(user.plan)
   const [quotaPlaces, setQuotaPlaces] = useState<number>(user.quota_places)
   const [isActive, setIsActive] = useState<boolean>(user.is_active)
@@ -239,14 +242,29 @@ function EditUserModal({
   const [isSuperadmin, setIsSuperadmin] = useState<boolean>(user.is_superadmin)
 
   const mutation = useMutation({
-    mutationFn: () =>
-      adminApi.patchUser(user.id, {
+    mutationFn: () => {
+      const patch: import('@/api/admin').AdminUserPatch = {
         plan,
         quota_places: quotaPlaces,
         is_active: isActive,
         blocked_reason: !isActive ? blockedReason || null : null,
         is_superadmin: isSuperadmin,
-      }),
+      }
+      // 변경된 텍스트 필드만 전송
+      const trimmedName = name.trim()
+      if (trimmedName && trimmedName !== user.name) {
+        patch.name = trimmedName
+      }
+      const trimmedEmail = email.trim().toLowerCase()
+      if (trimmedEmail && trimmedEmail !== (user.email || '').toLowerCase()) {
+        patch.email = trimmedEmail
+      }
+      const trimmedCompany = company.trim()
+      if (trimmedCompany !== (user.company || '')) {
+        patch.company = trimmedCompany || null
+      }
+      return adminApi.patchUser(user.id, patch)
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['admin', 'users'] })
       queryClient.invalidateQueries({ queryKey: ['admin', 'stats'] })
@@ -257,7 +275,38 @@ function EditUserModal({
   return (
     <Modal onClose={onClose} title={`사용자 편집 — ${user.name}`}>
       <div className="space-y-4">
-        <FieldGroup label="플랜">
+        <FieldGroup label="이름">
+          <input
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="홍길동"
+            className="w-full rounded-lg border border-line bg-white px-3 py-2 text-sm"
+          />
+        </FieldGroup>
+
+        <FieldGroup label="이메일 (로그인 ID로 사용됨)">
+          <input
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            placeholder="user@example.com"
+            className="w-full rounded-lg border border-line bg-white px-3 py-2 font-mono text-sm"
+          />
+          <div className="mt-1 text-[11px] text-amber-600">
+            ⚠️ 이메일 변경 시 사용자에게 새 이메일로 안내가 필요합니다 (중복 시 409 에러).
+          </div>
+        </FieldGroup>
+
+        <FieldGroup label="회사명">
+          <input
+            value={company}
+            onChange={(e) => setCompany(e.target.value)}
+            placeholder="(선택) 회사/상호명"
+            className="w-full rounded-lg border border-line bg-white px-3 py-2 text-sm"
+          />
+        </FieldGroup>
+
+        <FieldGroup label="플랜 (유료 등업)">
           <select
             value={plan}
             onChange={(e) => {
@@ -274,6 +323,9 @@ function EditUserModal({
               </option>
             ))}
           </select>
+          <div className="mt-1 text-[11px] text-ink-muted">
+            플랜 변경 시 quota는 기본값으로 자동 갱신됩니다 (free=5, basic=50, pro=500, enterprise=10000).
+          </div>
         </FieldGroup>
 
         <FieldGroup label="등록 가능 070 수량 (quota)">

@@ -52,6 +52,8 @@ export interface AdminUserPatch {
   blocked_reason?: string | null
   is_superadmin?: boolean
   name?: string
+  email?: string
+  company?: string | null
 }
 
 export interface AdminPaymentOut {
