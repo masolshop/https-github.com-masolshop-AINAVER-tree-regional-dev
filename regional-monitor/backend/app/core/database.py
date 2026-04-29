@@ -231,7 +231,9 @@ async def _ensure_verify_schedule_v2_columns() -> None:
                     "AND verify_frequency='every3d'"
                 ))
                 # basic 은 default('every3d') 그대로 유지
+                # 균등 해시 — PostgreSQL 은 mod() 함수 사용 (text() 안에서
+                # %% 이스케이프가 asyncpg 드라이버와 호환되지 않음)
                 await conn.execute(text(
-                    "UPDATE users SET verify_slot_15m = (id * 7919) %% 96 "
+                    "UPDATE users SET verify_slot_15m = mod(id * 7919, 96) "
                     "WHERE verify_slot_15m = 0"
                 ))
