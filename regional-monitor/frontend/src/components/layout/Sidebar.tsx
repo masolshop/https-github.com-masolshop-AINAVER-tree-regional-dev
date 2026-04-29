@@ -319,7 +319,7 @@ function ProfileEditModal({ user, onClose }: { user: User; onClose: () => void }
 
           <label className="block">
             <div className="mb-1 text-xs font-semibold text-ink-muted">
-              이메일 (로그인 ID로 사용됨)
+              이메일 (알림 수신용)
             </div>
             <input
               type="email"
@@ -328,8 +328,8 @@ function ProfileEditModal({ user, onClose }: { user: User; onClose: () => void }
               placeholder="user@example.com"
               className="w-full rounded-lg border border-line bg-white px-3 py-2 font-mono text-sm focus:border-brand-400 focus:outline-none"
             />
-            <div className="mt-1 text-[11px] text-amber-600">
-              ⚠️ 이메일 변경 시 새 주소로 로그인해야 합니다 (다른 사용자와 중복 시 저장 불가).
+            <div className="mt-1 text-[11px] text-ink-muted">
+              노출 변경·검증 결과 등 알림이 이 주소로 발송됩니다.
             </div>
           </label>
 
