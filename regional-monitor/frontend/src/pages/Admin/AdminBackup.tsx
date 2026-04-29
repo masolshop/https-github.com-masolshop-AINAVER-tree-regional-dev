@@ -15,12 +15,15 @@ import {
   Clock,
   Cloud,
   CloudOff,
+  CloudUpload,
   Database,
   Download,
+  ExternalLink,
   FileArchive,
   Loader2,
   PlayCircle,
   RefreshCw,
+  Trash2,
   Users as UsersIcon,
 } from 'lucide-react'
 
@@ -29,6 +32,7 @@ import {
   type BackupCategory,
   type BackupFile,
   type BackupStatusResponse,
+  type GDriveFile,
 } from '@/api/backup'
 import { Card } from '@/components/ui/Card'
 import { formatKSTDateTime } from '@/utils/datetime'
@@ -73,6 +77,81 @@ export function AdminBackup() {
   const [runError, setRunError] = useState<string | null>(null)
   const [downloading, setDownloading] = useState<string | null>(null)
   const [downloadError, setDownloadError] = useState<string | null>(null)
+  const [gdriveBusy, setGdriveBusy] = useState<string | null>(null)
+  const [gdriveMessage, setGdriveMessage] = useState<string | null>(null)
+  const [gdriveError, setGdriveError] = useState<string | null>(null)
+
+  // ── Google Drive 원격 파일 목록 (활성화 시에만 의미 있음) ──
+  const gdriveListQ = useQuery({
+    queryKey: ['admin', 'backup', 'gdrive', 'list'],
+    queryFn: () => backupApi.gdriveList(),
+    refetchInterval: 60_000,
+    retry: 0,
+  })
+
+  // 카테고리/파일명 → Drive 파일 매핑 (있으면 ☁ 배지 표시)
+  const gdriveByName = (() => {
+    const m = new Map<string, GDriveFile>()
+    const files = gdriveListQ.data?.files ?? []
+    for (const f of files) {
+      m.set(`${f.category}/${f.name}`, f)
+    }
+    return m
+  })()
+
+  const handleGDriveUpload = async (category: BackupCategory, filename: string) => {
+    setGdriveBusy(`${category}/${filename}`)
+    setGdriveMessage(null)
+    setGdriveError(null)
+    try {
+      const r = await backupApi.gdriveUpload(category, filename)
+      setGdriveMessage(`Drive 업로드 완료: ${r.name} (${(r.size / 1024 / 1024).toFixed(2)} MB)`)
+      qc.invalidateQueries({ queryKey: ['admin', 'backup', 'gdrive'] })
+      qc.invalidateQueries({ queryKey: ['admin', 'backup', 'status'] })
+    } catch (e) {
+      setGdriveError((e as Error).message ?? 'Drive 업로드 실패')
+    } finally {
+      setGdriveBusy(null)
+    }
+  }
+
+  const handleGDriveSync = async (category: BackupCategory) => {
+    setGdriveBusy(`sync:${category}`)
+    setGdriveMessage(null)
+    setGdriveError(null)
+    try {
+      const r = await backupApi.gdriveSync(category)
+      const errs = r.errors.length ? ` (실패 ${r.errors.length}건)` : ''
+      setGdriveMessage(
+        `${CATEGORY_META[category].label} 동기화 완료 — 업로드 ${r.uploaded_count}건 / 건너뜀 ${r.skipped_count}건${errs}`,
+      )
+      qc.invalidateQueries({ queryKey: ['admin', 'backup', 'gdrive'] })
+      qc.invalidateQueries({ queryKey: ['admin', 'backup', 'status'] })
+    } catch (e) {
+      setGdriveError((e as Error).message ?? '동기화 실패')
+    } finally {
+      setGdriveBusy(null)
+    }
+  }
+
+  const handleGDrivePrune = async () => {
+    if (!confirm('Drive 보존 정책을 적용합니다 (기본 30일 초과 파일 삭제). 계속할까요?')) return
+    setGdriveBusy('prune')
+    setGdriveMessage(null)
+    setGdriveError(null)
+    try {
+      const r = await backupApi.gdrivePrune()
+      setGdriveMessage(
+        `Drive 정리 완료 — 삭제 ${r.deleted}건 / 유지 ${r.kept}건 (보존 ${r.retention_days}일)`,
+      )
+      qc.invalidateQueries({ queryKey: ['admin', 'backup', 'gdrive'] })
+      qc.invalidateQueries({ queryKey: ['admin', 'backup', 'status'] })
+    } catch (e) {
+      setGdriveError((e as Error).message ?? '정리 실패')
+    } finally {
+      setGdriveBusy(null)
+    }
+  }
 
   const runMut = useMutation({
     mutationFn: (category: BackupCategory) => backupApi.run(category),
@@ -172,6 +251,37 @@ export function AdminBackup() {
           </button>
         </Card>
       )}
+      {gdriveMessage && (
+        <Card className="flex items-start gap-2 border-sky-200 bg-sky-50 p-4 text-sky-900">
+          <CloudUpload className="h-4 w-4 shrink-0 mt-0.5" />
+          <div className="text-sm">{gdriveMessage}</div>
+          <button
+            onClick={() => setGdriveMessage(null)}
+            className="ml-auto text-xs text-sky-800 hover:underline"
+          >
+            닫기
+          </button>
+        </Card>
+      )}
+      {gdriveError && (
+        <Card className="flex items-start gap-2 border-rose-200 bg-rose-50 p-4 text-rose-800">
+          <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
+          <div className="text-sm">Drive 오류: {gdriveError}</div>
+          <button
+            onClick={() => setGdriveError(null)}
+            className="ml-auto text-xs text-rose-700 hover:underline"
+          >
+            닫기
+          </button>
+        </Card>
+      )}
+
+      {/* Google Drive 상태 카드 */}
+      <GDriveStatusCard
+        status={status}
+        onPrune={handleGDrivePrune}
+        busy={gdriveBusy}
+      />
 
       {/* 카테고리별 카드 */}
       {(['db', 'users', 'code'] as BackupCategory[]).map((cat) => {
@@ -193,6 +303,21 @@ export function AdminBackup() {
                 <div>예약: <span className="font-mono">{status.schedule[cat]}</span></div>
                 <div>{stat.count}개 · {stat.size_human}</div>
               </div>
+              {status.gdrive?.ready && (
+                <button
+                  disabled={gdriveBusy === `sync:${cat}`}
+                  onClick={() => handleGDriveSync(cat)}
+                  title="이 카테고리의 로컬 백업 중 Drive에 없는 파일을 모두 업로드"
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-sky-300 bg-white px-3 py-2 text-sm font-semibold text-sky-700 hover:bg-sky-50 disabled:opacity-50"
+                >
+                  {gdriveBusy === `sync:${cat}` ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <CloudUpload className="h-4 w-4" />
+                  )}
+                  Drive 동기화
+                </button>
+              )}
               <button
                 disabled={runMut.isPending}
                 onClick={() => runMut.mutate(cat)}
@@ -233,19 +358,56 @@ export function AdminBackup() {
                         <td className="px-5 py-2.5 tabular-nums text-ink-muted">
                           {formatKSTDateTime(f.mtime)}
                         </td>
-                        <td className="px-5 py-2.5 text-right">
-                          <button
-                            disabled={downloading === f.filename}
-                            onClick={() => handleDownload(cat, f.filename)}
-                            className="inline-flex items-center gap-1.5 rounded-lg border border-line bg-white px-3 py-1.5 text-xs font-semibold text-ink hover:bg-slate-50 disabled:opacity-50"
-                          >
-                            {downloading === f.filename ? (
-                              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                            ) : (
-                              <Download className="h-3.5 w-3.5" />
-                            )}
-                            다운로드
-                          </button>
+                        <td className="px-5 py-2.5">
+                          <div className="flex items-center justify-end gap-2">
+                            {(() => {
+                              const driveFile = gdriveByName.get(`${cat}/${f.filename}`)
+                              const busyKey = `${cat}/${f.filename}`
+                              if (driveFile) {
+                                return (
+                                  <a
+                                    href={driveFile.web_view_link ?? '#'}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    title={`Drive 업로드 완료 — ${driveFile.created_time}`}
+                                    className="inline-flex items-center gap-1 rounded-lg border border-emerald-200 bg-emerald-50 px-2 py-1 text-[11px] font-semibold text-emerald-700 hover:bg-emerald-100"
+                                  >
+                                    <Cloud className="h-3 w-3" />
+                                    Drive
+                                    <ExternalLink className="h-3 w-3" />
+                                  </a>
+                                )
+                              }
+                              if (!status.gdrive?.ready) return null
+                              return (
+                                <button
+                                  disabled={gdriveBusy === busyKey}
+                                  onClick={() => handleGDriveUpload(cat, f.filename)}
+                                  title="Google Drive 로 업로드"
+                                  className="inline-flex items-center gap-1 rounded-lg border border-sky-200 bg-white px-2 py-1 text-[11px] font-semibold text-sky-700 hover:bg-sky-50 disabled:opacity-50"
+                                >
+                                  {gdriveBusy === busyKey ? (
+                                    <Loader2 className="h-3 w-3 animate-spin" />
+                                  ) : (
+                                    <CloudUpload className="h-3 w-3" />
+                                  )}
+                                  Drive
+                                </button>
+                              )
+                            })()}
+                            <button
+                              disabled={downloading === f.filename}
+                              onClick={() => handleDownload(cat, f.filename)}
+                              className="inline-flex items-center gap-1.5 rounded-lg border border-line bg-white px-3 py-1.5 text-xs font-semibold text-ink hover:bg-slate-50 disabled:opacity-50"
+                            >
+                              {downloading === f.filename ? (
+                                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                              ) : (
+                                <Download className="h-3.5 w-3.5" />
+                              )}
+                              다운로드
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     ))}
@@ -327,5 +489,105 @@ function SummaryRow({ status }: { status: BackupStatusResponse }) {
         </div>
       </Card>
     </div>
+  )
+}
+
+
+/**
+ * Google Drive 상태 카드 — 활성화 여부, 원격 파일 수, 보존일, 정리 버튼.
+ * 비활성 시 사유(라이브러리/키파일/폴더 ID 미설정)를 알기 쉽게 표시.
+ */
+function GDriveStatusCard({
+  status,
+  onPrune,
+  busy,
+}: {
+  status: BackupStatusResponse
+  onPrune: () => void
+  busy: string | null
+}) {
+  const g = status.gdrive
+  const ready = !!g?.ready
+
+  return (
+    <Card className={`p-4 ${ready ? 'border-emerald-200 bg-emerald-50/40' : 'border-amber-200 bg-amber-50/40'}`}>
+      <div className="flex flex-wrap items-start gap-4">
+        <div className="flex items-center gap-2">
+          {ready ? (
+            <Cloud className="h-5 w-5 text-emerald-600" />
+          ) : (
+            <CloudOff className="h-5 w-5 text-amber-600" />
+          )}
+          <div>
+            <div className="text-sm font-semibold text-ink">
+              Google Drive 백업 — {ready ? '활성화' : '비활성화'}
+            </div>
+            <div className="text-[11px] text-ink-muted">
+              {ready
+                ? `보존 ${g?.retention_days ?? 30}일 · 원격 ${g?.remote_total ?? 0}개${
+                    g?.remote_total_size_human ? ` (${g.remote_total_size_human})` : ''
+                  }`
+                : !g?.enabled
+                ? 'GDRIVE_ENABLED=false (또는 미설정)'
+                : !g?.libs_installed
+                ? 'google-api-python-client 미설치'
+                : !g?.credentials_path_exists
+                ? `Service Account 키 파일 없음 (${g.credentials_path_set ? '경로 잘못됨' : 'GDRIVE_CREDENTIALS_JSON 미설정'})`
+                : !g?.folder_id_set
+                ? 'GDRIVE_FOLDER_ID 미설정'
+                : '연결 점검 필요'}
+            </div>
+          </div>
+        </div>
+
+        {ready && g?.remote_by_category && (
+          <div className="flex items-center gap-2 text-[11px] font-mono text-ink-muted">
+            <span className="rounded bg-white px-2 py-0.5 ring-1 ring-emerald-200">
+              db {g.remote_by_category.db ?? 0}
+            </span>
+            <span className="rounded bg-white px-2 py-0.5 ring-1 ring-emerald-200">
+              users {g.remote_by_category.users ?? 0}
+            </span>
+            <span className="rounded bg-white px-2 py-0.5 ring-1 ring-emerald-200">
+              code {g.remote_by_category.code ?? 0}
+            </span>
+          </div>
+        )}
+
+        {ready && (
+          <div className="ml-auto flex items-center gap-2">
+            {g?.folder_id && (
+              <a
+                href={`https://drive.google.com/drive/folders/${g.folder_id}`}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center gap-1 rounded-lg border border-emerald-200 bg-white px-3 py-1.5 text-xs font-semibold text-emerald-700 hover:bg-emerald-50"
+              >
+                <ExternalLink className="h-3.5 w-3.5" />
+                폴더 열기
+              </a>
+            )}
+            <button
+              onClick={onPrune}
+              disabled={busy === 'prune'}
+              title={`보존 정책 적용 (${g?.retention_days ?? 30}일 초과 삭제)`}
+              className="inline-flex items-center gap-1 rounded-lg border border-rose-200 bg-white px-3 py-1.5 text-xs font-semibold text-rose-700 hover:bg-rose-50 disabled:opacity-50"
+            >
+              {busy === 'prune' ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Trash2 className="h-3.5 w-3.5" />
+              )}
+              정리
+            </button>
+          </div>
+        )}
+      </div>
+      {ready && g?.remote_error && (
+        <div className="mt-2 text-[11px] text-rose-700">
+          ⚠ Drive 조회 오류: {g.remote_error}
+        </div>
+      )}
+    </Card>
   )
 }

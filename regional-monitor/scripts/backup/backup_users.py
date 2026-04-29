@@ -166,6 +166,7 @@ async def _async_export_all() -> tuple[int, int, int]:
                     size / 1024,
                 )
                 _upload_to_s3(out_path, f"users/{fname}")
+                _upload_to_gdrive(out_path, "users")
             except Exception as e:  # noqa: BLE001
                 failure += 1
                 logger.exception("FAIL user_id=%s email=%s: %s", uid, email, e)
@@ -276,6 +277,29 @@ def _write_gz_json(path: Path, data: dict[str, Any]) -> int:
     with gzip.open(path, "wb", compresslevel=9) as f:
         f.write(payload.encode("utf-8"))
     return path.stat().st_size
+
+
+def _upload_to_gdrive(local_path: Path, category: str) -> bool:
+    """Google Drive 업로드 후크 — gdrive_upload.py 위임 (best-effort)."""
+    if os.environ.get("GDRIVE_ENABLED", "false").lower() not in ("1", "true", "yes", "y", "on"):
+        return False
+    script = APP_DIR / "scripts" / "backup" / "gdrive_upload.py"
+    if not script.exists():
+        logger.warning("GDRIVE_ENABLED=true but %s not found — skip", script)
+        return False
+    py_bin = APP_DIR / "backend" / "venv" / "bin" / "python"
+    if not py_bin.exists():
+        py_bin = Path("/usr/bin/python3")
+    try:
+        subprocess.run(
+            [str(py_bin), str(script), category, str(local_path)],
+            check=False, capture_output=True, timeout=120,
+        )
+        logger.info("Drive upload triggered: cat=%s name=%s", category, local_path.name)
+        return True
+    except Exception as e:  # noqa: BLE001
+        logger.warning("Drive upload failed: %s", e)
+        return False
 
 
 def _upload_to_s3(local_path: Path, key: str) -> bool:

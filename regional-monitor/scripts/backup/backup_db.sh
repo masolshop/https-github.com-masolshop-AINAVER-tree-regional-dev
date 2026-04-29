@@ -142,6 +142,20 @@ else
     log "Step 3: S3 upload disabled (set BACKUP_S3_ENABLED=true to activate)"
 fi
 
+# ── Google Drive 업로드 (선택, GDRIVE_ENABLED=true) ──────────
+if [[ "${GDRIVE_ENABLED:-false}" == "true" ]]; then
+    GDRIVE_SCRIPT="${APP_DIR}/scripts/backup/gdrive_upload.py"
+    if [[ -f "${GDRIVE_SCRIPT}" ]]; then
+        log "Step 3b: Google Drive upload (cat=db)"
+        PY_BIN="${APP_DIR}/backend/venv/bin/python"
+        [[ ! -x "${PY_BIN}" ]] && PY_BIN="/usr/bin/python3"
+        "${PY_BIN}" "${GDRIVE_SCRIPT}" db "${OUT_FILE}" >>"${LOG_FILE}" 2>&1 || \
+            log "WARN: gdrive upload returned non-zero (see /home/ubuntu/backups/logs/gdrive_upload.log)"
+    else
+        log "WARN: GDRIVE_ENABLED=true but ${GDRIVE_SCRIPT} not found"
+    fi
+fi
+
 # ── 7일 초과 정리 ────────────────────────────────
 log "Step 4: removing files older than ${RETENTION_DAYS} days"
 DELETED=$(find "${BACKUP_DIR}" -maxdepth 1 -type f \( -name "db_*.sqlite.gz" -o -name "db_*.sql.gz" \) \

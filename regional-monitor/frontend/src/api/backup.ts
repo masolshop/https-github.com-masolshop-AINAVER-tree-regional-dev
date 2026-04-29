@@ -27,6 +27,22 @@ export interface BackupCategoryStats {
   latest_mtime: string | null
 }
 
+export interface GDriveStatus {
+  enabled: boolean
+  ready: boolean
+  libs_installed: boolean
+  credentials_path_set: boolean
+  credentials_path_exists: boolean
+  folder_id_set: boolean
+  folder_id: string | null
+  retention_days: number
+  remote_total?: number
+  remote_total_size?: number
+  remote_total_size_human?: string
+  remote_by_category?: Record<BackupCategory, number>
+  remote_error?: string
+}
+
 export interface BackupStatusResponse {
   now_kst: string
   total_bytes: number
@@ -36,6 +52,56 @@ export interface BackupStatusResponse {
   retention_days: number
   schedule: Record<BackupCategory, string>
   categories: Record<BackupCategory, BackupCategoryStats>
+  gdrive: GDriveStatus
+}
+
+export interface GDriveFile {
+  category: BackupCategory
+  file_id: string
+  name: string
+  size: number
+  created_time: string
+  modified_time: string | null
+  web_view_link: string | null
+}
+
+export interface GDriveListResponse {
+  ok: boolean
+  files: GDriveFile[]
+  count?: number
+  reason?: string
+  status?: GDriveStatus
+  now_kst?: string
+}
+
+export interface GDriveUploadResponse {
+  ok: boolean
+  category: BackupCategory
+  filename: string
+  file_id: string
+  name: string
+  size: number
+  created_time: string
+  web_view_link: string | null
+}
+
+export interface GDriveSyncResponse {
+  ok: boolean
+  category: BackupCategory
+  uploaded: { name: string; file_id: string; size: number }[]
+  uploaded_count: number
+  skipped_count: number
+  errors: { name: string; error: string }[]
+  now_kst: string
+}
+
+export interface GDrivePruneResponse {
+  ok: boolean
+  deleted: number
+  kept: number
+  errors: { file_id: string; name: string; error: string }[]
+  cutoff_iso: string
+  retention_days: number
 }
 
 export interface BackupRunResponse {
@@ -88,4 +154,37 @@ export const backupApi = {
     a.remove()
     setTimeout(() => URL.revokeObjectURL(objUrl), 2000)
   },
+
+  // ── Google Drive ───────────────────────────────────────
+  gdriveStatus: () => api.get<GDriveStatus>('/api/v1/admin/backup/gdrive/status'),
+
+  gdriveList: (category?: BackupCategory) =>
+    api.get<GDriveListResponse>(
+      `/api/v1/admin/backup/gdrive/list${category ? `?category=${category}` : ''}`,
+    ),
+
+  gdriveUpload: (category: BackupCategory, filename: string) =>
+    api.post<GDriveUploadResponse>(
+      `/api/v1/admin/backup/gdrive/upload/${category}/${encodeURIComponent(filename)}`,
+      {},
+    ),
+
+  gdriveSync: (category: BackupCategory) =>
+    api.post<GDriveSyncResponse>(`/api/v1/admin/backup/gdrive/sync/${category}`, {}),
+
+  gdrivePrune: (category?: BackupCategory, days?: number) => {
+    const qs = new URLSearchParams()
+    if (category) qs.set('category', category)
+    if (typeof days === 'number') qs.set('days', String(days))
+    const suffix = qs.toString() ? `?${qs.toString()}` : ''
+    return api.post<GDrivePruneResponse>(
+      `/api/v1/admin/backup/gdrive/prune${suffix}`,
+      {},
+    )
+  },
+
+  gdriveDelete: (fileId: string) =>
+    api.del<{ ok: boolean; file_id: string }>(
+      `/api/v1/admin/backup/gdrive/file/${encodeURIComponent(fileId)}`,
+    ),
 }

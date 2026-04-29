@@ -22,6 +22,7 @@ from fastapi.responses import FileResponse
 
 from app.api.deps import require_superadmin
 from app.core.time_utils import now_kst, KST
+from app.services import gdrive_uploader
 
 
 router = APIRouter(
@@ -158,7 +159,138 @@ async def status_info() -> dict:
         "users": "01:30 KST",
         "code":  "02:00 KST",
     }
+    # Google Drive 상태 (활성/비활성, 사유)
+    info["gdrive"] = gdrive_uploader.status_info()
     return info
+
+
+# ──────────────────────────────────────────────────────────────
+# Google Drive 업로드 (Service Account)
+# ──────────────────────────────────────────────────────────────
+
+@router.get("/gdrive/status")
+async def gdrive_status() -> dict:
+    """Drive 연결 상태 + 원격 파일 카운트."""
+    info = gdrive_uploader.status_info()
+    if info.get("ready"):
+        try:
+            files = gdrive_uploader.list_remote()
+            from collections import Counter
+            cnt = Counter(f["category"] for f in files)
+            total_size = sum(f.get("size", 0) for f in files)
+            info["remote_total"] = len(files)
+            info["remote_total_size"] = total_size
+            info["remote_total_size_human"] = _human(total_size)
+            info["remote_by_category"] = {c: cnt.get(c, 0) for c in CATEGORY_DIRS.keys()}
+        except Exception as e:  # noqa: BLE001
+            info["remote_error"] = str(e)[:300]
+    return info
+
+
+@router.get("/gdrive/list")
+async def gdrive_list(category: str | None = None) -> dict:
+    """Drive 측 파일 목록 (카테고리 선택 가능)."""
+    if not gdrive_uploader.is_enabled():
+        return {"ok": False, "files": [], "reason": "disabled", "status": gdrive_uploader.status_info()}
+    if category and category not in CATEGORY_DIRS:
+        raise HTTPException(400, f"Unknown category: {category}")
+    try:
+        files = gdrive_uploader.list_remote(category=category)
+        return {"ok": True, "files": files, "count": len(files), "now_kst": now_kst().isoformat()}
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(500, f"gdrive list failed: {e}")
+
+
+@router.post("/gdrive/upload/{category}/{filename}")
+async def gdrive_upload_one(category: str, filename: str) -> dict:
+    """단일 로컬 백업 파일을 Drive 로 업로드."""
+    if not gdrive_uploader.is_enabled():
+        raise HTTPException(
+            400,
+            "Google Drive 업로드 비활성 — .env 의 GDRIVE_ENABLED / GDRIVE_CREDENTIALS_JSON / GDRIVE_FOLDER_ID 확인",
+        )
+    target = _safe_resolve(category, filename)
+    try:
+        # Drive 호출은 동기 블로킹 → 스레드 오프로드
+        result = await asyncio.to_thread(
+            gdrive_uploader.upload_file, str(target), category
+        )
+        return {"ok": True, "category": category, "filename": filename, **result}
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(500, f"upload failed: {e}")
+
+
+@router.post("/gdrive/sync/{category}")
+async def gdrive_sync_category(category: str) -> dict:
+    """카테고리 전체 동기화 — 로컬에 있고 Drive 에 없는 파일만 업로드."""
+    if not gdrive_uploader.is_enabled():
+        raise HTTPException(400, "Google Drive 업로드 비활성")
+    if category not in CATEGORY_DIRS:
+        raise HTTPException(400, f"Unknown category: {category}")
+
+    local_files = _list_files(category)
+    try:
+        remote_files = await asyncio.to_thread(
+            gdrive_uploader.list_remote, category
+        )
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(500, f"gdrive list failed: {e}")
+
+    remote_names = {f["name"] for f in remote_files}
+    base_dir = CATEGORY_DIRS[category]
+
+    uploaded: list[dict] = []
+    skipped: list[str] = []
+    errors: list[dict] = []
+    for lf in local_files:
+        name = lf["filename"]
+        if name in remote_names:
+            skipped.append(name)
+            continue
+        path = base_dir / name
+        try:
+            r = await asyncio.to_thread(
+                gdrive_uploader.upload_file, str(path), category
+            )
+            uploaded.append({"name": name, "file_id": r.get("file_id"), "size": r.get("size")})
+        except Exception as e:  # noqa: BLE001
+            errors.append({"name": name, "error": str(e)[:300]})
+
+    return {
+        "ok": True,
+        "category": category,
+        "uploaded": uploaded,
+        "uploaded_count": len(uploaded),
+        "skipped_count": len(skipped),
+        "errors": errors,
+        "now_kst": now_kst().isoformat(),
+    }
+
+
+@router.post("/gdrive/prune")
+async def gdrive_prune(category: str | None = None, days: int | None = None) -> dict:
+    """Drive 측 보존 정책 적용 — days 초과 파일 자동 삭제."""
+    if not gdrive_uploader.is_enabled():
+        raise HTTPException(400, "Google Drive 업로드 비활성")
+    if category and category not in CATEGORY_DIRS:
+        raise HTTPException(400, f"Unknown category: {category}")
+    try:
+        return await asyncio.to_thread(
+            gdrive_uploader.prune_old, category, days
+        )
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(500, f"prune failed: {e}")
+
+
+@router.delete("/gdrive/file/{file_id}")
+async def gdrive_delete_one(file_id: str) -> dict:
+    """Drive 단건 삭제 (file_id 기반)."""
+    if not gdrive_uploader.is_enabled():
+        raise HTTPException(400, "Google Drive 업로드 비활성")
+    try:
+        return await asyncio.to_thread(gdrive_uploader.delete_remote, file_id)
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(500, f"delete failed: {e}")
 
 
 @router.get("/download/{category}/{filename}")
