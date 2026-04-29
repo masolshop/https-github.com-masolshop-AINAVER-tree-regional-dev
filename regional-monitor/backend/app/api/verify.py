@@ -200,7 +200,7 @@ async def _run_live_check_locked(
     total_ms = int((time.perf_counter() - t0) * 1000)
 
     # DB 기록 + verdict 캐시 갱신 + ChangeEvent 자동 생성
-    persist_stats = await persist_results(db, raw_results)
+    persist_stats = await persist_results(db, raw_results, trigger="manual", mode=mode)
 
     # 자동 추출 보강 (이전에 비어 있던 full_address 만 채움)
     place_by_id = {p.id: p for p in places}

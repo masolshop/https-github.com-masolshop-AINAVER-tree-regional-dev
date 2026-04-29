@@ -35,7 +35,14 @@ _BAD_VERDICTS = {
 }
 
 
-def classify_event(prev: str, new: str, detail: dict) -> tuple[str, str] | None:
+def classify_event(
+    prev: str,
+    new: str,
+    detail: dict,
+    *,
+    trigger: str = "manual",
+    mode: str = "full",
+) -> tuple[str, str] | None:
     """이전/현재 verdict 비교 → (event_type, summary). 변경 없으면 None.
 
     event_type:
@@ -46,6 +53,10 @@ def classify_event(prev: str, new: str, detail: dict) -> tuple[str, str] | None:
       NAME_CHANGED   — 상호 변경
       PAGE_DELETED   — 페이지 자체 삭제 (404)
       OTHER_CHANGED  — 그 외 verdict 변경
+
+    trigger/mode:
+      자동(scheduler) + fast 의 부정확한 결과로 *_MISMATCH 가 'OK 회복' 또는
+      'DEAD 삭제' 이벤트로 잘못 발생하는 것을 차단한다.
     """
     if prev == new:
         return None
@@ -57,6 +68,13 @@ def classify_event(prev: str, new: str, detail: dict) -> tuple[str, str] | None:
     # (current_verdict 자체도 PENDING으로 덮어쓰지 않으므로 일관성 유지)
     if new in {"PENDING", "CHECKING", ""}:
         return None
+
+    # ⭐ 자동 + fast 가 *_MISMATCH 를 OK/DEAD 로 덮으려는 경우는 이벤트도 만들지 않음.
+    # persist_results 의 verdict 다운그레이드 가드와 짝을 이뤄, 잘못된 RECOVERED/PAGE_DELETED
+    # 이벤트가 알림으로 발송되는 것을 방지.
+    if trigger == "scheduler" and mode == "fast":
+        if prev in _BAD_VERDICTS and prev != "DEAD" and new in {"OK", "DEAD"}:
+            return None
 
     actual_dong = (detail or {}).get("actual_dong") or ""
     actual_name = (detail or {}).get("actual_name") or ""
@@ -98,8 +116,17 @@ def classify_event(prev: str, new: str, detail: dict) -> tuple[str, str] | None:
 async def persist_results(
     db: AsyncSession,
     results: Iterable[dict],
+    *,
+    trigger: str = "manual",
+    mode: str = "full",
 ) -> dict:
     """검증 결과를 DB에 반영.
+
+    Args:
+        trigger : 'manual' (사용자 수동 /verify/live) | 'scheduler' (자동 v1/v2)
+                  자동 + fast 의 부정확한 결과가 수동 정밀(MISMATCH/DEAD) 을
+                  덮어쓰지 못하도록 가드에 사용.
+        mode    : 'full' / 'fast' — 검증 정밀도. trigger 와 함께 가드 판단.
 
     Returns:
         {
@@ -112,6 +139,8 @@ async def persist_results(
     history_rows = 0
     now = now_kst()
     new_event_objs: list[ChangeEvent] = []
+    is_auto = trigger == "scheduler"
+    is_fast = mode == "fast"
 
     # place_id_ref → RegisteredPlace 매핑 (1번 쿼리)
     refs = [r["place_id_ref"] for r in results]
@@ -154,7 +183,7 @@ async def persist_results(
         history_rows += 1
 
         # 2) ChangeEvent (verdict 변경 시)
-        evt = classify_event(prev, new, detail)
+        evt = classify_event(prev, new, detail, trigger=trigger, mode=mode)
         if evt:
             event_type, summary = evt
             ce = ChangeEvent(
@@ -173,8 +202,23 @@ async def persist_results(
         # 예: 어제 OK였는데 오늘 429로 PENDING이면 OK 상태 유지 → 사용자에게 "검증 대기" 노출 안 함.
         # 다음 사이클에서 확실한 결과(OK/DEAD/MISMATCH) 받으면 그때 갱신.
         # DailyHealthCheck(시계열)에는 PENDING도 그대로 기록되어 throttle 추적 가능.
-        if new == "PENDING" and prev in {"OK", "DEAD", "PHONE_MISMATCH", "DONG_MISMATCH", "REGION_MISMATCH"}:
+        skip_overwrite = False
+        if new == "PENDING" and prev in {"OK", "DEAD", "PHONE_MISMATCH", "DONG_MISMATCH", "NAME_MISMATCH", "REGION_MISMATCH"}:
             # 기존 verdict 유지, last_checked_at만 갱신
+            skip_overwrite = True
+
+        # ⭐ 자동(스케줄러)이 fast 모드로 부정확하게 명확한 *_MISMATCH 를 덮어쓰는 것 차단.
+        # fast 모드는 페이지 존재 유무만 보므로 전화/동/상호 불일치를 OK 또는 DEAD 로
+        # 잘못 판정한다. 수동 정밀(full)에서 받은 *_MISMATCH 결과를 자동 fast 가
+        # 다음 슬롯에 OK/DEAD 로 덮어쓰면 "이전 불일치 데이터가 사라지는" 문제 발생.
+        # 정책: 자동 + fast 는 prev 가 *_MISMATCH 이면 verdict 다운그레이드 금지.
+        if is_auto and is_fast and prev in _BAD_VERDICTS and prev != "DEAD":
+            if new in {"OK", "DEAD"}:
+                # 명확한 정밀 불일치 결과를 fast 결과로 덮지 않음.
+                # 변화는 다음 자동(full) 또는 수동 검증에서 반영.
+                skip_overwrite = True
+
+        if skip_overwrite:
             place.last_checked_at = now
         else:
             place.current_verdict = new

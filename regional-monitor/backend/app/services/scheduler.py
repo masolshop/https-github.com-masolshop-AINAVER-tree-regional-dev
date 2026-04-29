@@ -105,30 +105,37 @@ def kst_slot_15m() -> int:
 # 튜닝 파라미터
 # ──────────────────────────────────────────────────────────────
 #
-# 자동 검증 정책 (2026-04-28 사용자 결정):
-#   "자동 정기 체크도 서버단에서 진행되는 것이니 시간에 쫓기지 말고 시간 조절해서 진행."
-#   → 정확도와 안정성을 최우선으로, 네이버 IP throttle 위험을 거의 0으로 만든다.
+# 자동 검증 정책 (2026-04-29 정밀 검증 전환):
+#   "등록검증 정밀검증으로 했는데 자동검증체크로 하다보니 이전 불일치 데이타가 사라져."
+#   → fast 모드는 페이지 존재 유무(=DEAD/OK)만 보고 전화/동/상호 불일치를 잡지 못해
+#     수동 정밀검증의 *_MISMATCH 결과를 OK 또는 잘못된 DEAD 로 덮어쓰는 문제 발생.
+#   → 자동도 full 모드로 전환하여 등록검증과 동일한 전화/동/로/리 풀 검증 수행.
 #
-#   - 모드: fast (페이지 존재 유무만 확인 — 정밀 검증은 등록 시 1회로 충분)
+#   - 모드: full (전화 + 동/로/리 풀 검증 — 등록검증과 동일)
 #   - 속도:
-#       · 수동 fast: concurrency=2, pace 200ms
-#       · 자동 fast: concurrency=1 (직렬) + pace 500ms
-#         → 296건 ≈ (290ms 응답 + 500ms 페이스) × 296 ≈ 약 4분
-#         → 시간이 충분히 길어져 네이버 차단 위험 사실상 없음
+#       · 자동 full: concurrency=1 (직렬) + pace 700ms
+#         → 296건 ≈ (700ms 응답 + 700ms 페이스) × 296 ≈ 약 7분
+#         → 슬롯 14분 예산 안에서 충분, 네이버 IP throttle 위험 낮음
 #   - 사용자 간에도 USER_CHUNK_SIZE=20 으로 좁혀 동시 부하 추가 완화.
+#
+# 추가 보호장치 (persist.py):
+#   자동 검증의 결과가 수동 정밀검증의 명확한 *_MISMATCH 를 덮어쓰지 못하도록,
+#   자동 trigger 시 verdict 다운그레이드(MISMATCH → OK 또는 MISMATCH → DEAD)를 차단.
 #
 # v2 (2026-04-29):
 #   슬롯당 14분 상한 + 96슬롯 분산 → 같은 슬롯에 들어오는 회원은 평균 (총회원수/96).
 # ──────────────────────────────────────────────────────────────
 
-# 자동 검증 모드 (fast / full)
-AUTO_VERIFY_MODE = "fast"
+# 자동 검증 모드 (fast / full) — 정밀 검증으로 전환 (2026-04-29)
+AUTO_VERIFY_MODE = _os.environ.get("AUTO_VERIFY_MODE", "full").lower()
+if AUTO_VERIFY_MODE not in ("fast", "full"):
+    AUTO_VERIFY_MODE = "full"
 
 # 사용자당 동시 검증 수 (자동) — 직렬(1), 정확도 최우선
 PER_USER_CONCURRENCY = 1
 
-# 요청 간 페이스 (ms)
-AUTO_PACE_MS = 500
+# 요청 간 페이스 (ms) — full 모드는 응답 시간이 길어 700ms 로 상향
+AUTO_PACE_MS = int(_os.environ.get("AUTO_PACE_MS", "700" if AUTO_VERIFY_MODE == "full" else "500"))
 
 # 사용자 처리 청크 크기 (메모리 + 네이버 부하 분산)
 USER_CHUNK_SIZE = 20
@@ -223,7 +230,9 @@ async def _verify_user_places_locked(
                 pace_ms=AUTO_PACE_MS,
             )
             elapsed_ms = int((_time.perf_counter() - _t0) * 1000)
-            stats = await persist_results(db, results)
+            stats = await persist_results(
+                db, results, trigger="scheduler", mode=AUTO_VERIFY_MODE,
+            )
 
             # ── 알림 발송 (best-effort, ChangeEvent 가 있을 때만) ──
             new_events = stats.pop("new_events", []) or []

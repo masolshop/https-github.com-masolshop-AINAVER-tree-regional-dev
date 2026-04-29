@@ -259,9 +259,12 @@ async def run_job(job_id: int) -> None:
                     raw_results = await verify_batch(verifiable_chunk, concurrency=CHUNK_CONCURRENCY)
                     elapsed_ms = int((time.perf_counter() - t0) * 1000)
 
-                # DB persist (새 세션)
+                # DB persist (새 세션) — 등록검증 워커는 항상 정밀(full) 모드
                 async with AsyncSessionLocal() as db:
-                    persist_stats = await persist_results(db, raw_results) if raw_results else {"new_events": []}
+                    persist_stats = (
+                        await persist_results(db, raw_results, trigger="manual", mode="full")
+                        if raw_results else {"new_events": []}
+                    )
 
                     # full_address 보강 (검증된 것만)
                     if raw_results:
