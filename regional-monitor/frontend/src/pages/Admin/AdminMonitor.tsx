@@ -209,6 +209,7 @@ export function AdminMonitor() {
                   <th className="px-3 py-3 font-semibold text-right">페이지 삭제</th>
                   <th className="px-3 py-3 font-semibold text-right">불일치</th>
                   <th className="px-3 py-3 font-semibold text-right">검증 대기</th>
+                  <th className="px-3 py-3 font-semibold text-center">최근 모드</th>
                   <th className="px-card-sm py-3 font-semibold text-right">정상률</th>
                 </tr>
               </thead>
@@ -302,6 +303,13 @@ function MonitorRow({ row, idx }: { row: AdminMonitorRow; idx: number }) {
           {row.pending_count.toLocaleString()}
         </span>
       </td>
+      <td className="px-3 py-3 text-center">
+        <ModeBadge
+          mode={row.last_run_mode}
+          trigger={row.last_run_trigger}
+          at={row.last_run_at}
+        />
+      </td>
       <td className="px-card-sm py-3 text-right tabular-nums font-semibold">
         {row.place_count > 0 ? (
           <span
@@ -320,6 +328,60 @@ function MonitorRow({ row, idx }: { row: AdminMonitorRow; idx: number }) {
         )}
       </td>
     </tr>
+  )
+}
+
+/**
+ * 최근 검증 1회의 모드(full/fast) + 트리거(scheduler/manual) + 시각을 뱃지로 표시.
+ * full = 정밀(전화/동/상호) — 녹색, fast = 페이지 존재 — 회색.
+ */
+function ModeBadge({
+  mode,
+  trigger,
+  at,
+}: {
+  mode: 'full' | 'fast' | string | null
+  trigger: 'scheduler' | 'manual' | string | null
+  at: string | null
+}) {
+  if (!mode) {
+    return <span className="text-caption text-ink-soft">—</span>
+  }
+  const isFull = mode === 'full'
+  const tone = isFull
+    ? 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200'
+    : 'bg-bg-subtle text-ink-muted ring-1 ring-line'
+  const label = isFull ? '정밀' : 'fast'
+  const triggerLabel =
+    trigger === 'scheduler' ? '자동' : trigger === 'manual' ? '수동' : ''
+
+  let timeLabel = ''
+  if (at) {
+    try {
+      const d = new Date(at)
+      const mm = String(d.getMonth() + 1).padStart(2, '0')
+      const dd = String(d.getDate()).padStart(2, '0')
+      const hh = String(d.getHours()).padStart(2, '0')
+      const mi = String(d.getMinutes()).padStart(2, '0')
+      timeLabel = `${mm}/${dd} ${hh}:${mi}`
+    } catch {
+      /* ignore */
+    }
+  }
+
+  return (
+    <div className="inline-flex flex-col items-center gap-0.5">
+      <span
+        className={`inline-flex px-2 py-0.5 rounded-pill text-caption font-bold ${tone}`}
+        title={`mode=${mode}${trigger ? ` · trigger=${trigger}` : ''}${at ? ` · ${at}` : ''}`}
+      >
+        {label}
+        {triggerLabel ? ` · ${triggerLabel}` : ''}
+      </span>
+      {timeLabel && (
+        <span className="text-[10px] text-ink-soft tabular-nums">{timeLabel}</span>
+      )}
+    </div>
   )
 }
 

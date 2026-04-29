@@ -134,6 +134,10 @@ class AdminMonitorRow(BaseModel):
     dead_count: int = 0              # 페이지 삭제
     mismatch_count: int = 0          # 불일치 (PHONE/DONG/NAME/REGION MISMATCH 합산)
     pending_count: int = 0           # 검증 대기
+    # 최근 자동/수동 검증 1회의 모드/시각 — UI 뱃지로 표시
+    last_run_mode: str | None = None        # 'full' / 'fast' / None
+    last_run_trigger: str | None = None     # 'scheduler' / 'manual' / None
+    last_run_at: datetime | None = None
     last_login_at: datetime | None = None
     created_at: datetime
 

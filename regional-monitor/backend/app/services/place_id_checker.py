@@ -56,9 +56,59 @@ SAMPLES = [
 
 
 MOBILE_UA = (
-    "Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) "
-    "AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Mobile/15E148 Safari/604.1"
+    "Mozilla/5.0 (iPhone; CPU iPhone OS 17_2 like Mac OS X) "
+    "AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 Mobile/15E148 Safari/604.1"
 )
+
+
+# ============================================================================
+# Naver IP 차단 회피 — 메트릭 카운터 (24h 슬라이딩 윈도우)
+# ============================================================================
+# 최근 1분/24시간 동안 발생한 429/403/200 카운트를 저장하여 다음 용도로 사용:
+#   1) 적응형 백오프 (차단율 ≥5% 면 페이스 자동 증가)
+#   2) 어드민 대시보드 표시 ("최근 24h 차단율 X%")
+import time as _time_module
+from collections import deque
+
+_block_events: deque[tuple[float, int]] = deque(maxlen=10000)
+# (timestamp_unix, status_code) — 200/429/403 모두 기록
+
+
+def record_naver_status(status_code: int) -> None:
+    """Naver 응답 코드 1건 기록 (200/429/403/etc)."""
+    try:
+        _block_events.append((_time_module.time(), int(status_code)))
+    except Exception:
+        pass
+
+
+def get_block_stats(window_sec: int = 86400) -> dict:
+    """최근 window_sec 동안 차단율/카운트 반환.
+
+    Returns:
+        {total, ok, blocked_429, blocked_403, block_rate}
+        block_rate = (429+403) / total
+    """
+    cutoff = _time_module.time() - window_sec
+    total = ok = b429 = b403 = 0
+    for ts, code in _block_events:
+        if ts < cutoff:
+            continue
+        total += 1
+        if code == 200:
+            ok += 1
+        elif code == 429:
+            b429 += 1
+        elif code == 403:
+            b403 += 1
+    rate = ((b429 + b403) / total) if total > 0 else 0.0
+    return {
+        "total": total,
+        "ok": ok,
+        "blocked_429": b429,
+        "blocked_403": b403,
+        "block_rate": round(rate, 4),
+    }
 
 
 # ============================================================================
@@ -487,17 +537,23 @@ async def check_place(client: httpx.AsyncClient, sample: Dict) -> CheckResult:
     # 누적 대기: 2 + 4 + 8 = 14초 (충분히 throttle 회복)
     # 🔒 글로벌 세마포어로 시스템 전체 네이버 동시 호출을 NAVER_GLOBAL_LIMIT 이하로 제한
     naver_sem = _get_naver_global_sem()
+    # 적응형 백오프 — 429/403 모두 재시도 대상으로 처리
+    # 403은 봇 탐지(IP throttle)일 가능성이 높아 더 긴 대기 후 재시도
     for attempt in range(4):
         try:
             async with naver_sem:
                 r = await client.get(url, headers=headers, follow_redirects=True, timeout=15.0)
                 html = r.text
-            if r.status_code != 429:
+            # 메트릭 기록 (200/429/403 등) — 적응형 페이싱 / 어드민 모니터에서 활용
+            record_naver_status(r.status_code)
+            if r.status_code not in (429, 403):
                 break
             if attempt == 3:
                 break  # 마지막 시도 — 더 이상 backoff 안함
-            # 2s, 4s, 8s + jitter (동시 요청들이 동시에 깨어나지 않도록)
-            await asyncio.sleep((2 ** (attempt + 1)) + random.uniform(0, 1.5))
+            # 429: 2-4-8s + jitter (rate limit 회복창)
+            # 403: 5-15-45s + jitter (봇 탐지 — 더 긴 휴지)
+            base = (2 ** (attempt + 1)) if r.status_code == 429 else (5 * (3 ** attempt))
+            await asyncio.sleep(base + random.uniform(0, 1.5))
         except Exception as e:
             result.elapsed_ms = round((time.perf_counter() - t0) * 1000, 1)
             result.http_status = -1
@@ -517,6 +573,15 @@ async def check_place(client: httpx.AsyncClient, sample: Dict) -> CheckResult:
         result.severity = "WARN"
         result.error = "rate_limited_429"
         result.detail = "⏳ 네이버 요청 한도 초과(429) — 잠시 후 재검증 권장"
+        return result
+
+    # 403: 봇 탐지 / IP 차단 → PENDING
+    if r is not None and r.status_code == 403:
+        result.place_alive = False
+        result.verdict = "PENDING"
+        result.severity = "WARN"
+        result.error = "blocked_403"
+        result.detail = "⛔ 네이버 접근 차단(403) — IP 페이스 자동 조정 후 재검증"
         return result
 
     info = extract_place_info(html)
@@ -640,7 +705,8 @@ async def check_place_fast(client: httpx.AsyncClient, sample: Dict) -> CheckResu
     # 누적 대기: 2+5+10+20 = 37초 — 청크 100건 중 5%만 retry해도 추가 ~7초 (수용 가능)
     # 🔒 글로벌 세마포어 + 호출 간격 강제(_pace_naver_call): 직렬 호출도 burst 회피
     naver_sem = _get_naver_global_sem()
-    _backoff_seconds = [2, 5, 10, 20]
+    _backoff_seconds_429 = [2, 5, 10, 20]      # rate-limit 회복창
+    _backoff_seconds_403 = [5, 15, 45, 90]     # 봇 탐지 — 더 긴 휴지
     for attempt in range(4):
         try:
             async with naver_sem:
@@ -649,11 +715,14 @@ async def check_place_fast(client: httpx.AsyncClient, sample: Dict) -> CheckResu
                     url, headers=headers, follow_redirects=True, timeout=10.0
                 )
                 html = r.text
-            if r.status_code != 429:
+            # 메트릭 기록 (200/429/403 등)
+            record_naver_status(r.status_code)
+            if r.status_code not in (429, 403):
                 break
             if attempt == 3:  # 마지막 시도였으면 더 안 기다림
                 break
-            await asyncio.sleep(_backoff_seconds[attempt] + random.uniform(0, 1.0))
+            tbl = _backoff_seconds_403 if r.status_code == 403 else _backoff_seconds_429
+            await asyncio.sleep(tbl[attempt] + random.uniform(0, 1.0))
         except Exception as e:
             result.elapsed_ms = round((time.perf_counter() - t0) * 1000, 1)
             result.http_status = -1
@@ -676,6 +745,17 @@ async def check_place_fast(client: httpx.AsyncClient, sample: Dict) -> CheckResu
         result.severity = "OK"
         result.error = "rate_limited_429_assumed_ok"
         result.detail = "✅ Place ID 존재 추정 (Naver throttle로 본문 검증은 생략됨)"
+        return result
+
+    # 403 — 봇 탐지/IP 차단 (4회 retry 후에도 풀리지 않음) → PENDING
+    # 정책: 403은 "체계적 차단" 신호이므로 OK 추정으로 묻지 않고 PENDING 으로 격상
+    # → 적응형 백오프(스케줄러)에서 페이스 자동 증가 트리거가 됨
+    if r is not None and r.status_code == 403:
+        result.place_alive = False
+        result.verdict = "PENDING"
+        result.severity = "WARN"
+        result.error = "blocked_403"
+        result.detail = "⛔ 네이버 접근 차단(403) — IP 페이스 자동 조정 후 재검증"
         return result
 
     # 404/410 — 진짜 페이지 삭제

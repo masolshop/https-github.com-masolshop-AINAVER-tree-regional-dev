@@ -146,6 +146,79 @@ RETRY_BACKOFF_SEC = [30, 120, 600]
 # 슬롯 1회 처리시간 상한 (초). 14분 = 다음 15분 슬롯과 1분 여유.
 SLOT_TIME_BUDGET_SEC = 14 * 60
 
+
+# ──────────────────────────────────────────────────────────────
+# 적응형 페이싱 — 차단율(429+403) 기반 자동 페이스 조정
+# ──────────────────────────────────────────────────────────────
+# 정책:
+#   · 최근 10분 차단율(429+403) 측정
+#   · ≥10% : 페이스 2배 (위험)
+#   · ≥5%  : 페이스 1.5배 (경계)
+#   · <5%  : 기본 페이스 (정상)
+#   · 최소 200ms ~ 최대 5000ms 클램프
+#
+# 매 슬롯 진입 시 1회 계산 → 해당 슬롯 동안 고정 사용 (안정성)
+# ──────────────────────────────────────────────────────────────
+
+ADAPTIVE_PACE_ENABLED: bool = (
+    _os.environ.get("ADAPTIVE_PACE_ENABLED", "true").lower() in ("1", "true", "yes")
+)
+ADAPTIVE_PACE_MIN_MS = 200
+ADAPTIVE_PACE_MAX_MS = 5000
+ADAPTIVE_WINDOW_SEC = 600  # 최근 10분
+
+
+def get_adaptive_pace_ms(base_pace_ms: int = AUTO_PACE_MS) -> tuple[int, dict]:
+    """최근 10분 차단율 기반 적응형 페이스 계산.
+
+    Returns:
+        (pace_ms, stats_dict)
+        stats_dict: {block_rate, total, blocked_429, blocked_403, multiplier, level}
+    """
+    if not ADAPTIVE_PACE_ENABLED:
+        return base_pace_ms, {"adaptive": False, "block_rate": 0.0, "multiplier": 1.0, "level": "off"}
+
+    try:
+        # place_id_checker 의 메트릭 카운터 활용
+        from app.services.place_id_checker import get_block_stats
+        stats = get_block_stats(window_sec=ADAPTIVE_WINDOW_SEC)
+    except Exception:
+        return base_pace_ms, {"adaptive": False, "block_rate": 0.0, "multiplier": 1.0, "level": "error"}
+
+    rate = float(stats.get("block_rate", 0.0))
+    total = int(stats.get("total", 0))
+
+    # 표본이 너무 적으면(예: 직전 슬롯이 비어있던 신규 가동) 적응 보류
+    if total < 20:
+        return base_pace_ms, {
+            "adaptive": True,
+            "block_rate": rate,
+            "total": total,
+            "multiplier": 1.0,
+            "level": "warmup",
+            **stats,
+        }
+
+    if rate >= 0.10:
+        mult = 2.0
+        level = "danger"
+    elif rate >= 0.05:
+        mult = 1.5
+        level = "warn"
+    else:
+        mult = 1.0
+        level = "ok"
+
+    pace = int(round(base_pace_ms * mult))
+    pace = max(ADAPTIVE_PACE_MIN_MS, min(ADAPTIVE_PACE_MAX_MS, pace))
+    return pace, {
+        "adaptive": True,
+        "block_rate": rate,
+        "multiplier": mult,
+        "level": level,
+        **stats,
+    }
+
 # dry-run 모드 — True 면 실제 검증 안 하고 VerifyScheduleLog 만 기록
 VERIFY_SCHEDULER_V2_DRY_RUN: bool = (
     _os.environ.get("VERIFY_SCHEDULER_V2_DRY_RUN", "true").lower() in ("1", "true", "yes")
@@ -223,11 +296,22 @@ async def _verify_user_places_locked(
 
             import time as _time
             _t0 = _time.perf_counter()
+            # 적응형 페이스 — 최근 10분 차단율(429/403) 기반 자동 조정
+            pace_ms, pace_stats = get_adaptive_pace_ms(AUTO_PACE_MS)
+            if pace_stats.get("level") in ("warn", "danger"):
+                log.warning(
+                    "[adaptive-pace] user=%d level=%s block_rate=%.2f%% pace %dms→%dms (×%.1f) "
+                    "[10m: 200=%d / 429=%d / 403=%d]",
+                    user_id, pace_stats["level"], pace_stats["block_rate"] * 100,
+                    AUTO_PACE_MS, pace_ms, pace_stats["multiplier"],
+                    pace_stats.get("ok", 0), pace_stats.get("blocked_429", 0),
+                    pace_stats.get("blocked_403", 0),
+                )
             results = await verify_batch(
                 places,
                 concurrency=PER_USER_CONCURRENCY,
                 mode=AUTO_VERIFY_MODE,
-                pace_ms=AUTO_PACE_MS,
+                pace_ms=pace_ms,
             )
             elapsed_ms = int((_time.perf_counter() - _t0) * 1000)
             stats = await persist_results(

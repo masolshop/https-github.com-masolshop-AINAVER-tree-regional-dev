@@ -134,6 +134,10 @@ export interface AdminMonitorRow {
   dead_count: number
   mismatch_count: number
   pending_count: number
+  // 최근 자동/수동 검증 1회의 모드/트리거/시각 — UI 뱃지 표시용
+  last_run_mode: 'full' | 'fast' | string | null
+  last_run_trigger: 'scheduler' | 'manual' | string | null
+  last_run_at: string | null
   last_login_at: string | null
   created_at: string
 }

@@ -26,7 +26,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core import get_db
 from app.models.user import User
 from app.models.place import RegisteredPlace
-from app.models.check import ChangeEvent, DailyHealthCheck
+from app.models.check import ChangeEvent, DailyHealthCheck, VerificationRun
 from app.models.payment import Payment
 from app.schemas.admin import (
     AdminUserOut,
@@ -178,6 +178,35 @@ async def users_monitor(
         .group_by(RegisteredPlace.user_id, RegisteredPlace.current_verdict)
     )
 
+    # ── 2-b) 사용자별 최근 1회 VerificationRun 조회 (mode/trigger/시각) ──
+    # 윈도우 함수 없이 group-by max + join 으로 구현 (호환성 ↑)
+    last_run_subq = (
+        select(
+            VerificationRun.user_id,
+            func.max(VerificationRun.started_at).label("last_started_at"),
+        )
+        .where(VerificationRun.user_id.in_(user_ids))
+        .group_by(VerificationRun.user_id)
+        .subquery()
+    )
+    last_runs = (await db.execute(
+        select(
+            VerificationRun.user_id,
+            VerificationRun.mode,
+            VerificationRun.trigger,
+            VerificationRun.started_at,
+        ).join(
+            last_run_subq,
+            (VerificationRun.user_id == last_run_subq.c.user_id)
+            & (VerificationRun.started_at == last_run_subq.c.last_started_at),
+        )
+    )).all()
+    # user_id → (mode, trigger, started_at)
+    last_run_map: dict[int, tuple[str | None, str | None, datetime | None]] = {
+        uid: (mode, trigger, started_at)
+        for uid, mode, trigger, started_at in last_runs
+    }
+
     # user_id → {ok, dead, mismatch, pending, total}
     bucket: dict[int, dict[str, int]] = {}
     for uid, verdict, cnt in verdict_q.all():
@@ -207,6 +236,9 @@ async def users_monitor(
         place_count = int(b.get("total", 0))
         if only_with_places and place_count == 0:
             continue
+        last_mode, last_trigger, last_started_at = last_run_map.get(
+            u.id, (None, None, None)
+        )
         items.append(AdminMonitorRow(
             user_id=u.id,
             email=u.email,
@@ -220,6 +252,9 @@ async def users_monitor(
             dead_count=int(b.get("dead", 0)),
             mismatch_count=int(b.get("mismatch", 0)),
             pending_count=int(b.get("pending", 0)),
+            last_run_mode=last_mode,
+            last_run_trigger=last_trigger,
+            last_run_at=last_started_at,
             last_login_at=u.last_login_at,
             created_at=u.created_at,
         ))
