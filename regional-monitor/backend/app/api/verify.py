@@ -170,18 +170,33 @@ async def _run_live_check_locked(
         raise HTTPException(status_code=404, detail="검증할 등록이 없습니다.")
 
     # 병렬 검증 — 글로벌 세마포어가 실제 한도 결정 (SOLO=3 / MULTI=1)
-    # 실측 (2026-04-28, AWS Lightsail Seoul → Naver, 단순 헤더):
-    #   sem=3 직렬 5건 연속 테스트: 5/5 200 OK, 290ms/req
-    #   sem=1 + 400ms pace: 100건 75초 (너무 느림 - 사용자 불만)
-    # → fast 모드: concurrency=3 (글로벌 SOLO=3과 일치, 단일 사용자 ~30s/296건)
-    # → full 모드: concurrency=2 (정확도 우선, 추가 헤더 검사 필요)
+    #
+    # 정책 변경 (2026-04-28, 사용자 결정):
+    #   "등록 체크는 정확도 최우선 — 시간이 2배 더 걸려도 좋다.
+    #    자동 정기 체크도 서버단이라 시간에 쫓기지 말고 보수적으로."
+    #
+    # 등록 체크(full 모드): 직렬(concurrency=1) + pace 400ms
+    #   → 296건 ≈ (290ms 응답 + 400ms 페이스) × 296 ≈ 약 200초
+    #   → 네이버 IP throttle 회피, 캡차 위험 거의 0
+    #   → 풀 검증(전화/동/로/리)이라 1회 실행으로 충분
+    # 빠른 모드(fast): 직렬 권장이지만 수동 fast 사용 빈도가 낮으므로 concurrency=2 유지.
     mode = (req.mode or "full").lower()
     if mode not in ("full", "fast"):
         mode = "full"
-    # 글로벌 세마포어가 다중 사용자 시 자동 1로 떨어뜨려 안전
-    concurrency = 3 if mode == "fast" else 2
+    # 글로벌 세마포어가 다중 사용자 시 자동 1로 떨어뜨려 추가 보호.
+    if mode == "full":
+        concurrency = 1     # 직렬 — 정확도 최우선 (사용자 명시 결정)
+        pace_ms = 400       # 호출 간 400ms 휴식 → 차단 위험 최소화
+    else:
+        concurrency = 2     # 빠른 모드는 절반 — 정밀도와 속도 절충
+        pace_ms = 200
     t0 = time.perf_counter()
-    raw_results = await verify_batch(places, concurrency=concurrency, mode=mode)
+    raw_results = await verify_batch(
+        places,
+        concurrency=concurrency,
+        mode=mode,
+        pace_ms=pace_ms,
+    )
     total_ms = int((time.perf_counter() - t0) * 1000)
 
     # DB 기록 + verdict 캐시 갱신 + ChangeEvent 자동 생성

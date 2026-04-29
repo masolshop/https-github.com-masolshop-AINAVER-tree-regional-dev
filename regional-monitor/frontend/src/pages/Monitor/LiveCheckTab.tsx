@@ -348,7 +348,8 @@ export default function LiveCheckTab() {
                 대해 플레이스 ID + 전화번호 + 동/로/리 일치 여부까지 정밀 검증합니다.
                 <br />
                 <span className="text-caption text-white/60">
-                  {CHUNK_SIZE}건씩 청크로 나눠 순차 호출 · 청크당 약 13~20초
+                  {CHUNK_SIZE}건씩 청크로 나눠 직렬 호출 · 정확도 우선(네이버 차단 회피)
+                  으로 충분한 호출 간격을 두고 진행합니다 · 청크당 약 1~2분
                 </span>
               </p>
             </div>
@@ -417,8 +418,10 @@ export default function LiveCheckTab() {
             <p className="text-caption text-white/70 mb-4 flex-1">
               등록된{' '}
               <span className="font-bold text-white">{totalRegistered}</span>개의 070
-              번호를 정밀 검증합니다 (전화 + 동/로/리). 등록 직후 1회만 권장 — 자주 반복
-              시 네이버 일시 차단으로 검증 대기가 늘어날 수 있습니다.
+              번호를 정밀 검증합니다 (전화 + 동/로/리). <strong className="text-white">정확도 우선</strong>
+              으로 직렬 호출 + 충분한 호출 간격을 두고 진행되어 시간이 다소
+              걸리지만(예: 296건 ≈ 약 3~5분) 네이버 차단 위험이 거의 없습니다.
+              등록 직후 1회만 실행하시면 됩니다.
             </p>
             <button
               type="button"
@@ -483,8 +486,10 @@ export default function LiveCheckTab() {
             </span>
             <h3 className="text-h3 text-white mb-1">⚡ 자동 정기 체크</h3>
             <p className="text-caption text-white/70 mb-4 flex-1">
-              매일 사용자별 시각에 빠른 모드(페이지 존재 유무)로 자동 실행됩니다.
-              변경이 감지되면 이메일로 알림을 받으실 수 있습니다.
+              매일 사용자별 시각에 빠른 모드(페이지 존재 유무)로 서버에서 자동
+              실행됩니다. 시간 제약 없이 직렬 호출 + 충분한 간격으로 진행되어
+              네이버 차단 위험 없이 안정적으로 동작합니다. 변경이 감지되면
+              이메일로 알림을 받으실 수 있습니다.
             </p>
             <div className="px-3 py-2 rounded-card bg-white/5 border border-white/10">
               <div className="text-caption text-white/60 mb-0.5">다음 자동 정기 체크</div>
