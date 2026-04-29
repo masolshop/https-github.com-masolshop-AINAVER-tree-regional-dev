@@ -146,6 +146,24 @@ VERIFY_SCHEDULER_V2_DRY_RUN: bool = (
 
 
 # ──────────────────────────────────────────────────────────────
+# 사용자별 검증 락 — 수동(/verify/live) 과 자동(스케줄러) 의 동시 실행 방지
+# 같은 user 에 대해 manual + auto 가 동시에 verify_batch 를 호출하면:
+#   · 같은 phone→place_id 추출 단계가 중복 호출되어 네이버 429/403 차단 발생
+#   · DailyHealthCheck 동시 INSERT 로 race condition 발생
+#   · 수동 진행률 100% 후 자동 결과로 verdict 가 덮여 사용자 혼란
+# 해결: app.api.verify._get_user_lock 와 같은 락 객체를 공유.
+# 락이 잡혀 있으면 자동 검증은 즉시 건너뛰고 다음 슬롯에서 재시도.
+# ──────────────────────────────────────────────────────────────
+
+
+def _get_shared_user_lock(user_id: int) -> asyncio.Lock:
+    """수동 검증과 동일한 per-user lock 반환 (app.api.verify 공유)."""
+    # 지연 import — 순환 의존성 회피
+    from app.api.verify import _get_user_lock as _manual_lock_factory
+    return _manual_lock_factory(user_id)
+
+
+# ──────────────────────────────────────────────────────────────
 # 슬롯 검증 — 사용자 1명 단위
 # ──────────────────────────────────────────────────────────────
 
@@ -158,7 +176,35 @@ async def _verify_user_places(
     """단일 사용자의 등록 070 일괄 검증.
 
     실패 시(네트워크/DB) 지수 백오프로 재시도.
+    수동 검증이 동시 진행 중이면 락 획득에 실패하여 즉시 skip 반환.
     """
+    # 수동 검증과 락 공유 — 같은 사용자에 대한 동시 실행 차단
+    lock = _get_shared_user_lock(user_id)
+    if lock.locked():
+        log.info(
+            "auto-verify skipped user=%d (manual verify in progress) places=%d",
+            user_id, len(place_ids),
+        )
+        return {
+            "updated": 0, "events": 0, "history": 0,
+            "user_id": user_id,
+            "places": len(place_ids),
+            "elapsed_ms": 0,
+            "skipped": "manual_in_progress",
+        }
+    try:
+        async with lock:
+            return await _verify_user_places_locked(user_id, place_ids, attempt)
+    except Exception:
+        raise
+
+
+async def _verify_user_places_locked(
+    user_id: int,
+    place_ids: Sequence[int],
+    attempt: int = 0,
+) -> dict:
+    """실제 검증 본체 (락 획득 후 호출)."""
     try:
         async with AsyncSessionLocal() as db:
             q = await db.execute(
@@ -226,7 +272,8 @@ async def _verify_user_places(
         )
         if attempt < len(RETRY_BACKOFF_SEC):
             await asyncio.sleep(RETRY_BACKOFF_SEC[attempt])
-            return await _verify_user_places(user_id, place_ids, attempt + 1)
+            # 이미 같은 함수 안(락 보유 상태)에서 재시도 — 락 재획득 시도하지 않음
+            return await _verify_user_places_locked(user_id, place_ids, attempt + 1)
         log.error("verify gave up for user=%d places=%d err=%s",
                   user_id, len(place_ids), e)
         return {"updated": 0, "events": 0, "history": 0,
@@ -316,6 +363,7 @@ async def run_slot_15m_verification(
         "skipped_paused": 0,
         "skipped_incomplete": 0,
         "skipped_blocked": 0,
+        "skipped_manual": 0,  # 수동 검증 진행 중이라 자동이 양보한 회원 수
         "executed": 0,
         "failed": 0,
         "places_total": 0,
@@ -479,11 +527,16 @@ async def run_slot_15m_verification(
             *(_verify_user_places(uid, pids) for uid, pids in chunk_pairs),
             return_exceptions=False,
         )
+        skipped_manual_uids: set[int] = set()
         for r in results:
             uid = r.get("user_id")
             if uid is not None:
                 per_user_results[uid] = r
-            if r.get("error"):
+            if r.get("skipped") == "manual_in_progress":
+                if uid is not None:
+                    skipped_manual_uids.add(uid)
+                summary["skipped_manual"] += 1
+            elif r.get("error"):
                 failed += 1
             else:
                 executed += 1
@@ -495,6 +548,19 @@ async def run_slot_15m_verification(
             for u, pids in chunk:
                 r = per_user_results.get(u.id, {})
                 err = r.get("error")
+                if u.id in skipped_manual_uids:
+                    # 수동 검증과 충돌 → 자동 양보. last_auto_run_at 미갱신
+                    # → 다음 슬롯에서 재진입 가능.
+                    await _log_schedule_entry(
+                        db=db, user_id=u.id, slot_index=slot, scheduled_at=started_at,
+                        frequency=u.verify_frequency or "every3d",
+                        places_checked=0,
+                        elapsed_ms=0,
+                        status="skipped_manual",
+                        note="manual verify in progress — yielded",
+                        dry_run=False,
+                    )
+                    continue
                 await _log_schedule_entry(
                     db=db, user_id=u.id, slot_index=slot, scheduled_at=started_at,
                     frequency=u.verify_frequency or "every3d",
@@ -505,10 +571,12 @@ async def run_slot_15m_verification(
                     dry_run=False,
                 )
             # 성공/실패 모두 last_auto_run_at 갱신 (실패해도 다음 주기까지는 대기)
-            await db.execute(
-                update(User).where(User.id.in_([u.id for u, _ in chunk]))
-                .values(last_auto_run_at=now_ts_after)
-            )
+            ran_uids = [u.id for u, _ in chunk if u.id not in skipped_manual_uids]
+            if ran_uids:
+                await db.execute(
+                    update(User).where(User.id.in_(ran_uids))
+                    .values(last_auto_run_at=now_ts_after)
+                )
             await db.commit()
 
     summary["executed"] = executed
