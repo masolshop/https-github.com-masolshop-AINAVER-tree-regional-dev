@@ -196,10 +196,8 @@ async def login_with_google(
     now = now_kst()
 
     if user is None:
-        # 신규 가입
-        # verify_slot: 0~23 랜덤 배정 (사용자 분산용 — 매일 N시 자동 검증)
-        import random
-        slot = random.randint(0, 23)
+        # 신규 가입 — verify_slot 은 placeholder 로 두고, flush 후
+        # schedule_assigner.apply_default_schedule 로 plan 매핑·균등 해시 슬롯 배정.
         user = User(
             email=email,
             name=name,
@@ -208,10 +206,15 @@ async def login_with_google(
             plan="free",
             quota_places=5,
             is_profile_complete=False,
-            verify_slot=slot,
+            verify_slot=0,
+            verify_slot_15m=0,
+            verify_frequency="every5d",  # plan='free' 기본값
             last_login_at=now,
         )
         db.add(user)
+        await db.flush()  # id 확보
+        from app.services.schedule_assigner import apply_default_schedule
+        await apply_default_schedule(db, user, overwrite=True)
     else:
         # 기존 사용자 — Google 정보 보강
         if not user.google_sub:
@@ -318,8 +321,7 @@ async def signup(
             raise HTTPException(409, detail="이미 가입된 이메일입니다.")
 
     # 4) 사용자 생성 — 가입 즉시 is_profile_complete=True (모든 필드를 한 번에 받음)
-    import random
-    slot = random.randint(0, 23)
+    #    verify_slot/verify_slot_15m 은 flush 후 schedule_assigner 가 plan 매핑 + 균등 해시로 배정.
     now = now_kst()
     user = User(
         email=email_lower,
@@ -332,7 +334,9 @@ async def signup(
         plan="free",
         quota_places=5,
         is_profile_complete=True,
-        verify_slot=slot,
+        verify_slot=0,
+        verify_slot_15m=0,
+        verify_frequency="every5d",  # plan='free' 기본값
         agreed_privacy=True,
         agreed_terms=True,
         agreed_marketing=body.agreements.marketing,
@@ -340,6 +344,9 @@ async def signup(
         last_login_at=now,
     )
     db.add(user)
+    await db.flush()  # id 확보
+    from app.services.schedule_assigner import apply_default_schedule
+    await apply_default_schedule(db, user, overwrite=True)
     await db.commit()
     await db.refresh(user)
 

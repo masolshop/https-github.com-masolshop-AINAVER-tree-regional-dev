@@ -66,6 +66,7 @@ async def init_db() -> None:
 
     # ── 컬럼 추가 마이그레이션 (idempotent) ──
     await _ensure_user_account_columns()
+    await _ensure_verify_schedule_v2_columns()
 
 
 async def _ensure_user_account_columns() -> None:
@@ -120,3 +121,117 @@ async def _ensure_user_account_columns() -> None:
             await conn.execute(text(
                 "CREATE UNIQUE INDEX IF NOT EXISTS ix_users_reset_token ON users(reset_token)"
             ))
+
+
+async def _ensure_verify_schedule_v2_columns() -> None:
+    """자동 검증 스케줄 v2 — User 테이블 컬럼 추가 + 기존 회원 백필.
+
+    추가 컬럼:
+      · verify_frequency  VARCHAR(20)  DEFAULT 'every3d' NOT NULL
+      · verify_slot_15m   INTEGER      DEFAULT 0         NOT NULL  (0~95)
+      · last_auto_run_at  TIMESTAMP    NULL
+
+    백필(컬럼이 새로 만들어진 경우만 1회):
+      · verify_frequency = plan 매핑
+          free → every5d / basic → every3d / pro → daily / enterprise → daily
+      · verify_slot_15m  = (id × 7919) mod 96   (균등 해시)
+      · last_auto_run_at = NULL  (첫 슬롯 도달 시 채워짐)
+    """
+    from sqlalchemy import text
+
+    is_sqlite = settings.DATABASE_URL.startswith("sqlite")
+
+    async with engine.begin() as conn:
+        if is_sqlite:
+            res = await conn.execute(text("PRAGMA table_info(users)"))
+            existing_cols = {row[1] for row in res.fetchall()}
+
+            need_backfill = False
+            if "verify_frequency" not in existing_cols:
+                await conn.execute(text(
+                    "ALTER TABLE users ADD COLUMN verify_frequency VARCHAR(20) "
+                    "NOT NULL DEFAULT 'every3d'"
+                ))
+                need_backfill = True
+            if "verify_slot_15m" not in existing_cols:
+                await conn.execute(text(
+                    "ALTER TABLE users ADD COLUMN verify_slot_15m INTEGER "
+                    "NOT NULL DEFAULT 0"
+                ))
+                need_backfill = True
+            if "last_auto_run_at" not in existing_cols:
+                await conn.execute(text(
+                    "ALTER TABLE users ADD COLUMN last_auto_run_at TIMESTAMP"
+                ))
+
+            await conn.execute(text(
+                "CREATE INDEX IF NOT EXISTS ix_users_verify_frequency "
+                "ON users(verify_frequency)"
+            ))
+            await conn.execute(text(
+                "CREATE INDEX IF NOT EXISTS ix_users_verify_slot_15m "
+                "ON users(verify_slot_15m)"
+            ))
+
+            if need_backfill:
+                # plan → frequency 매핑
+                await conn.execute(text(
+                    "UPDATE users SET verify_frequency='every5d' "
+                    "WHERE plan='free'"
+                ))
+                await conn.execute(text(
+                    "UPDATE users SET verify_frequency='every3d' "
+                    "WHERE plan='basic'"
+                ))
+                await conn.execute(text(
+                    "UPDATE users SET verify_frequency='daily' "
+                    "WHERE plan IN ('pro','enterprise')"
+                ))
+                # 슬롯 균등 해시 — SQLite 도 % 연산자 지원
+                await conn.execute(text(
+                    "UPDATE users SET verify_slot_15m = (id * 7919) % 96"
+                ))
+        else:
+            # PostgreSQL
+            await conn.execute(text(
+                "ALTER TABLE users ADD COLUMN IF NOT EXISTS verify_frequency "
+                "VARCHAR(20) NOT NULL DEFAULT 'every3d'"
+            ))
+            await conn.execute(text(
+                "ALTER TABLE users ADD COLUMN IF NOT EXISTS verify_slot_15m "
+                "INTEGER NOT NULL DEFAULT 0"
+            ))
+            await conn.execute(text(
+                "ALTER TABLE users ADD COLUMN IF NOT EXISTS last_auto_run_at "
+                "TIMESTAMPTZ"
+            ))
+            await conn.execute(text(
+                "CREATE INDEX IF NOT EXISTS ix_users_verify_frequency "
+                "ON users(verify_frequency)"
+            ))
+            await conn.execute(text(
+                "CREATE INDEX IF NOT EXISTS ix_users_verify_slot_15m "
+                "ON users(verify_slot_15m)"
+            ))
+
+            # 백필 — verify_slot_15m 이 모두 0 이면 첫 마이그레이션으로 간주.
+            # (이미 분산된 운영 DB 를 덮어쓰지 않음)
+            res = await conn.execute(text(
+                "SELECT COUNT(*) FROM users WHERE verify_slot_15m <> 0"
+            ))
+            already_distributed = int(res.scalar() or 0)
+            if already_distributed == 0:
+                await conn.execute(text(
+                    "UPDATE users SET verify_frequency='every5d' "
+                    "WHERE plan='free' AND verify_frequency='every3d'"
+                ))
+                await conn.execute(text(
+                    "UPDATE users SET verify_frequency='daily' "
+                    "WHERE plan IN ('pro','enterprise') "
+                    "AND verify_frequency='every3d'"
+                ))
+                # basic 은 default('every3d') 그대로 유지
+                await conn.execute(text(
+                    "UPDATE users SET verify_slot_15m = (id * 7919) %% 96 "
+                    "WHERE verify_slot_15m = 0"
+                ))

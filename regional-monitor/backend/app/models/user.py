@@ -54,9 +54,34 @@ class User(Base):
     blocked_reason: Mapped[str | None] = mapped_column(String(500), nullable=True)
 
     # ── 자동 검증 시간 슬롯 (0~23, "매일 N시 검증") ──
-    # 사용자 분산을 위해 가입 시 id % 24 로 자동 배정.
-    # 1만 명일 때 슬롯당 ~417명 × 5건 = 2,085건/시간 → 0.6 RPS (네이버 안전).
+    # [DEPRECATED — Schedule v2 도입 후 verify_slot_15m 으로 대체]
+    # 1단계 마이그레이션 기간(dry-run 1주) 동안 호환성 유지를 위해 컬럼은 남겨둔다.
+    # 매 시각 정각 hourly 트리거가 이 컬럼으로 사용자를 선택해 실제 검증을 실행.
     verify_slot: Mapped[int] = mapped_column(Integer, default=0, nullable=False, index=True)
+
+    # ── 자동 검증 스케줄 v2 (15분 슬롯 + 주기) ──
+    # verify_frequency: 자동 검증 주기
+    #   'daily'    — 매일 1회
+    #   'every3d'  — 3일에 1회
+    #   'every5d'  — 5일에 1회
+    #   'weekly'   — 7일에 1회
+    #   'paused'   — 자동 검증 중지 (수동만)
+    # 가입 시 plan 매핑(default_frequency_for_plan)으로 자동 부여.
+    verify_frequency: Mapped[str] = mapped_column(
+        String(20), default="every3d", nullable=False, index=True,
+    )
+
+    # verify_slot_15m: 0~95 (하루 96개의 15분 슬롯 중 하나)
+    #   slot N → KST (N//4):(N%4 * 15) 시각
+    #   가입 시 균등 해시 (user_id × 7919) mod 96 으로 자동 배정.
+    #   슬롯당 등록 합계가 임계치 초과 시 어드민이 rebalance 호출 → 인접 슬롯으로 이동.
+    verify_slot_15m: Mapped[int] = mapped_column(
+        Integer, default=0, nullable=False, index=True,
+    )
+
+    # last_auto_run_at: 마지막 자동 검증 실행 시각 (주기 충족 판정용)
+    #   현재 슬롯에 진입했더라도 (now - last_auto_run_at) < frequency_seconds 면 skip.
+    last_auto_run_at: Mapped[datetime | None] = mapped_column(KSTDateTime, nullable=True)
 
     # ── 플랜 ──
     plan: Mapped[str] = mapped_column(String(20), default="free", nullable=False)

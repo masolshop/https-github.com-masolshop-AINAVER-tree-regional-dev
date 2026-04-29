@@ -369,7 +369,9 @@ async def update_user(
     if u.id == me.id and body.is_active is False:
         raise HTTPException(400, "자기 자신을 차단할 수 없습니다.")
 
+    plan_changed = False
     if body.plan is not None:
+        plan_changed = (u.plan != body.plan)
         u.plan = body.plan
         # 플랜에 맞는 quota 자동 (어드민이 명시적으로 quota_places 도 보냈으면 그게 우선)
         DEFAULT_QUOTA = {"free": 5, "basic": 50, "pro": 500, "enterprise": 10000}
@@ -387,6 +389,12 @@ async def update_user(
         u.is_superadmin = body.is_superadmin
     if body.name is not None:
         u.name = body.name
+
+    # 플랜이 바뀌면 자동 검증 주기도 새 플랜의 기본값으로 갱신.
+    # ("항상 자동" 정책 — 회원이 paused 로 직접 바꿨으면 그건 보존되도록 overwrite=False)
+    if plan_changed:
+        from app.services.schedule_assigner import apply_default_schedule
+        await apply_default_schedule(db, u, overwrite=False)
 
     await db.commit()
     await db.refresh(u)

@@ -4,9 +4,11 @@ from .place import RegisteredPlace
 from .check import DailyHealthCheck, ChangeEvent, VerificationRun
 from .payment import Payment
 from .verify_job import VerifyJob
+from .verify_schedule_log import VerifyScheduleLog
 
 __all__ = [
     "User", "RegisteredPlace",
     "DailyHealthCheck", "ChangeEvent", "VerificationRun",
     "Payment", "VerifyJob",
+    "VerifyScheduleLog",
 ]
