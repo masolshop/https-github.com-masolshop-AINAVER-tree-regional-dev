@@ -145,3 +145,20 @@ class VerifySlotUpdateRequest(BaseModel):
 class VerifySlotUpdateResponse(BaseModel):
     user: UserOut
     next_run_at: datetime  # KST 기준 다음 실행 시각
+
+
+# ─────────── 본인 프로필 수정 ───────────
+
+class MyProfileUpdateRequest(BaseModel):
+    """로그인 사용자 본인이 직접 수정 가능한 프로필 필드.
+    전부 optional — 보낸 필드만 갱신.
+    이메일은 unique 제약 + 형식 검사. 회사명/직함은 빈값 허용(null 저장).
+    """
+    name: str | None = Field(default=None, min_length=1, max_length=120)
+    email: str | None = Field(default=None, min_length=3, max_length=255)
+    company: str | None = Field(default=None, max_length=120)
+    job_title: str | None = Field(default=None, max_length=120)
+
+
+class MyProfileUpdateResponse(BaseModel):
+    user: UserOut

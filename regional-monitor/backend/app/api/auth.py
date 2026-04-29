@@ -51,6 +51,8 @@ from app.schemas.auth import (
     ResetPasswordVerifyResponse,
     VerifySlotUpdateRequest,
     VerifySlotUpdateResponse,
+    MyProfileUpdateRequest,
+    MyProfileUpdateResponse,
 )
 from app.schemas.common import MessageResponse
 from .deps import get_current_user
@@ -572,6 +574,48 @@ def _calc_next_run_at(slot: int) -> datetime:
     if target <= now:
         target = target + timedelta(days=1)
     return target
+
+
+@router.patch("/me", response_model=MyProfileUpdateResponse)
+async def update_my_profile(
+    body: MyProfileUpdateRequest,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> MyProfileUpdateResponse:
+    """로그인 사용자 본인 정보 수정 — 이름/이메일/회사명/직함.
+
+    - 이메일 변경 시 형식 검사 + 다른 사용자와 중복 체크 (409)
+    - 회사명/직함 빈 문자열은 null 로 저장
+    - 이름은 자동 trim
+    - 플랜/quota/슈퍼어드민 권한은 본인이 변경 불가 (어드민 전용)
+    """
+    if body.name is not None:
+        new_name = body.name.strip()
+        if not new_name:
+            raise HTTPException(400, "이름은 비울 수 없습니다.")
+        user.name = new_name
+
+    if body.email is not None:
+        new_email = body.email.strip().lower()
+        if not new_email or "@" not in new_email or "." not in new_email.split("@")[-1]:
+            raise HTTPException(400, "유효한 이메일 형식이 아닙니다.")
+        if new_email != (user.email or "").lower():
+            dup = (await db.execute(
+                select(User).where(User.email == new_email, User.id != user.id)
+            )).scalar_one_or_none()
+            if dup:
+                raise HTTPException(409, f"이미 사용 중인 이메일입니다: {new_email}")
+            user.email = new_email
+
+    if body.company is not None:
+        user.company = body.company.strip() or None
+
+    if body.job_title is not None:
+        user.job_title = body.job_title.strip() or None
+
+    await db.commit()
+    await db.refresh(user)
+    return MyProfileUpdateResponse(user=_user_to_out(user))
 
 
 @router.patch("/me/verify-slot", response_model=VerifySlotUpdateResponse)

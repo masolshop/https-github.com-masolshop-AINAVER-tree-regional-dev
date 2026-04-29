@@ -283,6 +283,18 @@ export interface VerifySlotUpdateResponse {
   next_run_at: string              // ISO datetime (KST, +09:00)
 }
 
+/** PATCH /api/v1/auth/me — 본인 프로필 수정 (이름/이메일/회사명/직함) */
+export interface MyProfileUpdateRequest {
+  name?: string
+  email?: string
+  company?: string | null
+  job_title?: string | null
+}
+
+export interface MyProfileUpdateResponse {
+  user: User
+}
+
 export interface Agreements {
   privacy: boolean
   terms: boolean

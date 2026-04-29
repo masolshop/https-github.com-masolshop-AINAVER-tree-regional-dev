@@ -18,6 +18,8 @@ import type {
   ResetPasswordVerifyResponse,
   VerifySlotUpdateRequest,
   VerifySlotUpdateResponse,
+  MyProfileUpdateRequest,
+  MyProfileUpdateResponse,
 } from './types'
 
 export const authApi = {
@@ -65,4 +67,8 @@ export const authApi = {
   /** 내 자동 검증 시각(0~23시) 변경 */
   updateVerifySlot: (body: VerifySlotUpdateRequest) =>
     api.patch<VerifySlotUpdateResponse>('/api/v1/auth/me/verify-slot', body),
+
+  /** 본인 프로필 수정 — 이름/이메일/회사명/직함 */
+  updateMyProfile: (body: MyProfileUpdateRequest) =>
+    api.patch<MyProfileUpdateResponse>('/api/v1/auth/me', body),
 }
