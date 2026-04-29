@@ -55,14 +55,6 @@ const PLAN_TONE: Record<AdminPlanKey, string> = {
   enterprise: 'bg-purple-50 text-purple-700',
 }
 
-const FREQ_LABEL: Record<VerifyFrequency, string> = {
-  daily: '매일',
-  every3d: '3일마다',
-  every5d: '5일마다',
-  weekly: '매주',
-  paused: '일시정지',
-}
-
 const FREQ_TONE: Record<VerifyFrequency, string> = {
   daily: 'bg-emerald-50 text-emerald-700',
   every3d: 'bg-blue-50 text-blue-700',
