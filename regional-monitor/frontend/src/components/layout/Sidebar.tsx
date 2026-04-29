@@ -12,6 +12,7 @@
  * onItemClick: 메뉴/로그인/로그아웃 클릭 시 호출 (모바일 Drawer 자동 닫기용)
  */
 import { useState } from 'react'
+import { createPortal } from 'react-dom'
 import { NavLink, useNavigate } from 'react-router-dom'
 import { useMutation } from '@tanstack/react-query'
 import {
@@ -284,8 +285,16 @@ function ProfileEditModal({ user, onClose }: { user: User; onClose: () => void }
     },
   })
 
-  return (
-    <div className="fixed inset-0 z-50 grid place-items-center bg-black/40 px-4">
+  // ⚠️ 사이드바(<aside>) 안에서 렌더되면 stacking-context에 갇혀 메인 콘텐츠와 겹쳐 보임.
+  // createPortal 로 document.body 직속에 렌더하여 화면 전체를 덮도록 한다.
+  return createPortal(
+    <div
+      className="fixed inset-0 z-[1000] grid place-items-center bg-black/50 px-4"
+      onClick={(e) => {
+        // 백드롭 클릭 시 닫기 (모달 본체 클릭은 무시)
+        if (e.target === e.currentTarget) onClose()
+      }}
+    >
       <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl">
         <div className="mb-4 flex items-center justify-between">
           <h3 className="text-lg font-bold text-ink">내 정보 수정</h3>
@@ -375,6 +384,7 @@ function ProfileEditModal({ user, onClose }: { user: User; onClose: () => void }
           </div>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   )
 }
