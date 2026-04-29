@@ -1,0 +1,37 @@
+# 타지역닷컴 (taziyuk.com) - robots.txt
+# 일반 검색엔진: 전체 색인 허용
+User-agent: *
+Allow: /
+# 인증/관리 페이지는 색인 제외
+Disallow: /admin
+Disallow: /admin/
+Disallow: /reset-password
+Disallow: /api/
+Disallow: /auth/
+
+# 네이버 검색 (Yeti)
+User-agent: Yeti
+Allow: /
+Disallow: /admin
+Disallow: /admin/
+Disallow: /reset-password
+Disallow: /api/
+
+# 구글 검색
+User-agent: Googlebot
+Allow: /
+Disallow: /admin
+Disallow: /admin/
+Disallow: /reset-password
+Disallow: /api/
+
+# 다음 검색
+User-agent: Daum
+Allow: /
+
+# 빙 검색
+User-agent: Bingbot
+Allow: /
+
+Sitemap: https://taziyuk.com/sitemap.xml
+Host: https://taziyuk.com
