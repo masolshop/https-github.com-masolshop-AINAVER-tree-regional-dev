@@ -195,6 +195,7 @@ async def login_with_google(
 
     now = now_kst()
 
+    is_new_user = user is None
     if user is None:
         # 신규 가입 — verify_slot 은 placeholder 로 두고, flush 후
         # schedule_assigner.apply_default_schedule 로 plan 매핑·균등 해시 슬롯 배정.
@@ -227,6 +228,19 @@ async def login_with_google(
 
     await db.commit()
     await db.refresh(user)
+
+    # 관리자(taziyuknaver@gmail.com) 신규 가입 알림 — best-effort, 가입 흐름 차단 X
+    # Google 가입은 추가정보 미완료 상태이므로 source='google' 1차 알림만,
+    # /profile 완료 시 source='profile' 로 다시 발송 (정보 보강).
+    if is_new_user:
+        try:
+            from app.services.account_mailer import send_admin_signup_notification
+            await send_admin_signup_notification(user, source="google")
+        except Exception as exc:  # noqa: BLE001
+            import logging
+            logging.getLogger("auth").warning(
+                "admin signup notify failed user=%s err=%s", user.id, exc,
+            )
 
     return GoogleLoginResponse(
         access_token=_issue_token(user),
@@ -273,6 +287,18 @@ async def complete_profile(
 
     await db.commit()
     await db.refresh(user)
+
+    # 관리자(taziyuknaver@gmail.com) 신규 가입 알림 — Google 추가정보 완료 시점.
+    # /google 단계의 1차 알림은 정보가 비어 있으므로, 본 시점에 보강 알림을 추가 발송.
+    try:
+        from app.services.account_mailer import send_admin_signup_notification
+        await send_admin_signup_notification(user, source="profile")
+    except Exception as exc:  # noqa: BLE001
+        import logging
+        logging.getLogger("auth").warning(
+            "admin signup notify (profile) failed user=%s err=%s", user.id, exc,
+        )
+
     return MeResponse(user=_user_to_out(user))
 
 
@@ -349,6 +375,16 @@ async def signup(
     await apply_default_schedule(db, user, overwrite=True)
     await db.commit()
     await db.refresh(user)
+
+    # 관리자(taziyuknaver@gmail.com) 신규 가입 알림 — best-effort, 가입 흐름 차단 X
+    try:
+        from app.services.account_mailer import send_admin_signup_notification
+        await send_admin_signup_notification(user, source="signup")
+    except Exception as exc:  # noqa: BLE001
+        import logging
+        logging.getLogger("auth").warning(
+            "admin signup notify failed user=%s err=%s", user.id, exc,
+        )
 
     return SignupResponse(
         access_token=_issue_token(user),

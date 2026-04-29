@@ -33,6 +33,9 @@ if not logger.handlers and not logging.getLogger().handlers:
 _SITE_URL = "https://taziyuk.com"
 _BRAND_COLOR = "#1F2D4D"
 
+# 관리자 신규 가입 알림 수신 메일 (요구사항: taziyuknaver@gmail.com)
+_ADMIN_NOTIFY_EMAIL = "taziyuknaver@gmail.com"
+
 
 # ────────────────────────────────────────────────────────────────
 #  공개 API
@@ -54,6 +57,22 @@ async def send_password_reset_email(user: User, token: str) -> bool:
     text, html = _render_reset(user, reset_url)
     return await asyncio.get_event_loop().run_in_executor(
         None, _send, user.email, subject, text, html,
+    )
+
+
+async def send_admin_signup_notification(user: User, *, source: str = "signup") -> bool:
+    """관리자(taziyuknaver@gmail.com) 에게 신규 회원가입 알림 메일 발송.
+
+    Args:
+        user   : 방금 가입한 User (id 확보 후 호출).
+        source : 'signup'(아이디/비밀번호) | 'google' | 'profile'(Google 추가정보 완료) 등.
+
+    SMTP 미설정 시 콘솔 로그로 폴백. 가입 흐름은 절대 막지 않는다 (호출측 try/except).
+    """
+    subject = f"[타지역서비스] 신규 회원가입 — {user.name or user.email}"
+    text, html = _render_admin_signup(user, source=source)
+    return await asyncio.get_event_loop().run_in_executor(
+        None, _send, _ADMIN_NOTIFY_EMAIL, subject, text, html,
     )
 
 
@@ -226,4 +245,82 @@ def _render_reset(user: User, reset_url: str) -> tuple[str, str]:
     return text, _shell("비밀번호 재설정", "비밀번호 재설정", body_html)
 
 
-__all__ = ["send_username_email", "send_password_reset_email"]
+def _render_admin_signup(user: User, *, source: str) -> tuple[str, str]:
+    """관리자용 신규 가입 알림 메일 본문."""
+    name = user.name or "(이름 미입력)"
+    email = user.email or "(이메일 없음)"
+    phone = user.phone or "(미입력)"
+    company = user.company or "(미입력)"
+    job_title = user.job_title or "(미입력)"
+    plan = user.plan or "free"
+    username = user.username or "(소셜 로그인)"
+    user_id = getattr(user, "id", "—")
+
+    source_label = {
+        "signup": "아이디/비밀번호",
+        "google": "Google 로그인",
+        "profile": "Google + 추가정보 완료",
+    }.get(source, source)
+
+    when = now_kst().strftime("%Y-%m-%d %H:%M KST")
+
+    text = (
+        f"[타지역서비스] 신규 회원가입 알림\n\n"
+        f"가입 시각: {when}\n"
+        f"가입 경로: {source_label}\n"
+        f"\n"
+        f"  회원ID    : {user_id}\n"
+        f"  이름      : {name}\n"
+        f"  이메일    : {email}\n"
+        f"  아이디    : {username}\n"
+        f"  휴대폰    : {phone}\n"
+        f"  회사명    : {company}\n"
+        f"  직함      : {job_title}\n"
+        f"  플랜      : {plan}\n"
+        f"\n"
+        f"어드민에서 확인: {_SITE_URL}/admin/users\n"
+    )
+
+    rows = [
+        ("회원ID", str(user_id)),
+        ("이름", name),
+        ("이메일", email),
+        ("아이디", username),
+        ("휴대폰", phone),
+        ("회사명", company),
+        ("직함", job_title),
+        ("플랜", plan),
+        ("가입 경로", source_label),
+    ]
+    rows_html = "".join(
+        f"""
+        <tr>
+          <td style="padding:8px 12px;border-bottom:1px solid #E5E7EB;color:#6B7280;font-size:12px;font-weight:600;width:30%;">{_html_escape(label)}</td>
+          <td style="padding:8px 12px;border-bottom:1px solid #E5E7EB;color:#1F2D4D;font-size:13px;font-weight:600;">{_html_escape(value)}</td>
+        </tr>
+        """
+        for label, value in rows
+    )
+
+    body_html = f"""
+        <p style="margin:0 0 14px;font-size:14px;color:#1F2D4D;line-height:1.6;">
+          새로운 회원이 가입했습니다. 가입 정보는 아래와 같습니다.
+        </p>
+        <table role="presentation" style="width:100%;border-collapse:collapse;margin:12px 0 18px;background:#F9FAFB;border:1px solid #E5E7EB;border-radius:10px;overflow:hidden;">
+          {rows_html}
+        </table>
+        <div style="text-align:center;margin:18px 0 4px;">
+          <a href="{_SITE_URL}/admin/users" style="display:inline-block;padding:12px 24px;background:{_BRAND_COLOR};color:#FFFFFF;text-decoration:none;border-radius:10px;font-weight:700;font-size:14px;">어드민 회원 관리 →</a>
+        </div>
+        <p style="margin:18px 0 0;font-size:12px;color:#9CA3AF;line-height:1.6;text-align:center;">
+          이 메일은 신규 가입 발생 시 슈퍼어드민에게 자동 발송됩니다.
+        </p>
+    """
+    return text, _shell("신규 회원가입", "신규 회원가입 알림", body_html)
+
+
+__all__ = [
+    "send_username_email",
+    "send_password_reset_email",
+    "send_admin_signup_notification",
+]
