@@ -631,6 +631,8 @@ async def list_schedule_users(
     )
     import time as _time
 
+    from app.models.verify_schedule_log import VerifyScheduleLog
+
     base = select(User)
     filters = []
     if q:
@@ -660,6 +662,19 @@ async def list_schedule_users(
     if only_with_places:
         rows = [u for u in rows if pc_map.get(u.id, 0) > 0]
 
+    # verify_schedule_log 24시간 집계 (skipped_manual 카운트)
+    skipped_manual_map: dict[int, int] = {}
+    if rows:
+        since = now_kst() - timedelta(hours=24)
+        sm_q = await db.execute(
+            select(VerifyScheduleLog.user_id, func.count(VerifyScheduleLog.id))
+            .where(VerifyScheduleLog.user_id.in_([u.id for u in rows]))
+            .where(VerifyScheduleLog.status == "skipped_manual")
+            .where(VerifyScheduleLog.scheduled_at >= since)
+            .group_by(VerifyScheduleLog.user_id)
+        )
+        skipped_manual_map = {int(uid): int(c) for uid, c in sm_q.all()}
+
     # 행 구성
     now_dt = now_kst()
     now_ts = now_dt.timestamp()
@@ -687,6 +702,7 @@ async def list_schedule_users(
             last_auto_run_at=u.last_auto_run_at,
             next_due_at=next_due,
             is_due_now=due_now,
+            skipped_manual_24h=skipped_manual_map.get(u.id, 0),
         ))
 
     # 정렬
@@ -723,6 +739,19 @@ async def list_schedule_users(
     avg_load = (sum(loads) / len(loads)) if loads else 0.0
     over_n = sum(1 for v in loads if v > SLOT_PLACES_LIMIT)
 
+    # 24시간 verify_schedule_log 전체 status 집계 (요약 카드용)
+    since_24h = now_kst() - timedelta(hours=24)
+    status_q = await db.execute(
+        select(VerifyScheduleLog.status, func.count(VerifyScheduleLog.id))
+        .where(VerifyScheduleLog.scheduled_at >= since_24h)
+        .group_by(VerifyScheduleLog.status)
+    )
+    status_counts = {str(s): int(c) for s, c in status_q.all()}
+    skipped_manual_total = status_counts.get("skipped_manual", 0)
+    executed_total = status_counts.get("executed", 0)
+    dry_run_total = status_counts.get("dry_run_recorded", 0)
+    skipped_manual_users = sum(1 for v in skipped_manual_map.values() if v > 0)
+
     summary = AdminScheduleSummary(
         users_total=active_users_n,
         users_paused=paused_n,
@@ -731,6 +760,10 @@ async def list_schedule_users(
         slot_avg_load=round(avg_load, 2),
         slot_over_limit=over_n,
         by_frequency=by_freq,
+        skipped_manual_24h=skipped_manual_total,
+        skipped_manual_users_24h=skipped_manual_users,
+        executed_24h=executed_total,
+        dry_run_recorded_24h=dry_run_total,
     )
     return AdminScheduleListOut(summary=summary, items=items)
 

@@ -21,7 +21,6 @@ import {
   Search,
   RefreshCw,
   Users as UsersIcon,
-  Pause,
   Building2,
   Activity,
   AlertTriangle,
@@ -29,6 +28,7 @@ import {
   Shuffle,
   Save,
   CheckCircle2,
+  HandIcon,
 } from 'lucide-react'
 
 import { Card } from '@/components/ui/Card'
@@ -189,10 +189,11 @@ export function AdminSchedule() {
           sub="≥ 80 건"
         />
         <KpiCard
-          icon={<Pause className="h-4 w-4" />}
-          tone="warning"
-          label="paused"
-          value={summary?.users_paused ?? 0}
+          icon={<HandIcon className="h-4 w-4" />}
+          tone={(summary?.skipped_manual_24h ?? 0) > 0 ? 'warning' : 'info'}
+          label="수동 양보 (24h)"
+          value={summary?.skipped_manual_24h ?? 0}
+          sub={`회원 ${summary?.skipped_manual_users_24h ?? 0}명 · 실행 ${summary?.executed_24h ?? 0}`}
         />
       </div>
 
@@ -374,6 +375,10 @@ export function AdminSchedule() {
                   <th className="px-3 py-3 font-semibold">주기</th>
                   <th className="px-3 py-3 font-semibold">슬롯</th>
                   <th className="px-3 py-3 font-semibold">마지막 실행</th>
+                  <th className="px-3 py-3 font-semibold text-right" title="최근 24시간 동안 수동 검증과 충돌하여 자동이 양보한 횟수">
+                    수동양보<br/>
+                    <span className="text-[10px] font-normal text-ink-muted">24h</span>
+                  </th>
                   <th className="px-3 py-3 font-semibold">상태</th>
                 </tr>
               </thead>
@@ -569,6 +574,25 @@ function ScheduleRow({
         {fmtKstShort(row.last_auto_run_at)}
         {row.next_due_at && (
           <div className="text-[10px] text-ink-muted">→ {fmtKstShort(row.next_due_at)}</div>
+        )}
+      </td>
+      <td
+        className="px-3 py-2 text-right tabular-nums"
+        title="최근 24시간 동안 수동 검증과 충돌하여 자동이 양보한 횟수"
+      >
+        {row.skipped_manual_24h > 0 ? (
+          <span
+            className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-pill text-caption font-bold ${
+              row.skipped_manual_24h >= 3
+                ? 'bg-amber-50 text-amber-700'
+                : 'bg-blue-50 text-blue-700'
+            }`}
+          >
+            <HandIcon className="h-3 w-3" />
+            {row.skipped_manual_24h}
+          </span>
+        ) : (
+          <span className="text-ink-muted">—</span>
         )}
       </td>
       <td className="px-3 py-2">

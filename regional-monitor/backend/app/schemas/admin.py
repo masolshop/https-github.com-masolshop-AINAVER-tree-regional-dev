@@ -171,6 +171,8 @@ class AdminScheduleUserRow(BaseModel):
     last_auto_run_at: datetime | None = None
     next_due_at: datetime | None = None       # 추정 다음 실행 시각
     is_due_now: bool = False                  # 현재 due 여부
+    # 최근 24시간 동안 자동 ↔ 수동 충돌로 양보된 횟수 (skipped_manual)
+    skipped_manual_24h: int = 0
 
 
 class AdminScheduleSummary(BaseModel):
@@ -182,6 +184,11 @@ class AdminScheduleSummary(BaseModel):
     slot_avg_load: float
     slot_over_limit: int             # SLOT_PLACES_LIMIT 초과 슬롯 수
     by_frequency: dict[str, int]     # {'daily': 12, 'every3d': 30, ...}
+    # 최근 24시간 verify_schedule_log 집계
+    skipped_manual_24h: int = 0      # 자동 ↔ 수동 충돌로 양보된 총 회수
+    skipped_manual_users_24h: int = 0  # 양보된 distinct 회원 수
+    executed_24h: int = 0            # 실제 검증 수행 회수
+    dry_run_recorded_24h: int = 0    # dry-run 기록 회수
 
 
 class AdminScheduleListOut(BaseModel):

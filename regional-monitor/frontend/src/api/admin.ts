@@ -180,6 +180,8 @@ export interface AdminScheduleUserRow {
   last_auto_run_at: string | null
   next_due_at: string | null
   is_due_now: boolean
+  // 최근 24h 동안 자동 ↔ 수동 충돌로 양보된 횟수
+  skipped_manual_24h: number
 }
 
 export interface AdminScheduleSummary {
@@ -190,6 +192,11 @@ export interface AdminScheduleSummary {
   slot_avg_load: number
   slot_over_limit: number
   by_frequency: Record<string, number>
+  // 최근 24h verify_schedule_log 집계
+  skipped_manual_24h: number
+  skipped_manual_users_24h: number
+  executed_24h: number
+  dry_run_recorded_24h: number
 }
 
 export interface AdminScheduleListOut {
