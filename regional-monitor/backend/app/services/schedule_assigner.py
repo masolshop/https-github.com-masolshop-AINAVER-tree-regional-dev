@@ -112,6 +112,15 @@ async def apply_default_schedule(
 
     changed = False
 
+    # ── 슈퍼어드민은 검증 대상에서 영구 제외 ──
+    # 슈퍼어드민은 본인 업체를 등록·관리하는 주체가 아니므로 자동 검증을 돌리지 않는다.
+    # plan/슬롯 자동 배정 모두 건너뛰고 paused 로 강제.
+    if getattr(user, "is_superadmin", False):
+        if user.verify_frequency != "paused":
+            user.verify_frequency = "paused"
+            changed = True
+        return changed
+
     # ── 주기 ──
     desired_freq = default_frequency_for_plan(user.plan)
     if overwrite or user.verify_frequency in (None, "", "every3d"):
@@ -291,6 +300,9 @@ def is_due_for_run(user: User, *, now_ts: float) -> tuple[bool, str]:
     Returns:
         (due, reason) — due=False 면 reason 에 사유.
     """
+    # 슈퍼어드민은 자동 검증 대상에서 영구 제외 (DB 의 verify_frequency 와 무관하게 차단)
+    if getattr(user, "is_superadmin", False):
+        return False, "skipped_superadmin"
     if not user.is_active:
         return False, "blocked"
     if not user.is_profile_complete:

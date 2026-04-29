@@ -237,3 +237,10 @@ async def _ensure_verify_schedule_v2_columns() -> None:
                     "UPDATE users SET verify_slot_15m = mod(id * 7919, 96) "
                     "WHERE verify_slot_15m = 0"
                 ))
+
+            # 슈퍼어드민은 자동 검증 대상에서 영구 제외 — 매 부팅 시 강제 동기화.
+            # (운영 중 누군가 수동으로 frequency 를 바꿔도 다음 부팅에 자동 복구)
+            await conn.execute(text(
+                "UPDATE users SET verify_frequency='paused' "
+                "WHERE is_superadmin=true AND verify_frequency<>'paused'"
+            ))

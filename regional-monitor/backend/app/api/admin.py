@@ -395,11 +395,15 @@ async def update_user(
         u.blocked_reason = body.blocked_reason or None
     if body.is_superadmin is not None:
         u.is_superadmin = body.is_superadmin
+        # 슈퍼어드민으로 승격되면 자동 검증을 즉시 영구 정지
+        if body.is_superadmin:
+            u.verify_frequency = "paused"
     if body.name is not None:
         u.name = body.name
 
     # 플랜이 바뀌면 자동 검증 주기도 새 플랜의 기본값으로 갱신.
     # ("항상 자동" 정책 — 회원이 paused 로 직접 바꿨으면 그건 보존되도록 overwrite=False)
+    # 단, 슈퍼어드민은 apply_default_schedule 내부에서 paused 강제됨.
     if plan_changed:
         from app.services.schedule_assigner import apply_default_schedule
         await apply_default_schedule(db, u, overwrite=False)
@@ -801,6 +805,17 @@ async def update_schedule_user(
     u = (await db.execute(select(User).where(User.id == user_id))).scalar_one_or_none()
     if not u:
         raise HTTPException(404, "사용자를 찾을 수 없습니다.")
+
+    # 슈퍼어드민은 자동 검증 대상에서 영구 제외 — frequency 는 항상 'paused' 강제
+    if u.is_superadmin:
+        if u.verify_frequency != "paused":
+            u.verify_frequency = "paused"
+            await db.commit()
+            await db.refresh(u)
+        raise HTTPException(
+            400,
+            "슈퍼어드민 계정은 자동 검증 대상에서 영구 제외됩니다(paused 고정).",
+        )
 
     if body.verify_frequency is not None:
         if not is_valid_frequency(body.verify_frequency):
