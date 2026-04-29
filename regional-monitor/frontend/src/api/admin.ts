@@ -115,6 +115,50 @@ export interface PaymentListQuery {
   offset?: number
 }
 
+// ─────────────────────────────────────────────────────────────
+// 회원 모니터링 (전 회원 검증상태 요약 — 슈퍼어드민 전용)
+// ─────────────────────────────────────────────────────────────
+
+export interface AdminMonitorRow {
+  user_id: number
+  email: string
+  name: string
+  company: string | null
+  plan: AdminPlanKey
+  is_active: boolean
+  is_superadmin: boolean
+  place_count: number
+  ok_count: number
+  dead_count: number
+  mismatch_count: number
+  pending_count: number
+  last_login_at: string | null
+  created_at: string
+}
+
+export interface AdminMonitorSummary {
+  users_total: number
+  users_with_places: number
+  places_total: number
+  ok_total: number
+  dead_total: number
+  mismatch_total: number
+  pending_total: number
+}
+
+export interface AdminMonitorOut {
+  summary: AdminMonitorSummary
+  items: AdminMonitorRow[]
+}
+
+export interface AdminMonitorQuery {
+  q?: string
+  plan?: AdminPlanKey | ''
+  only_with_places?: boolean
+  sort?: 'places' | 'dead' | 'mismatch' | 'pending' | 'recent'
+  limit?: number
+}
+
 function qs(params: object): string {
   const usp = new URLSearchParams()
   Object.entries(params as Record<string, unknown>).forEach(([k, v]) => {
@@ -147,4 +191,8 @@ export const adminApi = {
 
   patchPayment: (id: number, body: AdminPaymentPatch) =>
     api.patch<AdminPaymentOut>(`/api/v1/admin/payments/${id}`, body),
+
+  // 회원 모니터링 — 전 회원의 등록건수 + 검증상태 분포 한 번에
+  usersMonitor: (q: AdminMonitorQuery = {}) =>
+    api.get<AdminMonitorOut>(`/api/v1/admin/users/monitor${qs(q as Record<string, unknown>)}`),
 }

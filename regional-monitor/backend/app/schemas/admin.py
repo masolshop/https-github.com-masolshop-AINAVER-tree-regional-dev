@@ -111,3 +111,42 @@ class AdminStatsOut(BaseModel):
     payments_total: int
     revenue_paid_krw: int                           # 누적 결제 완료 금액
     last_24h_checks: int                            # 최근 24시간 검증 수
+
+
+# ──────────────────────────────────────────────────────────────
+# 회원 모니터링 (전 회원 검증상태 요약 — 슈퍼어드민 전용)
+# ──────────────────────────────────────────────────────────────
+
+class AdminMonitorRow(BaseModel):
+    """회원 1행 요약."""
+    user_id: int
+    email: str
+    name: str
+    company: str | None = None       # 업체명
+    plan: str                        # 회원등급 (free / basic / pro / enterprise)
+    is_active: bool
+    is_superadmin: bool
+    place_count: int = 0             # 등록 갯수
+    # 검증상태 분포 (registered_places.current_verdict)
+    ok_count: int = 0                # 정상 노출
+    dead_count: int = 0              # 페이지 삭제
+    mismatch_count: int = 0          # 불일치 (PHONE/DONG/NAME/REGION MISMATCH 합산)
+    pending_count: int = 0           # 검증 대기
+    last_login_at: datetime | None = None
+    created_at: datetime
+
+
+class AdminMonitorSummary(BaseModel):
+    """전체 합계 — 페이지 상단 카드용."""
+    users_total: int
+    users_with_places: int           # 등록건수 ≥ 1 인 회원 수
+    places_total: int
+    ok_total: int
+    dead_total: int
+    mismatch_total: int
+    pending_total: int
+
+
+class AdminMonitorOut(BaseModel):
+    summary: AdminMonitorSummary
+    items: list[AdminMonitorRow]

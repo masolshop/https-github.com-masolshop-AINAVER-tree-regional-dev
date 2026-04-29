@@ -68,6 +68,19 @@ function ProtectedRoute({
 }
 
 /**
+ * /monitor 진입 시 슈퍼어드민이면 /admin/monitor 로 자동 리다이렉트.
+ * 슈퍼어드민은 본인 업체를 등록하지 않으므로 회원 모니터링 페이지를 보여준다.
+ * 일반 회원은 평소대로 Monitor 페이지로 진입.
+ */
+function MonitorRedirectGate({ children }: { children: React.ReactNode }) {
+  const isSuperadmin = useAuthStore((s) => !!s.user?.is_superadmin)
+  if (isSuperadmin) {
+    return <Navigate to="/admin/monitor" replace />
+  }
+  return <>{children}</>
+}
+
+/**
  * 슈퍼어드민 전용 라우트.
  *  · 미인증     → 로그인 모달 + / 리다이렉트
  *  · 비-어드민  → / 리다이렉트 (조용히)
@@ -111,7 +124,9 @@ export default function App() {
               path="/monitor"
               element={
                 <ProtectedRoute redirectTo="/monitor">
-                  <Monitor />
+                  <MonitorRedirectGate>
+                    <Monitor />
+                  </MonitorRedirectGate>
                 </ProtectedRoute>
               }
             />
@@ -125,6 +140,14 @@ export default function App() {
             />
             <Route
               path="/admin"
+              element={
+                <AdminRoute>
+                  <Admin />
+                </AdminRoute>
+              }
+            />
+            <Route
+              path="/admin/monitor"
               element={
                 <AdminRoute>
                   <Admin />

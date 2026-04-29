@@ -37,6 +37,9 @@ from app.schemas.admin import (
     AdminPaymentCreate,
     AdminPaymentPatch,
     AdminStatsOut,
+    AdminMonitorOut,
+    AdminMonitorRow,
+    AdminMonitorSummary,
 )
 from app.schemas.common import MessageResponse
 from .deps import require_superadmin
@@ -106,6 +109,137 @@ async def get_stats(db: AsyncSession = Depends(get_db)) -> AdminStatsOut:
 # ──────────────────────────────────────────────────────────────
 # 사용자 관리
 # ──────────────────────────────────────────────────────────────
+
+@router.get("/users/monitor", response_model=AdminMonitorOut)
+async def users_monitor(
+    db: AsyncSession = Depends(get_db),
+    q: str | None = Query(default=None, description="이메일/이름/업체명 부분 일치"),
+    plan: str | None = Query(default=None),
+    only_with_places: bool = Query(
+        default=False,
+        description="True면 등록건수 ≥ 1 인 회원만 반환",
+    ),
+    sort: Literal["places", "dead", "mismatch", "pending", "recent"] = "places",
+    limit: int = Query(default=500, ge=1, le=2000),
+) -> AdminMonitorOut:
+    """슈퍼어드민 — 전 회원의 등록·검증상태 요약.
+
+    회원 1명 = 1행:
+        회원명 / 업체명 / 회원등급 / 등록갯수 / 정상노출 / 페이지삭제 / 불일치 (+ 검증대기)
+
+    내부 구현 — 쿼리 2회로 압축:
+      1) User 검색 + 페이지네이션
+      2) registered_places 의 (user_id, current_verdict) 그룹 카운트
+    """
+    # ── 1) User 목록 ───────────────────────────────────────────
+    user_q = select(User)
+    filters = []
+    if q:
+        like = f"%{q.strip()}%"
+        filters.append(or_(
+            User.email.ilike(like),
+            User.name.ilike(like),
+            User.company.ilike(like),
+        ))
+    if plan:
+        filters.append(User.plan == plan)
+    if filters:
+        user_q = user_q.where(*filters)
+    user_q = user_q.order_by(desc(User.created_at)).limit(limit)
+    users = (await db.execute(user_q)).scalars().all()
+
+    if not users:
+        return AdminMonitorOut(
+            summary=AdminMonitorSummary(
+                users_total=0, users_with_places=0, places_total=0,
+                ok_total=0, dead_total=0, mismatch_total=0, pending_total=0,
+            ),
+            items=[],
+        )
+
+    user_ids = [u.id for u in users]
+
+    # ── 2) 검증상태 분포 — 한 쿼리로 모두 ─────────────────────
+    verdict_q = await db.execute(
+        select(
+            RegisteredPlace.user_id,
+            RegisteredPlace.current_verdict,
+            func.count(RegisteredPlace.id),
+        )
+        .where(RegisteredPlace.user_id.in_(user_ids))
+        .group_by(RegisteredPlace.user_id, RegisteredPlace.current_verdict)
+    )
+
+    # user_id → {ok, dead, mismatch, pending, total}
+    bucket: dict[int, dict[str, int]] = {}
+    for uid, verdict, cnt in verdict_q.all():
+        b = bucket.setdefault(uid, {
+            "ok": 0, "dead": 0, "mismatch": 0, "pending": 0, "total": 0,
+        })
+        v = (verdict or "").upper()
+        # 'VerdictKind.OK' enum repr 도 안전 처리
+        if v.endswith("OK"):
+            b["ok"] += int(cnt)
+        elif v.endswith("DEAD"):
+            b["dead"] += int(cnt)
+        elif v.endswith("PENDING"):
+            b["pending"] += int(cnt)
+        elif v.endswith(("PHONE_MISMATCH", "DONG_MISMATCH",
+                         "NAME_MISMATCH", "REGION_MISMATCH")):
+            b["mismatch"] += int(cnt)
+        else:
+            # 알 수 없는 verdict 도 mismatch 로 보수적 분류 (UI 누락 방지)
+            b["mismatch"] += int(cnt)
+        b["total"] += int(cnt)
+
+    # ── 3) 회원 행 구성 ──────────────────────────────────────
+    items: list[AdminMonitorRow] = []
+    for u in users:
+        b = bucket.get(u.id, {})
+        place_count = int(b.get("total", 0))
+        if only_with_places and place_count == 0:
+            continue
+        items.append(AdminMonitorRow(
+            user_id=u.id,
+            email=u.email,
+            name=u.name,
+            company=u.company,
+            plan=u.plan,
+            is_active=u.is_active,
+            is_superadmin=u.is_superadmin,
+            place_count=place_count,
+            ok_count=int(b.get("ok", 0)),
+            dead_count=int(b.get("dead", 0)),
+            mismatch_count=int(b.get("mismatch", 0)),
+            pending_count=int(b.get("pending", 0)),
+            last_login_at=u.last_login_at,
+            created_at=u.created_at,
+        ))
+
+    # ── 4) 정렬 ──────────────────────────────────────────────
+    if sort == "places":
+        items.sort(key=lambda x: x.place_count, reverse=True)
+    elif sort == "dead":
+        items.sort(key=lambda x: x.dead_count, reverse=True)
+    elif sort == "mismatch":
+        items.sort(key=lambda x: x.mismatch_count, reverse=True)
+    elif sort == "pending":
+        items.sort(key=lambda x: x.pending_count, reverse=True)
+    # 'recent' 는 이미 created_at desc 로 정렬됨
+
+    # ── 5) 합계 ──────────────────────────────────────────────
+    summary = AdminMonitorSummary(
+        users_total=len(users),
+        users_with_places=sum(1 for it in items if it.place_count > 0),
+        places_total=sum(it.place_count for it in items),
+        ok_total=sum(it.ok_count for it in items),
+        dead_total=sum(it.dead_count for it in items),
+        mismatch_total=sum(it.mismatch_count for it in items),
+        pending_total=sum(it.pending_count for it in items),
+    )
+
+    return AdminMonitorOut(summary=summary, items=items)
+
 
 @router.get("/users", response_model=AdminUserListOut)
 async def list_users(
