@@ -50,6 +50,8 @@ const PLAN_LABEL: Record<string, string> = {
 interface MenuItem {
   to: string
   label: string
+  /** 라벨을 강제로 여러 줄로 표시할지 (줄바꿈은 \n 으로 구분) */
+  multiline?: boolean
   icon: React.ComponentType<{ className?: string; size?: number }>
   requireAuth: boolean
 }
@@ -59,7 +61,7 @@ const MENU: MenuItem[] = [
   { to: '/intro',    label: '타지역솔루션 소개',             icon: BookOpen,        requireAuth: false },
   { to: '/monitor',  label: '네이버노출관리솔루션',          icon: Radio,           requireAuth: true  },
   { to: '/history',  label: '자동 노출 검증 관리',          icon: History,         requireAuth: true  },
-  { to: '/seo',      label: '네이버 1페이지노출 SEO솔루션',  icon: Search,          requireAuth: false },
+  { to: '/seo',      label: '네이버 1페이지노출\nSEO 최적화 솔루션', icon: Search, requireAuth: false, multiline: true },
 ]
 
 export function Sidebar({ onItemClick }: SidebarProps = {}) {
@@ -206,7 +208,16 @@ export function Sidebar({ onItemClick }: SidebarProps = {}) {
               }
             >
               <Icon size={18} className="shrink-0" />
-              <span className="flex-1 whitespace-nowrap text-[clamp(13px,2.6vw,19px)] leading-none">{item.label}</span>
+              <span
+                className={clsx(
+                  'flex-1 text-[clamp(13px,2.6vw,19px)]',
+                  item.multiline
+                    ? 'whitespace-pre-line leading-tight'
+                    : 'whitespace-nowrap leading-none',
+                )}
+              >
+                {item.label}
+              </span>
               {locked && (
                 <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-ink-watermark text-ink-muted font-semibold">
                   로그인
