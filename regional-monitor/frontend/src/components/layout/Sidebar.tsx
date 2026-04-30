@@ -79,14 +79,17 @@ export function Sidebar({ onItemClick }: SidebarProps = {}) {
     <aside className="w-72 shrink-0 h-screen lg:sticky lg:top-0 flex flex-col p-5 gap-4 bg-bg overflow-y-auto">
       {/* 로고 */}
       <div className="px-2 pt-2 pb-1">
-        <div className="flex flex-col items-start gap-1">
+        <div className="flex flex-col items-center gap-2 text-center">
           <img
             src="/logo.png"
             alt="타지역닷컴"
-            className="h-10 w-auto select-none"
+            className="h-[52px] w-auto select-none"
             draggable={false}
           />
-          <div className="text-caption text-ink-muted pl-0.5">네이버 실시간 노출 관리</div>
+          <div className="text-[15px] leading-snug text-ink-muted">
+            <div>네이버 노출 체크 자동솔루션</div>
+            <div>네이버 1페이지 노출 최적화솔루션</div>
+          </div>
         </div>
       </div>
 
