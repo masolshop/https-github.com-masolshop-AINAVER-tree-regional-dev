@@ -56,7 +56,7 @@ interface MenuItem {
 
 const MENU: MenuItem[] = [
   { to: '/',         label: '타지역닷컴',                    icon: LayoutDashboard, requireAuth: false },
-  { to: '/intro',    label: '솔루션 소개',                  icon: BookOpen,        requireAuth: false },
+  { to: '/intro',    label: '타지역솔루션 소개',             icon: BookOpen,        requireAuth: false },
   { to: '/monitor',  label: '네이버노출관리솔루션',          icon: Radio,           requireAuth: true  },
   { to: '/history',  label: '자동 노출 검증 관리',          icon: History,         requireAuth: true  },
   { to: '/seo',      label: '네이버 1페이지노출 SEO솔루션',  icon: Search,          requireAuth: false },
@@ -205,8 +205,8 @@ export function Sidebar({ onItemClick }: SidebarProps = {}) {
                 )
               }
             >
-              <Icon size={18} />
-              <span className="flex-1">{item.label}</span>
+              <Icon size={18} className="shrink-0" />
+              <span className="flex-1 whitespace-nowrap text-[clamp(13px,2.6vw,19px)] leading-none">{item.label}</span>
               {locked && (
                 <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-ink-watermark text-ink-muted font-semibold">
                   로그인
