@@ -117,7 +117,7 @@ export default function Intro() {
                 </li>
                 <li className="flex items-start gap-2">
                   <CheckCircle2 size={16} className="text-brand-300 shrink-0 mt-0.5" />
-                  <span>등록 동(洞) 일치 여부 (지역 변경 감지)</span>
+                  <span>등록 동(洞) 일치 여부 (지역 불일치 감지)</span>
                 </li>
                 <li className="flex items-start gap-2">
                   <CheckCircle2 size={16} className="text-brand-300 shrink-0 mt-0.5" />

@@ -44,10 +44,10 @@ if not logger.handlers and not logging.getLogger().handlers:
 # 이벤트 타입 → 이모지 + 사람 친화 라벨
 _EVENT_META: dict[str, dict[str, str]] = {
     "PAGE_DELETED":   {"emoji": "🚫", "label": "네이버 미노출", "severity": "danger"},
-    "EXPOSURE_LOST":  {"emoji": "⚠️", "label": "노출 상실",    "severity": "danger"},
-    "REGION_CHANGED": {"emoji": "📍", "label": "지역 변경",    "severity": "danger"},
-    "DONG_CHANGED":   {"emoji": "🏘️", "label": "동 변경",     "severity": "warning"},
-    "NAME_CHANGED":   {"emoji": "🏷️", "label": "상호 변경",   "severity": "warning"},
+    "EXPOSURE_LOST":  {"emoji": "🚫", "label": "네이버 미노출", "severity": "danger"},
+    "REGION_CHANGED": {"emoji": "📍", "label": "지역 불일치",  "severity": "warning"},
+    "DONG_CHANGED":   {"emoji": "🏘️", "label": "동 불일치",   "severity": "warning"},
+    "NAME_CHANGED":   {"emoji": "🏷️", "label": "상호 불일치", "severity": "warning"},
     "RECOVERED":      {"emoji": "✅", "label": "정상 회복",    "severity": "info"},
     "OTHER_CHANGED":  {"emoji": "ℹ️", "label": "기타 변경",    "severity": "info"},
 }

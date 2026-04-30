@@ -72,9 +72,12 @@ class SchedulerStatusOut(BaseModel):
 
 
 _SEVERITY_MAP: dict[str, Literal["danger", "warning", "info"]] = {
+    # 통일 용어 정책:
+    #   - 네이버 미노출(danger): PAGE_DELETED, EXPOSURE_LOST
+    #   - 주의/불일치(warning): REGION_CHANGED, DONG_CHANGED, NAME_CHANGED
     "PAGE_DELETED":   "danger",
     "EXPOSURE_LOST":  "danger",
-    "REGION_CHANGED": "danger",
+    "REGION_CHANGED": "warning",
     "DONG_CHANGED":   "warning",
     "NAME_CHANGED":   "warning",
     "OTHER_CHANGED":  "info",

@@ -143,15 +143,20 @@ async def _extract_missing_place_ids(
 
 
 def _summarize(raw_results: list[dict]) -> tuple[int, int, int]:
-    """raw_results -> (ok, warning, danger) 카운트."""
+    """raw_results -> (ok, warning, danger) 카운트.
+
+    용어 통일:
+    - 주의(warning) = 전화/동/상호/지역 불일치
+    - 네이버 미노출(danger) = DEAD (페이지 삭제) 만 해당
+    """
     ok = warning = danger = 0
     for r in raw_results:
         v = r.get("verdict")
         if v == "OK":
             ok += 1
-        elif v in ("PHONE_MISMATCH", "DONG_MISMATCH", "NAME_MISMATCH"):
+        elif v in ("PHONE_MISMATCH", "DONG_MISMATCH", "NAME_MISMATCH", "REGION_MISMATCH"):
             warning += 1
-        elif v in ("REGION_MISMATCH", "DEAD"):
+        elif v == "DEAD":
             danger += 1
     return ok, warning, danger
 

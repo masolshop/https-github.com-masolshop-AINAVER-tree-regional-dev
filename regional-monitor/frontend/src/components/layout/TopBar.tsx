@@ -243,11 +243,11 @@ export function EventRow({ event }: { event: ChangeEventOut }) {
 
 export const EVENT_TYPE_LABEL: Record<string, string> = {
   PAGE_DELETED:   '네이버 미노출',
-  EXPOSURE_LOST:  '노출 상실',
-  REGION_CHANGED: '지역 변경',
-  DONG_CHANGED:   '동 변경',
-  NAME_CHANGED:   '상호 변경',
-  RECOVERED:      '회복',
+  EXPOSURE_LOST:  '네이버 미노출',
+  REGION_CHANGED: '지역 불일치',
+  DONG_CHANGED:   '동 불일치',
+  NAME_CHANGED:   '상호 불일치',
+  RECOVERED:      '정상 회복',
   OTHER_CHANGED:  '기타 변경',
 }
 

@@ -191,7 +191,7 @@ export function VerifyJobModal({
             <div className="grid grid-cols-3 gap-2 text-sm">
               <CountBox label="정상" value={job.ok_count} tone="success" />
               <CountBox label="주의" value={job.warning_count} tone="warning" />
-              <CountBox label="심각" value={job.danger_count} tone="danger" />
+              <CountBox label="네이버 미노출" value={job.danger_count} tone="danger" />
             </div>
 
             {/* 상태 라인 */}
