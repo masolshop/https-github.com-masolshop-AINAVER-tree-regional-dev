@@ -56,6 +56,21 @@ const MISMATCH_VERDICTS = new Set([
   'DEAD',
 ])
 
+/* ─────────── 상태 필터 (요약 카드 클릭) ─────────── */
+type StatusFilter = 'all' | 'ok' | 'warning' | 'danger'
+
+const WARNING_VERDICTS = new Set(['PHONE_MISMATCH', 'DONG_MISMATCH', 'NAME_MISMATCH'])
+const DANGER_VERDICTS = new Set(['REGION_MISMATCH', 'DEAD'])
+
+/** 상태 필터에 해당하는 등록만 추출. */
+function matchStatusFilter(p: RegisteredPlace, filter: StatusFilter): boolean {
+  if (filter === 'all') return true
+  if (filter === 'ok') return p.current_verdict === 'OK'
+  if (filter === 'warning') return WARNING_VERDICTS.has(p.current_verdict)
+  if (filter === 'danger') return DANGER_VERDICTS.has(p.current_verdict)
+  return true
+}
+
 /* ko-KR 라벨 (xlsx 시트용) */
 const VERDICT_LABEL_KO: Record<string, string> = {
   OK: '정상 노출',
@@ -70,6 +85,7 @@ const VERDICT_LABEL_KO: Record<string, string> = {
 
 export default function RegisterTab() {
   const [search, setSearch] = useState('')
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set())
   const [downloading, setDownloading] = useState(false)
   // 대량 검증 모달
@@ -91,15 +107,20 @@ export default function RegisterTab() {
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase()
-    if (!q) return places
-    return places.filter(
+    let list = places
+    // 상태 필터 (요약 카드 클릭)
+    if (statusFilter !== 'all') {
+      list = list.filter((p) => matchStatusFilter(p, statusFilter))
+    }
+    if (!q) return list
+    return list.filter(
       (p) =>
         p.phone.toLowerCase().includes(q) ||
         (p.business_name?.toLowerCase().includes(q) ?? false) ||
         (p.registered_dong?.toLowerCase().includes(q) ?? false) ||
         (p.place_id?.includes(q) ?? false),
     )
-  }, [places, search])
+  }, [places, search, statusFilter])
 
   // 데이터가 바뀌었을 때 더 이상 존재하지 않는 id 는 선택 해제
   useEffect(() => {
@@ -261,12 +282,42 @@ export default function RegisterTab() {
 
   return (
     <div className="space-y-6">
-      {/* ───── 요약 카운트 4개 ───── */}
+      {/* ───── 요약 카운트 4개 (클릭 시 해당 상태로 리스트 필터) ───── */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        <SummaryPill label="전체 등록" value={summary.total} tone="info" />
-        <SummaryPill label="정상 노출" value={summary.ok} tone="success" />
-        <SummaryPill label="주의 (불일치)" value={summary.warning} tone="warning" />
-        <SummaryPill label="심각 (지역/삭제)" value={summary.danger} tone="danger" />
+        <SummaryPill
+          label="전체 등록"
+          value={summary.total}
+          tone="info"
+          active={statusFilter === 'all'}
+          onClick={() => setStatusFilter('all')}
+        />
+        <SummaryPill
+          label="정상 노출"
+          value={summary.ok}
+          tone="success"
+          active={statusFilter === 'ok'}
+          onClick={() =>
+            setStatusFilter((f) => (f === 'ok' ? 'all' : 'ok'))
+          }
+        />
+        <SummaryPill
+          label="주의 (불일치)"
+          value={summary.warning}
+          tone="warning"
+          active={statusFilter === 'warning'}
+          onClick={() =>
+            setStatusFilter((f) => (f === 'warning' ? 'all' : 'warning'))
+          }
+        />
+        <SummaryPill
+          label="심각 (지역/삭제)"
+          value={summary.danger}
+          tone="danger"
+          active={statusFilter === 'danger'}
+          onClick={() =>
+            setStatusFilter((f) => (f === 'danger' ? 'all' : 'danger'))
+          }
+        />
       </div>
 
       {/* ───── 메인 등록 패널 — 엑셀/CSV 일괄 업로드 ───── */}
@@ -306,6 +357,29 @@ export default function RegisterTab() {
             <h3 className="text-h3 text-ink">등록된 070 번호</h3>
             <p className="text-caption text-ink-muted mt-0.5">
               총 {places.length}건 등록 · 검색 결과 {filtered.length}건
+              {statusFilter !== 'all' && (
+                <span
+                  className={`ml-2 inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold ${
+                    statusFilter === 'ok'
+                      ? 'bg-green-50 text-status-success'
+                      : statusFilter === 'warning'
+                      ? 'bg-amber-50 text-status-warning'
+                      : 'bg-red-50 text-status-danger'
+                  }`}
+                >
+                  {statusFilter === 'ok' && '정상 노출만 보기'}
+                  {statusFilter === 'warning' && '주의(불일치)만 보기'}
+                  {statusFilter === 'danger' && '심각(지역/삭제)만 보기'}
+                  <button
+                    type="button"
+                    onClick={() => setStatusFilter('all')}
+                    className="ml-1 hover:opacity-70"
+                    title="필터 해제"
+                  >
+                    ✕
+                  </button>
+                </span>
+              )}
               {selectedIds.size > 0 && (
                 <span className="text-brand-600 font-semibold ml-2">
                   · 선택 {selectedIds.size}건
@@ -471,7 +545,22 @@ export default function RegisterTab() {
                   <td colSpan={8} className="text-center py-12 text-ink-muted text-body-sm">
                     {search
                       ? '검색 결과가 없습니다.'
+                      : statusFilter === 'warning'
+                      ? '주의(불일치) 항목이 없습니다.'
+                      : statusFilter === 'danger'
+                      ? '심각(지역/삭제) 항목이 없습니다.'
+                      : statusFilter === 'ok'
+                      ? '정상 노출 항목이 없습니다.'
                       : '등록된 번호가 없습니다. 위에서 엑셀·CSV로 일괄 등록해 보세요.'}
+                    {statusFilter !== 'all' && !search && (
+                      <button
+                        type="button"
+                        onClick={() => setStatusFilter('all')}
+                        className="ml-2 underline text-brand-600 font-semibold"
+                      >
+                        전체 보기
+                      </button>
+                    )}
                   </td>
                 </tr>
               )}
@@ -561,9 +650,11 @@ interface SummaryPillProps {
   label: string
   value: number
   tone: 'success' | 'warning' | 'danger' | 'info'
+  active?: boolean
+  onClick?: () => void
 }
 
-function SummaryPill({ label, value, tone }: SummaryPillProps) {
+function SummaryPill({ label, value, tone, active = false, onClick }: SummaryPillProps) {
   const toneClass = {
     success: 'text-status-success bg-green-50',
     warning: 'text-status-warning bg-amber-50',
@@ -571,16 +662,42 @@ function SummaryPill({ label, value, tone }: SummaryPillProps) {
     info: 'text-brand-700 bg-brand-50',
   }[tone]
 
+  const ringClass = {
+    success: 'ring-status-success',
+    warning: 'ring-status-warning',
+    danger: 'ring-status-danger',
+    info: 'ring-brand-500',
+  }[tone]
+
+  const clickable = !!onClick
+  const Wrapper = clickable ? 'button' : 'div'
+
   return (
-    <Card variant="white" className="!py-4 !px-5 flex items-center justify-between">
-      <div>
-        <div className="text-caption text-ink-muted mb-1">{label}</div>
-        <div className="text-h2 text-ink tabular-nums leading-none">{value}</div>
-      </div>
-      <div className={`w-9 h-9 rounded-2xl ${toneClass} flex items-center justify-center`}>
-        <span className="text-body-sm font-bold tabular-nums">{value}</span>
-      </div>
-    </Card>
+    <Wrapper
+      type={clickable ? 'button' : undefined}
+      onClick={onClick}
+      aria-pressed={clickable ? active : undefined}
+      title={
+        clickable
+          ? active
+            ? `${label} 필터 해제 (전체 보기)`
+            : `${label} 항목만 보기`
+          : undefined
+      }
+      className={`text-left w-full transition-all ${
+        clickable ? 'cursor-pointer hover:-translate-y-0.5' : ''
+      } ${active ? `ring-2 ${ringClass} rounded-card` : ''}`}
+    >
+      <Card variant="white" className="!py-4 !px-5 flex items-center justify-between">
+        <div>
+          <div className="text-caption text-ink-muted mb-1">{label}</div>
+          <div className="text-h2 text-ink tabular-nums leading-none">{value}</div>
+        </div>
+        <div className={`w-9 h-9 rounded-2xl ${toneClass} flex items-center justify-center`}>
+          <span className="text-body-sm font-bold tabular-nums">{value}</span>
+        </div>
+      </Card>
+    </Wrapper>
   )
 }
 
