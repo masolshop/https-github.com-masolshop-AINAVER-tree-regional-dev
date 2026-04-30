@@ -19,6 +19,7 @@ import Home from '@/pages/Home'
 import Intro from '@/pages/Intro'
 import Monitor from '@/pages/Monitor'
 import History from '@/pages/History'
+import Seo from '@/pages/Seo'
 import Admin from '@/pages/Admin'
 import ResetPassword from '@/pages/ResetPassword'
 
@@ -138,6 +139,7 @@ export default function App() {
                 </ProtectedRoute>
               }
             />
+            <Route path="/seo" element={<Seo />} />
             <Route
               path="/admin"
               element={

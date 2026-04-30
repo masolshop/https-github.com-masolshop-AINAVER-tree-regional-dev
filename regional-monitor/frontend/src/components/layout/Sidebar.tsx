@@ -20,6 +20,7 @@ import {
   BookOpen,
   Radio,
   History,
+  Search,
   LogIn,
   LogOut,
   User as UserIcon,
@@ -54,10 +55,11 @@ interface MenuItem {
 }
 
 const MENU: MenuItem[] = [
-  { to: '/',         label: '홈',                  icon: LayoutDashboard, requireAuth: false },
-  { to: '/intro',    label: '솔루션 소개',          icon: BookOpen,        requireAuth: false },
-  { to: '/monitor',  label: '실시간 노출 관리',     icon: Radio,           requireAuth: true  },
-  { to: '/history',  label: '자동 노출 검증 관리', icon: History,         requireAuth: true  },
+  { to: '/',         label: '홈',                          icon: LayoutDashboard, requireAuth: false },
+  { to: '/intro',    label: '솔루션 소개',                  icon: BookOpen,        requireAuth: false },
+  { to: '/monitor',  label: '네이버노출관리솔루션',          icon: Radio,           requireAuth: true  },
+  { to: '/history',  label: '자동 노출 검증 관리',          icon: History,         requireAuth: true  },
+  { to: '/seo',      label: '네이버 1페이지노출 SEO솔루션',  icon: Search,          requireAuth: false },
 ]
 
 export function Sidebar({ onItemClick }: SidebarProps = {}) {
