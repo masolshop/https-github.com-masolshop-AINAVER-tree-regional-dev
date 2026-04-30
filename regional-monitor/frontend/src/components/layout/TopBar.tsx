@@ -40,7 +40,7 @@ export function TopBar({ title, subtitle }: TopBarProps) {
     <div className="flex items-center justify-between gap-2 px-1 sm:px-2 py-2 sm:py-3 mb-2">
       <div className="min-w-0 flex-1">
         {title && <h1 className="text-xl sm:text-h1 text-ink truncate">{title}</h1>}
-        {subtitle && <p className="text-caption sm:text-body-sm text-ink-muted mt-0.5 sm:mt-1 line-clamp-2">{subtitle}</p>}
+        {subtitle && <p className="text-[16px] sm:text-[18px] text-ink-muted mt-0.5 sm:mt-1 line-clamp-2">{subtitle}</p>}
       </div>
 
       <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
