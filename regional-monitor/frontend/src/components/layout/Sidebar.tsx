@@ -23,7 +23,6 @@ import {
   LogIn,
   LogOut,
   User as UserIcon,
-  ShieldCheck,
   Crown,
   Edit3,
   X,
@@ -80,14 +79,14 @@ export function Sidebar({ onItemClick }: SidebarProps = {}) {
     <aside className="w-72 shrink-0 h-screen lg:sticky lg:top-0 flex flex-col p-5 gap-4 bg-bg overflow-y-auto">
       {/* 로고 */}
       <div className="px-2 pt-2 pb-1">
-        <div className="flex items-center gap-2">
-          <div className="w-9 h-9 rounded-xl bg-brand-500 flex items-center justify-center shadow-card">
-            <ShieldCheck className="text-white" size={20} />
-          </div>
-          <div className="leading-tight">
-            <div className="text-h3 font-extrabold text-ink">타지역서비스</div>
-            <div className="text-caption text-ink-muted">네이버 실시간 노출 관리</div>
-          </div>
+        <div className="flex flex-col items-start gap-1">
+          <img
+            src="/logo.png"
+            alt="타지역닷컴"
+            className="h-10 w-auto select-none"
+            draggable={false}
+          />
+          <div className="text-caption text-ink-muted pl-0.5">네이버 실시간 노출 관리</div>
         </div>
       </div>
 

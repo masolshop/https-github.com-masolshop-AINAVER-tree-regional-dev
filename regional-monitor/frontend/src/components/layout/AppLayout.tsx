@@ -7,7 +7,7 @@
  */
 import { useEffect, useState } from 'react'
 import { Outlet, useLocation, Link } from 'react-router-dom'
-import { Menu, X, ShieldCheck } from 'lucide-react'
+import { Menu, X } from 'lucide-react'
 import { Sidebar } from './Sidebar'
 import { LoginModal } from '@/components/auth/LoginModal'
 
@@ -56,13 +56,13 @@ export function AppLayout() {
             <Menu size={22} />
           </button>
 
-          <Link to="/" className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-lg bg-brand-500 flex items-center justify-center shadow-card">
-              <ShieldCheck className="text-white" size={18} />
-            </div>
-            <div className="leading-tight">
-              <div className="text-body-sm font-extrabold text-ink">타지역서비스</div>
-            </div>
+          <Link to="/" className="flex items-center gap-2" aria-label="타지역닷컴 홈">
+            <img
+              src="/logo.png"
+              alt="타지역닷컴"
+              className="h-8 w-auto select-none"
+              draggable={false}
+            />
           </Link>
 
           {/* 우측 자리 채움 (균형) */}
