@@ -55,7 +55,7 @@ interface MenuItem {
 }
 
 const MENU: MenuItem[] = [
-  { to: '/',         label: '홈',                          icon: LayoutDashboard, requireAuth: false },
+  { to: '/',         label: '타지역닷컴',                    icon: LayoutDashboard, requireAuth: false },
   { to: '/intro',    label: '솔루션 소개',                  icon: BookOpen,        requireAuth: false },
   { to: '/monitor',  label: '네이버노출관리솔루션',          icon: Radio,           requireAuth: true  },
   { to: '/history',  label: '자동 노출 검증 관리',          icon: History,         requireAuth: true  },
