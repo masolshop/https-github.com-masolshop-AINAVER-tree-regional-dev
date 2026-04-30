@@ -90,9 +90,9 @@ export function Sidebar({ onItemClick }: SidebarProps = {}) {
             className="h-[52px] w-auto select-none"
             draggable={false}
           />
-          <div className="text-[15px] leading-snug text-ink-muted">
-            <div>네이버 노출 체크 자동솔루션</div>
-            <div>네이버 1페이지 노출 최적화솔루션</div>
+          <div className="text-[13px] leading-snug text-ink-muted">
+            <div className="whitespace-nowrap">네이버 노출 체크 자동솔루션</div>
+            <div className="whitespace-nowrap">네이버 1페이지 노출 최적화솔루션</div>
           </div>
         </div>
       </div>
