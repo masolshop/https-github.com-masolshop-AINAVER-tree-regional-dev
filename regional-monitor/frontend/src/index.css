@@ -102,7 +102,7 @@
 
   /* 사이드바 메뉴 아이템 */
   .sidebar-item {
-    @apply flex items-center gap-3 px-4 py-3 rounded-2xl text-body text-ink-muted font-medium cursor-pointer transition-colors;
+    @apply flex items-center gap-3 px-4 py-3 rounded-2xl text-[19px] text-ink-muted font-bold cursor-pointer transition-colors;
   }
   .sidebar-item:hover {
     @apply bg-bg-subtle text-ink;
