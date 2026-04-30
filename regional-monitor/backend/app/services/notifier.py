@@ -43,7 +43,7 @@ if not logger.handlers and not logging.getLogger().handlers:
 
 # 이벤트 타입 → 이모지 + 사람 친화 라벨
 _EVENT_META: dict[str, dict[str, str]] = {
-    "PAGE_DELETED":   {"emoji": "🚫", "label": "페이지 삭제",  "severity": "danger"},
+    "PAGE_DELETED":   {"emoji": "🚫", "label": "네이버 미노출", "severity": "danger"},
     "EXPOSURE_LOST":  {"emoji": "⚠️", "label": "노출 상실",    "severity": "danger"},
     "REGION_CHANGED": {"emoji": "📍", "label": "지역 변경",    "severity": "danger"},
     "DONG_CHANGED":   {"emoji": "🏘️", "label": "동 변경",     "severity": "warning"},

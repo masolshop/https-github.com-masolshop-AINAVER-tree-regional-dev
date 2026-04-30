@@ -165,7 +165,7 @@ export default function Home() {
               />
               <MetricTile
                 icon={<Zap size={18} />}
-                label="심각 (지역/삭제)"
+                label="네이버 미노출"
                 value={summary.danger.toLocaleString()}
                 unit="건"
                 trend="즉시 조치 필요"
@@ -254,7 +254,7 @@ export default function Home() {
             <DistBar label="정상 노출" count={87} total={100} colorClass="bg-status-success" />
             <DistBar label="동 불일치" count={6} total={100} colorClass="bg-status-warning" />
             <DistBar label="상호 불일치" count={4} total={100} colorClass="bg-brand-400" />
-            <DistBar label="페이지 삭제" count={3} total={100} colorClass="bg-status-danger" />
+            <DistBar label="네이버 미노출" count={3} total={100} colorClass="bg-status-danger" />
           </div>
 
           <div className="mt-6 pt-4 border-t border-bg-subtle flex items-center justify-between text-caption text-ink-muted">

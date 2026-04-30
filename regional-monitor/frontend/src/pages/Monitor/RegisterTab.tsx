@@ -43,10 +43,10 @@ import {
 
 /* ─────────── 불일치 판별 ─────────── */
 /**
- * "불일치"로 간주할 verdict 집합.
+ * "불일치"로 간주할 verdict 집합 (다운로드용).
  * - OK / PENDING / CHECKING 은 제외 (정상이거나 아직 미검증)
- * - PHONE/DONG/NAME_MISMATCH (warning)
- * - REGION_MISMATCH / DEAD (danger)
+ * - PHONE/DONG/NAME/REGION_MISMATCH (warning, 주의)
+ * - DEAD (danger, 네이버 미노출)
  */
 const MISMATCH_VERDICTS = new Set([
   'PHONE_MISMATCH',
@@ -59,8 +59,18 @@ const MISMATCH_VERDICTS = new Set([
 /* ─────────── 상태 필터 (요약 카드 클릭) ─────────── */
 type StatusFilter = 'all' | 'ok' | 'warning' | 'danger'
 
-const WARNING_VERDICTS = new Set(['PHONE_MISMATCH', 'DONG_MISMATCH', 'NAME_MISMATCH'])
-const DANGER_VERDICTS = new Set(['REGION_MISMATCH', 'DEAD'])
+/**
+ * 용어 통일:
+ * - 주의(불일치): 전화/동/상호/지역 불일치 모두 포함
+ * - 네이버 미노출: DEAD(페이지 삭제) 만 해당
+ */
+const WARNING_VERDICTS = new Set([
+  'PHONE_MISMATCH',
+  'DONG_MISMATCH',
+  'NAME_MISMATCH',
+  'REGION_MISMATCH',
+])
+const DANGER_VERDICTS = new Set(['DEAD'])
 
 /** 상태 필터에 해당하는 등록만 추출. */
 function matchStatusFilter(p: RegisteredPlace, filter: StatusFilter): boolean {
@@ -78,7 +88,7 @@ const VERDICT_LABEL_KO: Record<string, string> = {
   DONG_MISMATCH: '동 불일치',
   NAME_MISMATCH: '상호 불일치',
   REGION_MISMATCH: '지역 불일치',
-  DEAD: '페이지 삭제',
+  DEAD: '네이버 미노출',
   PENDING: '검증 대기',
   CHECKING: '검증 중',
 }
@@ -310,7 +320,7 @@ export default function RegisterTab() {
           }
         />
         <SummaryPill
-          label="심각 (지역/삭제)"
+          label="네이버 미노출"
           value={summary.danger}
           tone="danger"
           active={statusFilter === 'danger'}
@@ -369,7 +379,7 @@ export default function RegisterTab() {
                 >
                   {statusFilter === 'ok' && '정상 노출만 보기'}
                   {statusFilter === 'warning' && '주의(불일치)만 보기'}
-                  {statusFilter === 'danger' && '심각(지역/삭제)만 보기'}
+                  {statusFilter === 'danger' && '네이버 미노출만 보기'}
                   <button
                     type="button"
                     onClick={() => setStatusFilter('all')}
@@ -436,7 +446,7 @@ export default function RegisterTab() {
               title={
                 mismatchedPlaces.length === 0
                   ? '다운로드할 불일치 항목이 없습니다'
-                  : `검증 결과 불일치(전화/동/상호/지역 불일치, 페이지 삭제) ${mismatchedPlaces.length}건을 .xlsx 로 저장`
+                  : `검증 결과 불일치(전화/동/상호/지역 불일치, 네이버 미노출) ${mismatchedPlaces.length}건을 .xlsx 로 저장`
               }
             >
               {downloading ? (
@@ -548,7 +558,7 @@ export default function RegisterTab() {
                       : statusFilter === 'warning'
                       ? '주의(불일치) 항목이 없습니다.'
                       : statusFilter === 'danger'
-                      ? '심각(지역/삭제) 항목이 없습니다.'
+                      ? '네이버 미노출 항목이 없습니다.'
                       : statusFilter === 'ok'
                       ? '정상 노출 항목이 없습니다.'
                       : '등록된 번호가 없습니다. 위에서 엑셀·CSV로 일괄 등록해 보세요.'}

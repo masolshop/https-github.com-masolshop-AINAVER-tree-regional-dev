@@ -61,7 +61,7 @@ _VERDICT_LABEL_KO = {
     "DONG_MISMATCH": "동 불일치",
     "NAME_MISMATCH": "상호 불일치",
     "REGION_MISMATCH": "지역 불일치",
-    "DEAD": "페이지 삭제",
+    "DEAD": "네이버 미노출",
     "PENDING": "검증 대기",
     "CHECKING": "검증 중",
 }

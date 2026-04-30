@@ -43,16 +43,19 @@ async def list_places(
     )
     places = list(result.scalars().all())
 
+    # 용어 통일:
+    # - 주의(불일치) = 전화/동/상호/지역 불일치
+    # - 네이버 미노출(danger) = DEAD (페이지 삭제) 만 해당
     summary = PlaceSummary(
         total=len(places),
         ok=sum(1 for p in places if p.current_verdict == "OK"),
         warning=sum(
             1 for p in places
-            if p.current_verdict in {"PHONE_MISMATCH", "DONG_MISMATCH", "NAME_MISMATCH"}
+            if p.current_verdict in {"PHONE_MISMATCH", "DONG_MISMATCH", "NAME_MISMATCH", "REGION_MISMATCH"}
         ),
         danger=sum(
             1 for p in places
-            if p.current_verdict in {"REGION_MISMATCH", "DEAD"}
+            if p.current_verdict == "DEAD"
         ),
         pending=sum(
             1 for p in places
@@ -494,8 +497,9 @@ async def get_summary(
     return PlaceSummary(
         total=total,
         ok=counts.get("OK", 0),
-        warning=sum(counts.get(k, 0) for k in ("PHONE_MISMATCH", "DONG_MISMATCH", "NAME_MISMATCH")),
-        danger=sum(counts.get(k, 0) for k in ("REGION_MISMATCH", "DEAD")),
+        # 용어 통일: 주의=전화/동/상호/지역 불일치, 네이버 미노출(danger)=DEAD
+        warning=sum(counts.get(k, 0) for k in ("PHONE_MISMATCH", "DONG_MISMATCH", "NAME_MISMATCH", "REGION_MISMATCH")),
+        danger=counts.get("DEAD", 0),
         pending=sum(counts.get(k, 0) for k in ("PENDING", "CHECKING")),
     )
 

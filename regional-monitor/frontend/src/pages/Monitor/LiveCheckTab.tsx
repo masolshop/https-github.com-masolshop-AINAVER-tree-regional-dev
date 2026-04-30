@@ -137,16 +137,18 @@ export default function LiveCheckTab() {
 
   // 누적 요약
   const summary = useMemo(() => {
+    // 용어 통일: 주의=전화/동/상호/지역 불일치, 네이버 미노출(danger)=DEAD
     const s = { ok: 0, warning: 0, danger: 0 }
     for (const r of results) {
       if (r.verdict === 'OK') s.ok++
       else if (
         r.verdict === 'PHONE_MISMATCH' ||
         r.verdict === 'DONG_MISMATCH' ||
-        r.verdict === 'NAME_MISMATCH'
+        r.verdict === 'NAME_MISMATCH' ||
+        r.verdict === 'REGION_MISMATCH'
       )
         s.warning++
-      else if (r.verdict === 'REGION_MISMATCH' || r.verdict === 'DEAD') s.danger++
+      else if (r.verdict === 'DEAD') s.danger++
     }
     return s
   }, [results])
@@ -526,7 +528,7 @@ export default function LiveCheckTab() {
           />
           <SummaryStat
             icon={<XCircle size={16} />}
-            label="심각 (지역/삭제)"
+            label="네이버 미노출"
             value={summary.danger}
             tone="danger"
           />

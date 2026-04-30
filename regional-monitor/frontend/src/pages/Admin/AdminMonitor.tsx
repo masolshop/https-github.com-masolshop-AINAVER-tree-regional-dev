@@ -99,7 +99,7 @@ export function AdminMonitor() {
         <SummaryCard
           icon={<XCircle className="h-4 w-4" />}
           tone="danger"
-          label="페이지 삭제"
+          label="네이버 미노출"
           value={summary?.dead_total ?? 0}
         />
         <SummaryCard
@@ -144,7 +144,7 @@ export function AdminMonitor() {
             aria-label="정렬"
           >
             <option value="places">등록갯수 많은 순</option>
-            <option value="dead">페이지삭제 많은 순</option>
+            <option value="dead">네이버 미노출 많은 순</option>
             <option value="mismatch">불일치 많은 순</option>
             <option value="pending">검증대기 많은 순</option>
             <option value="recent">최근 가입 순</option>
@@ -206,7 +206,7 @@ export function AdminMonitor() {
                   <th className="px-3 py-3 font-semibold">회원등급</th>
                   <th className="px-3 py-3 font-semibold text-right">등록갯수</th>
                   <th className="px-3 py-3 font-semibold text-right">정상 노출</th>
-                  <th className="px-3 py-3 font-semibold text-right">페이지 삭제</th>
+                  <th className="px-3 py-3 font-semibold text-right">네이버 미노출</th>
                   <th className="px-3 py-3 font-semibold text-right">불일치</th>
                   <th className="px-3 py-3 font-semibold text-right">검증 대기</th>
                   <th className="px-3 py-3 font-semibold text-center">최근 모드</th>

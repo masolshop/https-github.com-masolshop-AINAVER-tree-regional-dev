@@ -29,11 +29,16 @@ export const VERDICT_LABEL: Record<Verdict, string> = {
   DONG_MISMATCH: '동 불일치',
   NAME_MISMATCH: '상호 불일치',
   REGION_MISMATCH: '지역 불일치',
-  DEAD: '페이지 삭제',
+  DEAD: '네이버 미노출',
   PENDING: '검증 대기',
   CHECKING: '검증 중',
 }
 
+/**
+ * 톤 매핑 — 용어 통일 정책에 따라:
+ * - 주의(불일치): PHONE/DONG/NAME/REGION 모든 불일치 → warning
+ * - 네이버 미노출: DEAD (페이지 삭제) → danger
+ */
 export const VERDICT_TONE: Record<
   Verdict,
   'success' | 'warning' | 'danger' | 'neutral' | 'info'
@@ -42,7 +47,7 @@ export const VERDICT_TONE: Record<
   PHONE_MISMATCH: 'warning',
   DONG_MISMATCH: 'warning',
   NAME_MISMATCH: 'warning',
-  REGION_MISMATCH: 'danger',
+  REGION_MISMATCH: 'warning',
   DEAD: 'danger',
   PENDING: 'neutral',
   CHECKING: 'info',

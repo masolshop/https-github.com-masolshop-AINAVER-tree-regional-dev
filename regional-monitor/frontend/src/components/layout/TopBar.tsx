@@ -242,7 +242,7 @@ export function EventRow({ event }: { event: ChangeEventOut }) {
 /* ─────────────── 매핑 ─────────────── */
 
 export const EVENT_TYPE_LABEL: Record<string, string> = {
-  PAGE_DELETED:   '페이지 삭제',
+  PAGE_DELETED:   '네이버 미노출',
   EXPOSURE_LOST:  '노출 상실',
   REGION_CHANGED: '지역 변경',
   DONG_CHANGED:   '동 변경',
