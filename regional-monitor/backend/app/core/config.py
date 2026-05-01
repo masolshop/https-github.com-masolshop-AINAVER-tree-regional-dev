@@ -52,6 +52,14 @@ class Settings(BaseSettings):
     # 주간 리포트 메일(매주 월 09:00 KST) 활성화 토글 — 운영에서는 true 유지
     WEEKLY_REPORT_ENABLED: bool = True
 
+    # ── Google Analytics 4 (방문자 분석 대시보드) ──
+    # GA4 측정 ID(예: G-XXXXXXXXXX) — frontend gtag 주입에는 VITE_GA_MEASUREMENT_ID 사용.
+    # 백엔드 Data API 호출에는 GA4_PROPERTY_ID(숫자) 와 서비스 계정 키 JSON 경로 필요.
+    GA4_PROPERTY_ID: str = ""                       # 예: "486271234"
+    GA4_CREDENTIALS_FILE: str = ""                  # 서비스 계정 JSON 경로 (절대 경로 권장)
+    # 운영 자체 호스팅에서 키 파일 경로를 못 줄 때, 키 본문 자체를 환경변수로 주입 가능.
+    GA4_CREDENTIALS_JSON: str = ""                  # JSON 문자열 (선택)
+
     # ── CORS ──
     CORS_ALLOW_ORIGINS: list[str] = [
         "http://localhost:5173",

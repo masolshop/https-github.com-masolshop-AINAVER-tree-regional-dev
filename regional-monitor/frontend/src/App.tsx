@@ -14,6 +14,7 @@ import { AppLayout } from '@/components/layout/AppLayout'
 import { useAuthStore } from '@/store/auth'
 import { configureAuth } from '@/api/client'
 import { useMe } from '@/hooks/useAuth'
+import { useGaPageView } from '@/hooks/useGaPageView'
 
 import Home from '@/pages/Home'
 import Intro from '@/pages/Intro'
@@ -116,6 +117,12 @@ function AuthBootstrap() {
   return null
 }
 
+/** SPA 라우트 변경 시 GA4 page_view 자동 송신 */
+function GaTracker() {
+  useGaPageView()
+  return null
+}
+
 export default function App() {
   return (
     <QueryClientProvider client={queryClient}>
@@ -123,6 +130,7 @@ export default function App() {
           휴대폰/이메일+비밀번호 로그인은 카톡 인앱 브라우저에서도 정상 작동함. */}
       <BrowserRouter>
         <AuthBootstrap />
+        <GaTracker />
         <Routes>
           {/* 비밀번호 재설정 — 인증 없이 접근, AppLayout 외부 */}
           <Route path="/reset-password" element={<ResetPassword />} />

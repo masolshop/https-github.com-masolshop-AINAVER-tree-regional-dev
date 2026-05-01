@@ -61,6 +61,14 @@
     <meta name="twitter:image" content="https://taziyuk.com/og-thumbnail.png" />
     <meta name="twitter:image:alt" content="타지역서비스 네이버노출 자동체크 솔루션 타지역닷컴" />
 
+    <!-- ───────── Google Analytics 4 (gtag.js) — 빌드 시 VITE_GA_MEASUREMENT_ID 가 있으면 활성화 ───────── -->
+    <script>
+      // GA4 측정 ID는 빌드 시 vite-plugin-html 또는 런타임 메타로 주입.
+      // window.__GA_MEASUREMENT_ID__ 가 비어 있으면 GA 로드 건너뜀(개발/로컬).
+      window.dataLayer = window.dataLayer || [];
+      window.gtag = function () { window.dataLayer.push(arguments); };
+    </script>
+
     <!-- ───────── 구조화 데이터 (JSON-LD): 검색결과 리치 스니펫 ───────── -->
     <script type="application/ld+json">
     {
