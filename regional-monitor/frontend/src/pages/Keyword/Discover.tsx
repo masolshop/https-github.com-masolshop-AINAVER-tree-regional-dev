@@ -27,6 +27,7 @@ import {
   Sparkles,
   MapPin,
   Globe,
+  X,
 } from 'lucide-react'
 import { Card } from '@/components/ui/Card'
 import { keywordApi } from '@/api/keyword'
@@ -947,6 +948,7 @@ function BulkRegionTab({
   const [estSec, setEstSec] = useState<number>(0)
   const [errMsg, setErrMsg] = useState<string>('')
   const [starting, setStarting] = useState<boolean>(false)
+  const [detailRow, setDetailRow] = useState<any | null>(null)
 
   const keywords = useMemo(
     () =>
@@ -1285,11 +1287,37 @@ function BulkRegionTab({
                   .map((r, i) => {
                     const sm = r.summary
                     const ratio = (sm?.third_party_ratio ?? 0) * 100
+                    const hasItems = (r.items?.length ?? 0) > 0
                     return (
-                      <tr key={`${r.sido}-${r.sigungu}-${r.dong}-${r.keyword}-${i}`} className="border-t border-line hover:bg-bg-subtle/50">
+                      <tr
+                        key={`${r.sido}-${r.sigungu}-${r.dong}-${r.keyword}-${i}`}
+                        className={clsx(
+                          'border-t border-line',
+                          hasItems
+                            ? 'hover:bg-brand-50 cursor-pointer'
+                            : 'hover:bg-bg-subtle/50',
+                        )}
+                        onClick={() => hasItems && setDetailRow(r)}
+                        title={hasItems ? '클릭하면 순위별 업체 목록' : ''}
+                      >
                         <td className="px-3 py-2">{r.sido || '-'}</td>
                         <td className="px-3 py-2 font-medium text-ink">{r.sigungu || '(없음)'}</td>
-                        <td className="px-3 py-2 text-ink">{r.dong || '-'}</td>
+                        <td className="px-3 py-2 text-ink">
+                          {hasItems ? (
+                            <button
+                              type="button"
+                              className="text-brand-700 hover:underline font-medium"
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                setDetailRow(r)
+                              }}
+                            >
+                              {r.dong || '-'}
+                            </button>
+                          ) : (
+                            <span>{r.dong || '-'}</span>
+                          )}
+                        </td>
                         <td className="px-3 py-2">{r.keyword}</td>
                         <td className="px-3 py-2 font-mono text-xs text-ink-muted">{r.query}</td>
                         <td className="px-3 py-2 text-right tabular-nums">{sm?.total ?? 0}</td>
@@ -1322,6 +1350,124 @@ function BulkRegionTab({
           시도/전국은 시군구 검색, 시군구 단위는 해당 시군구의 모든 동/리를 검색합니다.
         </Card>
       )}
+
+      {detailRow && (
+        <RegionDetailModal row={detailRow} onClose={() => setDetailRow(null)} />
+      )}
+    </div>
+  )
+}
+
+// ══════════════════════════════════════════════════════
+// 동/리 클릭 시 순위별 업체 모달
+// ══════════════════════════════════════════════════════
+function RegionDetailModal({
+  row,
+  onClose,
+}: {
+  row: any
+  onClose: () => void
+}) {
+  const sm = row.summary || {}
+  const items: KeywordPlaceItem[] = row.items || []
+  const ratio = ((sm.third_party_ratio ?? 0) * 100).toFixed(0)
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4"
+      onClick={onClose}
+    >
+      <div
+        className="bg-white rounded-xl shadow-2xl w-full max-w-5xl max-h-[90vh] overflow-hidden flex flex-col"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* 헤더 */}
+        <div className="px-5 py-3 border-b border-line bg-bg-subtle flex flex-wrap items-center gap-2">
+          <h2 className="font-bold text-ink text-base">
+            {row.sido} {row.sigungu || '(없음)'} {row.dong || ''}
+          </h2>
+          <span className="px-2 py-0.5 rounded-full bg-brand-100 text-brand-800 text-[11px] font-semibold">
+            {row.keyword}
+          </span>
+          <span className="font-mono text-xs text-ink-muted">{row.query}</span>
+          <span className="text-xs text-ink-muted ml-auto">
+            총 {sm.total ?? 0} · 메인 {sm.main_count ?? 0} · 타지역 {sm.third_party_count ?? 0} · 의심 {sm.third_party_suspect_count ?? 0} · 비율 {ratio}%
+          </span>
+          <button
+            type="button"
+            onClick={onClose}
+            className="ml-2 p-1 rounded hover:bg-slate-200 text-ink-muted"
+            aria-label="닫기"
+          >
+            <X size={18} />
+          </button>
+        </div>
+
+        {/* 본문 - 순위별 업체 목록 */}
+        <div className="flex-1 overflow-auto">
+          {items.length === 0 ? (
+            <div className="p-8 text-center text-sm text-ink-muted">
+              결과 없음 (타지역 노출 없음)
+            </div>
+          ) : (
+            <table className="w-full text-sm">
+              <thead className="bg-bg-subtle text-ink-muted text-xs sticky top-0">
+                <tr>
+                  <th className="px-3 py-2 text-left">순위</th>
+                  <th className="px-3 py-2 text-left">분류</th>
+                  <th className="px-3 py-2 text-left">카테고리</th>
+                  <th className="px-3 py-2 text-left">전번</th>
+                  <th className="px-3 py-2 text-left">상호</th>
+                  <th className="px-3 py-2 text-left">주소</th>
+                  <th className="px-3 py-2 text-left">Place</th>
+                </tr>
+              </thead>
+              <tbody>
+                {items.map((it: KeywordPlaceItem) => (
+                  <tr
+                    key={`${row.query}-${it.place_id}-${it.rank}`}
+                    className="border-t border-line hover:bg-bg-subtle/50"
+                  >
+                    <td className="px-3 py-2 tabular-nums font-bold">{it.rank}</td>
+                    <td className="px-3 py-2">
+                      <ClassificationPill c={it.classification} />
+                    </td>
+                    <td className="px-3 py-2 text-ink-muted">{it.category || '-'}</td>
+                    <td className="px-3 py-2 font-mono text-xs">{it.phone || '-'}</td>
+                    <td className="px-3 py-2 font-medium text-ink">{it.name}</td>
+                    <td className="px-3 py-2 text-ink-muted text-xs">
+                      {it.road_address || it.address || '-'}
+                    </td>
+                    <td className="px-3 py-2 font-mono text-xs">
+                      <a
+                        href={`https://m.place.naver.com/place/${encodeURIComponent(it.place_id)}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-brand-600 hover:underline inline-flex items-center gap-0.5"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        {it.place_id} <ExternalLink size={11} />
+                      </a>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+
+        {/* 푸터 */}
+        <div className="px-5 py-2.5 border-t border-line bg-bg-subtle text-xs text-ink-muted flex items-center justify-between">
+          <span>※ 네이버 모바일 검색 1페이지 플레이스 기준</span>
+          <button
+            type="button"
+            onClick={onClose}
+            className="px-3 py-1 rounded bg-slate-200 hover:bg-slate-300 text-ink font-semibold"
+          >
+            닫기
+          </button>
+        </div>
+      </div>
     </div>
   )
 }
