@@ -63,12 +63,12 @@ export function SolutionDetailLayout(props: SolutionDetailProps) {
         </div>
       </Card>
 
-      {/* 무엇 / 왜 / 효과 3-블록 */}
+      {/* 무엇 / 왜 / 효과 3-블록 (세로 스택, 1박스/행) */}
       <section>
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 gap-6">
           <BlockCard
             tone="brand"
-            icon={<HelpCircle size={18} />}
+            icon={<HelpCircle size={22} />}
             tag="WHAT"
             title="이 솔루션이 무엇인가요?"
             headline={props.what.headline}
@@ -76,7 +76,7 @@ export function SolutionDetailLayout(props: SolutionDetailProps) {
           />
           <BlockCard
             tone="warning"
-            icon={<AlertTriangle size={18} />}
+            icon={<AlertTriangle size={22} />}
             tag="WHY"
             title="왜 필요한가요?"
             headline={props.why.headline}
@@ -84,7 +84,7 @@ export function SolutionDetailLayout(props: SolutionDetailProps) {
           />
           <EffectCard
             tone="success"
-            icon={<TrendingUp size={18} />}
+            icon={<TrendingUp size={22} />}
             tag="EFFECT"
             title="어떤 효과가 있나요?"
             headline={props.effect.headline}
@@ -96,25 +96,25 @@ export function SolutionDetailLayout(props: SolutionDetailProps) {
 
       {/* 사용 가이드 */}
       <section>
-        <div className="mb-4">
-          <div className="text-caption text-ink-muted uppercase tracking-wider font-semibold mb-1">
+        <div className="mb-5">
+          <div className="text-sm text-ink-muted uppercase tracking-wider font-semibold mb-1">
             how to use
           </div>
           <h2 className="text-h2 text-ink">사용 흐름</h2>
         </div>
         <Card variant="white">
-          <ol className="space-y-3">
+          <ol className="space-y-5">
             {props.howToUse.map((s, i) => (
-              <li key={i} className="flex gap-3">
-                <span className="shrink-0 w-7 h-7 rounded-full bg-brand-500 text-white font-bold flex items-center justify-center text-caption">
+              <li key={i} className="flex gap-4">
+                <span className="shrink-0 w-10 h-10 rounded-full bg-brand-500 text-white font-bold flex items-center justify-center text-base">
                   {i + 1}
                 </span>
                 <div className="flex-1">
-                  <div className="text-caption text-ink-muted uppercase tracking-wider font-semibold">
+                  <div className="text-xs text-ink-muted uppercase tracking-wider font-semibold mb-0.5">
                     {s.step}
                   </div>
-                  <div className="text-body font-bold text-ink">{s.title}</div>
-                  <p className="text-body-sm text-ink-muted leading-relaxed mt-0.5">
+                  <div className="text-lg font-bold text-ink">{s.title}</div>
+                  <p className="text-base text-ink-muted leading-relaxed mt-1">
                     {s.desc}
                   </p>
                 </div>
@@ -125,16 +125,16 @@ export function SolutionDetailLayout(props: SolutionDetailProps) {
       </section>
 
       {/* CTA */}
-      <Card variant="cta" className="min-h-[160px] flex items-center">
+      <Card variant="cta" className="min-h-[180px] flex items-center">
         <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-5 w-full">
           <div>
-            <h3 className="text-h2 text-white mb-1">지금 사용해 보세요</h3>
-            <p className="text-body-sm text-white/85">
+            <h3 className="text-h2 text-white mb-2">지금 사용해 보세요</h3>
+            <p className="text-base text-white/90 leading-relaxed">
               위탁 운영 시 무료 · 자체 운영 시 월정 구독 또는 크레딧 구매로 이용 가능합니다.
             </p>
           </div>
           <Link to={props.ctaTo} className="btn-cta-white">
-            <PlayCircle size={16} /> {props.ctaLabel} <ArrowRight size={16} />
+            <PlayCircle size={18} /> {props.ctaLabel} <ArrowRight size={18} />
           </Link>
         </div>
       </Card>
@@ -178,24 +178,24 @@ const TONE_CLASS: Record<
 function BlockCard({ tone, icon, tag, title, headline, bullets }: BlockCardProps) {
   const t = TONE_CLASS[tone]
   return (
-    <Card variant="white" className="h-full flex flex-col">
+    <Card variant="white" className="flex flex-col p-7">
       <div
-        className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-pill ${t.bg} ${t.text} text-[10px] font-bold tracking-wider self-start mb-3`}
+        className={`inline-flex items-center gap-2 px-3.5 py-1.5 rounded-pill ${t.bg} ${t.text} text-sm font-bold tracking-wider self-start mb-5`}
       >
         {icon}
         {tag}
       </div>
-      <h3 className="text-body font-bold text-ink mb-1">{title}</h3>
-      <p className="text-body-sm text-ink leading-relaxed mb-4 font-medium">
+      <h3 className="text-xl font-bold text-ink mb-3">{title}</h3>
+      <p className="text-lg text-ink leading-relaxed mb-6 font-medium">
         {headline}
       </p>
-      <ul className="space-y-2 mt-auto">
+      <ul className="space-y-3">
         {bullets.map((b, i) => (
           <li
             key={i}
-            className="flex items-start gap-2 text-caption text-ink-muted leading-relaxed"
+            className="flex items-start gap-3 text-base text-ink-muted leading-relaxed"
           >
-            <CheckCircle2 size={14} className={`shrink-0 mt-0.5 ${t.text}`} />
+            <CheckCircle2 size={20} className={`shrink-0 mt-0.5 ${t.text}`} />
             <span>{b}</span>
           </li>
         ))}
@@ -213,39 +213,39 @@ function EffectCard({
 }: EffectCardProps) {
   const t = TONE_CLASS[tone]
   return (
-    <Card variant="white" className="h-full flex flex-col">
+    <Card variant="white" className="flex flex-col p-7">
       <div
-        className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-pill ${t.bg} ${t.text} text-[10px] font-bold tracking-wider self-start mb-3`}
+        className={`inline-flex items-center gap-2 px-3.5 py-1.5 rounded-pill ${t.bg} ${t.text} text-sm font-bold tracking-wider self-start mb-5`}
       >
         {icon}
         {tag}
       </div>
-      <h3 className="text-body font-bold text-ink mb-1">{title}</h3>
-      <p className="text-body-sm text-ink leading-relaxed mb-3 font-medium">
+      <h3 className="text-xl font-bold text-ink mb-3">{title}</h3>
+      <p className="text-lg text-ink leading-relaxed mb-5 font-medium">
         {headline}
       </p>
 
-      <div className="grid grid-cols-3 gap-2 mb-4">
+      <div className="grid grid-cols-3 gap-4 mb-6">
         {metrics.map((m) => (
           <div
             key={m.label}
-            className={`rounded-xl border ${t.border} ${t.bg}/40 px-2 py-2 text-center`}
+            className={`rounded-xl border ${t.border} ${t.bg}/40 px-4 py-4 text-center`}
           >
-            <div className={`text-body font-bold ${t.text}`}>{m.value}</div>
-            <div className="text-[10px] text-ink-muted leading-tight mt-0.5">
+            <div className={`text-2xl font-bold ${t.text}`}>{m.value}</div>
+            <div className="text-sm text-ink-muted leading-snug mt-1.5">
               {m.label}
             </div>
           </div>
         ))}
       </div>
 
-      <ul className="space-y-2 mt-auto">
+      <ul className="space-y-3">
         {bullets.map((b, i) => (
           <li
             key={i}
-            className="flex items-start gap-2 text-caption text-ink-muted leading-relaxed"
+            className="flex items-start gap-3 text-base text-ink-muted leading-relaxed"
           >
-            <CheckCircle2 size={14} className={`shrink-0 mt-0.5 ${t.text}`} />
+            <CheckCircle2 size={20} className={`shrink-0 mt-0.5 ${t.text}`} />
             <span>{b}</span>
           </li>
         ))}
