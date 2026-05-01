@@ -193,19 +193,30 @@ async def bulk_create_places(
       · 신규 INSERT 는 in_latest_upload=True 로 시작.
       · 결과적으로 엑셀에 빠진 번호만 "미포함 번호" 로 남음.
 
-    응답: 행별 status + 합계 + 남은 quota + 미포함/복귀 카운트.
+    동/상호 override 자동 갱신 (update_existing=True):
+      · 기존 070 이 다시 등장하면 row 의 dong/name override 로 DB 갱신
+      · 변경된 행은 change_events(USER_OVERRIDE_CHANGED) 자동 기록
+      · current_verdict='PENDING' 으로 리셋 → 다음 검증에서 새 값으로 재판정
+
+    자동 재검증 (auto_verify=True, is_last_chunk=True):
+      · 신규 INSERT + 갱신된 070 만 모아서 백그라운드 검증 잡 큐잉
+      · 사용자 클릭 없이 빠르게 OK/변경/미노출 판정 → 토스트로 진행률 안내
+
+    응답: 행별 status + 합계 + 남은 quota + 미포함/복귀 + 갱신 + 자동 검증 큐잉.
     """
+    from app.core.time_utils import now_kst
+    from sqlalchemy import update as sa_update
+    from app.models.check import ChangeEvent
+
     started = time.time()
 
     # ── 미포함 번호 마킹 (재업로드 1번째 청크에서만 실행) ──
     excluded_marked = 0
     if req.is_first_chunk:
-        from app.core.time_utils import now_kst
-        from sqlalchemy import update
         # 현재 in_latest_upload=True 인 행을 모두 False 로 (해당 청크/후속 청크에서
         # duplicate 처리될 때 다시 True 로 복귀시킴)
         mark_q = await db.execute(
-            update(RegisteredPlace)
+            sa_update(RegisteredPlace)
             .where(
                 RegisteredPlace.user_id == user.id,
                 RegisteredPlace.in_latest_upload == True,  # noqa: E712
@@ -222,14 +233,22 @@ async def bulk_create_places(
     current_count = cnt_q.scalar_one() or 0
     remaining_quota = max(user.quota_places - current_count, 0)
 
-    # 사용자의 기존 phone → id 매핑 (중복 체크 + 미포함 해제용)
+    # 사용자의 기존 phone → (id, registered_dong, business_name) 매핑
+    # update_existing 모드에서 기존 dong/name 비교 후 갱신 + change_events 기록
     existing_q = await db.execute(
-        select(RegisteredPlace.id, RegisteredPlace.phone, RegisteredPlace.in_latest_upload)
-        .where(RegisteredPlace.user_id == user.id)
+        select(
+            RegisteredPlace.id,
+            RegisteredPlace.phone,
+            RegisteredPlace.registered_dong,
+            RegisteredPlace.business_name,
+            RegisteredPlace.current_verdict,
+        ).where(RegisteredPlace.user_id == user.id)
     )
-    existing_rows = list(existing_q.all())
-    existing_phones = {row[1] for row in existing_rows}
-    existing_phone_to_id = {row[1]: row[0] for row in existing_rows}
+    existing_rows_data = list(existing_q.all())
+    existing_phones = {r[1] for r in existing_rows_data}
+    existing_phone_info: dict[str, tuple[int, str | None, str | None, str]] = {
+        r[1]: (r[0], r[2], r[3], r[4]) for r in existing_rows_data
+    }
 
     # phone 정규화 + 중복/쿼터/형식 검증 + INSERT 객체 누적
     PHONE_RE = re.compile(r"^070-?\d{3,4}-?\d{4}$")
@@ -237,6 +256,11 @@ async def bulk_create_places(
     seen_in_batch: set[str] = set()
     rows_status: list[BulkRowStatus] = []
     accept_count = 0
+
+    # update_existing 결과 누적
+    overrides_to_apply: list[dict] = []      # [{id, phone, new_dong, new_name, prev_dong, prev_name, prev_verdict}]
+    dong_changed_count = 0
+    name_changed_count = 0
 
     for idx, row in enumerate(req.rows):
         raw_phone = (row.phone or "").strip()
@@ -257,6 +281,37 @@ async def bulk_create_places(
         # 사용자 기등록 중복 — 재업로드 시 미포함 해제(in_latest_upload=True 복귀)
         if norm in existing_phones:
             seen_in_batch.add(norm)
+            # update_existing 모드: 동/상호 변경분 비교 후 갱신
+            if req.update_existing:
+                pid, prev_dong, prev_name, prev_verdict = existing_phone_info[norm]
+                new_dong = (row.registered_dong_override or "").strip() or None
+                new_name = (row.business_name_override or "").strip() or None
+                # row 에 새 값이 명시된 경우만 비교 (빈 값은 무시 — 기존 유지)
+                dong_diff = (
+                    new_dong is not None
+                    and (prev_dong or "") != new_dong
+                )
+                name_diff = (
+                    new_name is not None
+                    and (prev_name or "") != new_name
+                )
+                if dong_diff or name_diff:
+                    overrides_to_apply.append({
+                        "id": pid,
+                        "phone": norm,
+                        "new_dong": new_dong if dong_diff else prev_dong,
+                        "new_name": new_name if name_diff else prev_name,
+                        "prev_dong": prev_dong,
+                        "prev_name": prev_name,
+                        "prev_verdict": prev_verdict,
+                        "dong_diff": dong_diff,
+                        "name_diff": name_diff,
+                    })
+                    if dong_diff:
+                        dong_changed_count += 1
+                    if name_diff:
+                        name_changed_count += 1
+
             rows_status.append(BulkRowStatus(
                 phone=norm,
                 status="duplicate",
@@ -304,19 +359,64 @@ async def bulk_create_places(
         ))
 
     # 한 번에 일괄 INSERT (네이버 호출 없음 — 매우 빠름)
+    new_inserted_ids: list[int] = []
     if to_insert:
         db.add_all(to_insert)
+        await db.commit()
+        # 새로 INSERT 된 PK 수집 (자동 검증 잡 큐잉용)
+        for p in to_insert:
+            if p.id is not None:
+                new_inserted_ids.append(p.id)
+
+    # ── 동/상호 override 자동 갱신 (update_existing=True) ──
+    overrides_updated = 0
+    updated_ids: list[int] = []
+    if req.update_existing and overrides_to_apply:
+        for ov in overrides_to_apply:
+            # DB 갱신 — current_verdict 도 PENDING 으로 리셋 (다음 검증에서 새 값 비교)
+            await db.execute(
+                sa_update(RegisteredPlace)
+                .where(
+                    RegisteredPlace.id == ov["id"],
+                    RegisteredPlace.user_id == user.id,
+                )
+                .values(
+                    registered_dong=ov["new_dong"],
+                    business_name=ov["new_name"],
+                    current_verdict="PENDING",  # 동/상호 변경 → 재검증 필요
+                )
+            )
+            updated_ids.append(ov["id"])
+            overrides_updated += 1
+
+            # change_events 자동 기록 (USER_OVERRIDE_CHANGED)
+            parts = []
+            if ov["dong_diff"]:
+                parts.append(
+                    f"동: '{ov['prev_dong'] or '(없음)'}' → '{ov['new_dong']}'"
+                )
+            if ov["name_diff"]:
+                parts.append(
+                    f"상호: '{ov['prev_name'] or '(없음)'}' → '{ov['new_name']}'"
+                )
+            summary = "고객요청 변경 (엑셀 재업로드): " + " / ".join(parts)
+            db.add(ChangeEvent(
+                place_id_ref=ov["id"],
+                event_type="USER_OVERRIDE_CHANGED",
+                prev_verdict=ov["prev_verdict"],
+                new_verdict="PENDING",
+                summary=summary[:500],
+            ))
         await db.commit()
 
     # ── 미포함 해제 (재업로드에 다시 등장한 번호) ──
     # 이번 청크의 phone 들 중 기존 DB 에 있는 것들을 in_latest_upload=True 로 복귀.
     excluded_restored = 0
     if seen_in_batch:
-        from sqlalchemy import update as _upd
         restore_phones = [p for p in seen_in_batch if p in existing_phones]
         if restore_phones:
             res = await db.execute(
-                _upd(RegisteredPlace)
+                sa_update(RegisteredPlace)
                 .where(
                     RegisteredPlace.user_id == user.id,
                     RegisteredPlace.phone.in_(restore_phones),
@@ -326,6 +426,31 @@ async def bulk_create_places(
             )
             excluded_restored = res.rowcount or 0
             await db.commit()
+
+    # ── 자동 재검증 잡 큐잉 (마지막 청크 + auto_verify=True) ──
+    auto_verify_queued = False
+    auto_verify_target_count = 0
+    if req.is_last_chunk and req.auto_verify:
+        target_ids = list({*new_inserted_ids, *updated_ids})
+        if target_ids:
+            try:
+                from app.services.verify_job_runner import enqueue_verify_job
+                await enqueue_verify_job(
+                    db=db,
+                    user=user,
+                    place_ids=target_ids,
+                    mode="full",
+                    trigger="upload_auto",
+                )
+                auto_verify_queued = True
+                auto_verify_target_count = len(target_ids)
+            except Exception as e:  # noqa: BLE001
+                # 잡 큐잉 실패해도 업로드 자체는 성공으로 응답 (사용자가 수동 검증 가능)
+                import logging
+                logging.getLogger(__name__).warning(
+                    "auto_verify enqueue 실패: user_id=%s targets=%d err=%s",
+                    user.id, len(target_ids), e,
+                )
 
     # 합계 집계 (extract_failed 카테고리는 더 이상 발생하지 않음)
     counts = {"created": 0, "duplicate": 0, "invalid_phone": 0, "extract_failed": 0, "quota_exceeded": 0}
@@ -344,6 +469,11 @@ async def bulk_create_places(
         quota_remaining=remaining_quota - counts["created"],
         excluded_marked=excluded_marked,
         excluded_restored=excluded_restored,
+        overrides_updated=overrides_updated,
+        dong_changed=dong_changed_count,
+        name_changed=name_changed_count,
+        auto_verify_queued=auto_verify_queued,
+        auto_verify_target_count=auto_verify_target_count,
         rows=rows_status,
     )
 

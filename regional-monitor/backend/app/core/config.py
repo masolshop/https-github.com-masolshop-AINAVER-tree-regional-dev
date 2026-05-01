@@ -49,6 +49,8 @@ class Settings(BaseSettings):
     SMTP_FROM_NAME: str = "타지역서비스"
     # 알림 자체를 완전히 끄려면 (테스트 시) NOTIFY_ENABLED=false
     NOTIFY_ENABLED: bool = True
+    # 주간 리포트 메일(매주 월 09:00 KST) 활성화 토글 — 운영에서는 true 유지
+    WEEKLY_REPORT_ENABLED: bool = True
 
     # ── CORS ──
     CORS_ALLOW_ORIGINS: list[str] = [

@@ -971,6 +971,30 @@ def start_scheduler() -> AsyncIOScheduler:
             misfire_grace_time=600,
         )
 
+    # 주간 리포트 — 매주 월요일 09:00 KST
+    # · 활성 회원 중 7일 활동(신규/미포함/변경/미노출/고객요청 변경)이 있는 회원에게만 발송
+    # · 가입 이메일(To) + notify_emails(Cc 영업관리자/고객 담당者)
+    # · WEEKLY_REPORT_ENABLED=false 면 잡 등록 자체 스킵 (운영 토글)
+    try:
+        from app.core.config import settings as _settings
+        if getattr(_settings, "WEEKLY_REPORT_ENABLED", True):
+            from app.services.weekly_report import run_weekly_report
+            sched.add_job(
+                run_weekly_report,
+                trigger=CronTrigger(day_of_week="mon", hour=9, minute=0, timezone="Asia/Seoul"),
+                id="weekly_report",
+                name="weekly report (Mon 09:00 KST)",
+                replace_existing=True,
+                max_instances=1,
+                coalesce=True,
+                misfire_grace_time=3600,
+            )
+            log.info("scheduler: weekly_report registered (Mon 09:00 KST)")
+        else:
+            log.info("scheduler: weekly_report skipped (WEEKLY_REPORT_ENABLED=false)")
+    except Exception as e:  # noqa: BLE001
+        log.warning("scheduler: weekly_report registration failed: %s", e)
+
     sched.start()
     _scheduler = sched
     log.info(

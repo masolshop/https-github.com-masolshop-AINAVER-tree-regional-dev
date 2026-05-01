@@ -90,6 +90,14 @@ class PlaceBulkRequest(BaseModel):
     # · is_last_chunk=True  : 업로드 종료 (필요 시 후처리; 현재는 정보용)
     is_first_chunk: bool = False
     is_last_chunk: bool = False
+    # 동/상호 override 자동 갱신 모드 (통신사 동기화 시나리오):
+    # · True  — 기존 070 이 다시 등장하면 row 의 dong/name 으로 DB 의 등록 정보 갱신
+    #            + 변경 시 change_events(USER_OVERRIDE_CHANGED) 자동 기록
+    # · False — duplicate 처리(기존 정보 유지) — 기존 동작과 동일
+    update_existing: bool = False
+    # 자동 재검증 트리거 — 마지막 청크 처리 후 백그라운드 잡 큐잉
+    # · True (기본) — 신규/갱신된 070 만 자동 검증 시작 (사용자 클릭 불필요)
+    auto_verify: bool = True
 
 
 class BulkRowStatus(BaseModel):
@@ -114,6 +122,13 @@ class PlaceBulkResponse(BaseModel):
     # 미포함 번호 처리 결과 (재업로드 시)
     excluded_marked: int = 0                  # 이번 업로드에서 미포함으로 표시된 번호 수
     excluded_restored: int = 0                # 다시 포함되어 미포함 해제된 번호 수
+    # 동/상호 override 자동 갱신 결과 (update_existing=True 일 때)
+    overrides_updated: int = 0                # 동 또는 상호가 갱신된 번호 수
+    dong_changed: int = 0                     # 동만 변경된 수
+    name_changed: int = 0                     # 상호만 변경된 수
+    # 자동 재검증 잡 큐잉 결과
+    auto_verify_queued: bool = False          # 백그라운드 잡 큐잉 여부
+    auto_verify_target_count: int = 0         # 큐에 들어간 대상 수 (신규+갱신)
     rows: list[BulkRowStatus]
 
 

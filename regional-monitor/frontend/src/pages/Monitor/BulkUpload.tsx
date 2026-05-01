@@ -127,6 +127,11 @@ export function BulkUpload() {
       quota_remaining: 0,
       excluded_marked: 0,
       excluded_restored: 0,
+      overrides_updated: 0,
+      dong_changed: 0,
+      name_changed: 0,
+      auto_verify_queued: false,
+      auto_verify_target_count: 0,
       rows: [],
     }
 
@@ -152,13 +157,19 @@ export function BulkUpload() {
           // 일괄 in_latest_upload=False 로 표시 후, 청크들에서 다시 등장한 번호만 복귀)
           is_first_chunk: i === 0,
           is_last_chunk: i === chunks.length - 1,
+          // 통신사 동기화: 기존 070 의 동/상호 변경분을 즉시 갱신 + change_events 기록
+          update_existing: true,
+          // 마지막 청크에서 신규/갱신 070 만 자동 검증 잡 큐잉 (사용자 클릭 불필요)
+          auto_verify: true,
         })
         const ms = Date.now() - t0
         console.log(
           `[BulkUpload] 청크 ${i + 1}/${chunks.length} 완료 (${ms}ms): ` +
             `created=${res.created} dup=${res.duplicate} invalid=${res.invalid_phone} ` +
             `extract_fail=${res.extract_failed} quota_exc=${res.quota_exceeded} remaining=${res.quota_remaining} ` +
-            `excluded_marked=${res.excluded_marked ?? 0} excluded_restored=${res.excluded_restored ?? 0}`,
+            `excluded_marked=${res.excluded_marked ?? 0} excluded_restored=${res.excluded_restored ?? 0} ` +
+            `overrides_updated=${res.overrides_updated ?? 0} (dong=${res.dong_changed ?? 0}, name=${res.name_changed ?? 0}) ` +
+            `auto_verify=${res.auto_verify_queued ?? false}/${res.auto_verify_target_count ?? 0}`,
         )
 
         // 합산
@@ -172,6 +183,14 @@ export function BulkUpload() {
         merged.quota_remaining = res.quota_remaining // 마지막 청크 값이 진실
         merged.excluded_marked = (merged.excluded_marked ?? 0) + (res.excluded_marked ?? 0)
         merged.excluded_restored = (merged.excluded_restored ?? 0) + (res.excluded_restored ?? 0)
+        merged.overrides_updated = (merged.overrides_updated ?? 0) + (res.overrides_updated ?? 0)
+        merged.dong_changed = (merged.dong_changed ?? 0) + (res.dong_changed ?? 0)
+        merged.name_changed = (merged.name_changed ?? 0) + (res.name_changed ?? 0)
+        // 마지막 청크의 자동 검증 큐잉 결과를 그대로 보존 (마지막 청크에서만 트리거됨)
+        if (res.auto_verify_queued) {
+          merged.auto_verify_queued = true
+          merged.auto_verify_target_count = res.auto_verify_target_count ?? 0
+        }
         merged.rows.push(...res.rows)
 
         // 부분 결과 라이브 업데이트
@@ -489,6 +508,42 @@ function BulkResultPanel({
                 </strong> — "미포함 번호" 로 표시 (등록 목록에서 뱃지로 확인 / 일괄 삭제 가능)
               </li>
             )}
+          </ul>
+        </div>
+      )}
+
+      {/* 동/상호 override 자동 갱신 결과 (통신사 동기화) */}
+      {(response.overrides_updated ?? 0) > 0 && (
+        <div className="mb-4 rounded-xl border border-blue-200 bg-blue-50 px-3 py-2 text-caption text-blue-800">
+          <div className="font-semibold mb-1">🔄 고객요청 변경 자동 반영</div>
+          <ul className="list-disc list-inside space-y-0.5">
+            <li>
+              동/상호 갱신 <strong>{response.overrides_updated}건</strong>
+              {((response.dong_changed ?? 0) > 0 || (response.name_changed ?? 0) > 0) && (
+                <span className="ml-1 text-blue-700">
+                  (동 {response.dong_changed ?? 0}건 / 상호 {response.name_changed ?? 0}건)
+                </span>
+              )}
+            </li>
+            <li>
+              변경 이력은 <strong>change_events(USER_OVERRIDE_CHANGED)</strong> 에 자동 기록 — 다음 검증에서 새 값으로 비교
+            </li>
+          </ul>
+        </div>
+      )}
+
+      {/* 자동 재검증 큐잉 결과 */}
+      {response.auto_verify_queued && (response.auto_verify_target_count ?? 0) > 0 && (
+        <div className="mb-4 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-caption text-emerald-800">
+          <div className="font-semibold mb-1">⚡ 자동 재검증 시작됨</div>
+          <ul className="list-disc list-inside space-y-0.5">
+            <li>
+              신규/갱신된 <strong>{response.auto_verify_target_count}건</strong> 만 백그라운드로 검증 중
+              — 잠시 후 등록 목록에서 OK / 변경 노출 / 미노출 결과가 자동 갱신됩니다
+            </li>
+            <li>
+              사용자 클릭 불필요 — 검증 완료 후 알림 채널(이메일/Slack)로 변경 이벤트 발송
+            </li>
           </ul>
         </div>
       )}

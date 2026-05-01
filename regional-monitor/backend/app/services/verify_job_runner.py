@@ -161,6 +161,62 @@ def _summarize(raw_results: list[dict]) -> tuple[int, int, int]:
     return ok, warning, danger
 
 
+async def enqueue_verify_job(
+    db: AsyncSession,
+    user: User,
+    place_ids: list[int] | None = None,
+    mode: str = "full",
+    trigger: str = "auto",
+) -> VerifyJob | None:
+    """일반 코드 경로(예: 업로드 직후)에서 호출 가능한 검증 잡 큐잉 헬퍼.
+
+    - 사용자당 동시 1개 가드: 이미 queued/running 인 잡이 있으면 None 반환 (조용히 스킵).
+    - 잡 생성 후 asyncio.create_task(run_job(job.id)) 로 백그라운드 실행 시작.
+
+    Args:
+        db: 호출자의 AsyncSession (commit 책임은 이 함수가 진다)
+        user: 대상 사용자
+        place_ids: 검증할 등록 ID. None 이면 사용자 전체.
+        mode: 'full' (기본) | 'fast'
+        trigger: 잡 생성 트리거 라벨 (로그/모니터링용)
+
+    Returns:
+        새로 생성된 VerifyJob 또는 None (이미 진행 중일 때).
+    """
+    # 동시 작업 1개 가드 (재업로드 직후 자동 큐잉이 기존 수동 잡과 충돌하지 않도록)
+    existing = await db.execute(
+        select(VerifyJob).where(
+            VerifyJob.user_id == user.id,
+            VerifyJob.status.in_(("queued", "running")),
+        )
+    )
+    running = existing.scalar_one_or_none()
+    if running is not None:
+        logger.info(
+            "enqueue_verify_job skipped: user_id=%s already has running job id=%s (trigger=%s)",
+            user.id, running.id, trigger,
+        )
+        return None
+
+    job = VerifyJob(
+        user_id=user.id,
+        status="queued",
+        chunk_size=500,
+        place_ids_csv=_ids_to_csv(place_ids),
+    )
+    db.add(job)
+    await db.commit()
+    await db.refresh(job)
+
+    # 백그라운드 워커 — fire-and-forget
+    asyncio.create_task(run_job(job.id))
+    logger.info(
+        "enqueue_verify_job ok: user_id=%s job_id=%s targets=%d trigger=%s mode=%s",
+        user.id, job.id, len(place_ids) if place_ids else -1, trigger, mode,
+    )
+    return job
+
+
 async def run_job(job_id: int) -> None:
     """VerifyJob 워커 메인 루프.
 

@@ -971,4 +971,74 @@ async def rebalance_schedule(
     )
 
 
+# ──────────────────────────────────────────────────────────────
+# 주간 리포트 메일 — 수동 트리거 / 미리보기
+# ──────────────────────────────────────────────────────────────
+
+@router.post("/weekly-report/run")
+async def run_weekly_report_now(
+    dry_run: bool = Query(False, description="True 면 실제 발송 없이 집계 결과만 반환"),
+):
+    """주간 리포트 메일 즉시 실행 (운영용 수동 트리거).
+
+    · 매주 월요일 09:00 KST 자동 실행되는 잡과 동일한 로직.
+    · dry_run=True 면 SMTP 호출을 건너뛰고 대상자 통계만 반환 (콘솔 폴백 로그).
+    · 활동(신규+미포함+변경+미노출+고객요청 변경)이 0건인 회원은 자동 스킵.
+    """
+    from app.services.weekly_report import run_weekly_report
+
+    if dry_run:
+        # 강제 SMTP 비활성화 — 콘솔 폴백 경로로 흐르게 함
+        from app.core.config import settings as _s
+        _orig = _s.SMTP_HOST
+        _s.SMTP_HOST = ""
+        try:
+            result = await run_weekly_report()
+        finally:
+            _s.SMTP_HOST = _orig
+        result["dry_run"] = True
+        return result
+
+    result = await run_weekly_report()
+    result["dry_run"] = False
+    return result
+
+
+@router.get("/weekly-report/preview/{user_id}")
+async def preview_weekly_report(
+    user_id: int,
+    db: AsyncSession = Depends(get_db),
+):
+    """특정 사용자의 주간 리포트 집계 결과 미리보기 (메일 발송 안 함).
+
+    · 관리자가 발송 전 데이터 확인용.
+    · 활동 합계, 신규/미포함/변경/미노출/고객요청 변경 카운트 + 수신자 정보 반환.
+    """
+    from app.services.weekly_report import _compute_user_summary, _collect_recipients
+
+    user = (await db.execute(select(User).where(User.id == user_id))).scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=404, detail="user not found")
+
+    summary = await _compute_user_summary(db, user.id)
+    to_addr, cc_addrs = _collect_recipients(user)
+    return {
+        "user_id": user.id,
+        "email": user.email,
+        "name": user.name,
+        "is_active": user.is_active,
+        "email_alerts": user.email_alerts,
+        "is_profile_complete": user.is_profile_complete,
+        "would_send": (
+            user.is_active
+            and user.is_profile_complete
+            and user.email_alerts
+            and summary["activity_total"] > 0
+        ),
+        "to": to_addr,
+        "cc": cc_addrs,
+        "summary": summary,
+    }
+
+
 __all__ = ["router"]

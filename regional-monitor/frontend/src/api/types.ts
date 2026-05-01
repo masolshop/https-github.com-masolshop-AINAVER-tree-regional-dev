@@ -97,6 +97,12 @@ export interface PlaceBulkRequest {
   rows: PlaceBulkRow[]                 // 1~1000건 (권장 500건 청크)
   is_first_chunk?: boolean             // 새 업로드 시작 — 미포함 마킹 트랜잭션 실행
   is_last_chunk?: boolean              // 업로드 종료 (정보용)
+  // 동/상호 override 자동 갱신 — 통신사 동기화 시나리오 (기본 true)
+  // · 기존 070 이 다시 등장 + dong/name override 가 다르면 즉시 DB 갱신
+  // · change_events(USER_OVERRIDE_CHANGED) 자동 기록 + current_verdict='PENDING' 리셋
+  update_existing?: boolean
+  // 자동 재검증 — 마지막 청크 처리 후 신규/갱신된 070 만 백그라운드 잡 큐잉 (기본 true)
+  auto_verify?: boolean
 }
 
 export type BulkRowStatusKey =
@@ -125,6 +131,13 @@ export interface PlaceBulkResponse {
   quota_remaining: number
   excluded_marked?: number      // 이번 업로드에서 미포함으로 표시된 번호 수
   excluded_restored?: number    // 다시 포함되어 미포함 해제된 번호 수
+  // 동/상호 override 자동 갱신 결과
+  overrides_updated?: number    // 동 또는 상호가 갱신된 번호 수
+  dong_changed?: number         // 동만 변경된 수
+  name_changed?: number         // 상호만 변경된 수
+  // 자동 재검증 잡 큐잉 결과
+  auto_verify_queued?: boolean  // 백그라운드 잡 큐잉 여부
+  auto_verify_target_count?: number  // 큐에 들어간 대상 수 (신규+갱신)
   rows: BulkRowStatus[]
 }
 
