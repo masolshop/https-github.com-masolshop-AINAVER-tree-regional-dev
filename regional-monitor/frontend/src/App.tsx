@@ -158,6 +158,14 @@ export default function App() {
               }
             />
             <Route
+              path="/keyword"
+              element={
+                <ProtectedRoute redirectTo="/keyword">
+                  <KeywordDiscover />
+                </ProtectedRoute>
+              }
+            />
+            <Route
               path="/admin"
               element={
                 <AdminRoute>
