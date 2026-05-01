@@ -1,6 +1,6 @@
 """APScheduler 기반 자동 검증 스케줄러.
 
-전략 v2 (2026-04-29) — 한국 시간(KST) 기준 15분 슬롯 분산:
+전략 v2 (2026-04-29 도입 → 2026-05-01 단독 본가동) — 한국 시간(KST) 기준 15분 슬롯 분산:
   · 매 15분 정각마다(00, 15, 30, 45) 깨어남 → 하루 96회
   · slot_index = (KST hour * 4) + (KST minute // 15)
   · User.verify_slot_15m == 현재 slot_index 인 사용자만 후보
@@ -9,12 +9,12 @@
   · 부하 예상 (1만 사용자, 평균 5건):
       슬롯당 ~104명 × 5 = 520건 / 15분 → 0.6 RPS  (네이버 안전)
 
-dry-run 운영 (1주일):
-  · VERIFY_SCHEDULER_V2_DRY_RUN=true (기본 True — 첫 1주는 안전모드)
-  · v2 트리거는 VerifyScheduleLog 에 status='dry_run_recorded' 만 남기고
-    실제 검증은 수행하지 않음
-  · 기존 hourly 트리거(=v1)가 그대로 살아 있어 매시 정각 실제 검증 수행
-  · 1주일 후 VERIFY_SCHEDULER_V2_DRY_RUN=false → v2 본가동, hourly 트리거 제거
+스케줄러 통합 (2026-05-01):
+  · v2 (96슬롯, 15분) 가 모든 회원 등록 070 의 자동 검증을 단독 담당.
+  · v1 (24슬롯, hourly) 트리거는 기본 OFF (KEEP_V1_SCHEDULER=false).
+    필요 시 KEEP_V1_SCHEDULER=true 로 임시 부활 가능 (롤백 안전망).
+  · VERIFY_SCHEDULER_V2_DRY_RUN 기본값 false — v2 가 실제 검증 수행.
+  · 슈퍼어드민 /admin/schedule 에서 회원별 slot/주기를 단일 화면으로 관리.
 
 ⚠️ 시간대 정책:
   · DB 저장은 KST (now_kst), 비교 기준은 모두 KST
@@ -220,8 +220,9 @@ def get_adaptive_pace_ms(base_pace_ms: int = AUTO_PACE_MS) -> tuple[int, dict]:
     }
 
 # dry-run 모드 — True 면 실제 검증 안 하고 VerifyScheduleLog 만 기록
+# (2026-05-01) 스케줄러 통합: 기본값 false 로 전환 — v2 가 단독 본가동.
 VERIFY_SCHEDULER_V2_DRY_RUN: bool = (
-    _os.environ.get("VERIFY_SCHEDULER_V2_DRY_RUN", "true").lower() in ("1", "true", "yes")
+    _os.environ.get("VERIFY_SCHEDULER_V2_DRY_RUN", "false").lower() in ("1", "true", "yes")
 )
 
 
@@ -901,16 +902,17 @@ _scheduler: AsyncIOScheduler | None = None
 # ──────────────────────────────────────────────────────────────
 # 자동 검증 주기 (KST)
 # ──────────────────────────────────────────────────────────────
-# v2 도입(2026-04-29) 이후:
-#   · v2 트리거(15분 슬롯, 96회/일) — 기본 dry-run, 기록만 남김
-#   · v1 트리거(hourly, 24회/일) — 기존 verify_slot 기반 실제 검증 유지
-#   · dry-run 1주일 운영 후 VERIFY_SCHEDULER_V2_DRY_RUN=false 설정 →
-#     v2 가 실제 검증 담당, v1 트리거는 KEEP_V1_SCHEDULER=false 로 끔.
+# 스케줄러 통합 (2026-05-01) — 기본 동작:
+#   · v2 트리거(15분 슬롯, 96회/일) — 본가동, 모든 회원 자동 검증 단독 담당
+#   · v1 트리거(hourly, 24회/일) — 기본 OFF (KEEP_V1_SCHEDULER=false)
+#   · 필요 시 환경변수로 v1 임시 부활(KEEP_V1_SCHEDULER=true) 또는
+#     v2 안전모드 복귀(VERIFY_SCHEDULER_V2_DRY_RUN=true) 가능.
 # ──────────────────────────────────────────────────────────────
 
 AUTO_VERIFY_SCHEDULE = _os.environ.get("AUTO_VERIFY_SCHEDULE", "hourly").lower()
+# (2026-05-01) 스케줄러 통합 — v1(hourly) 트리거 기본 OFF, v2(15분) 만 본가동.
 KEEP_V1_SCHEDULER: bool = (
-    _os.environ.get("KEEP_V1_SCHEDULER", "true").lower() in ("1", "true", "yes")
+    _os.environ.get("KEEP_V1_SCHEDULER", "false").lower() in ("1", "true", "yes")
 )
 
 
@@ -934,9 +936,9 @@ def _build_v2_trigger() -> CronTrigger:
 def start_scheduler() -> AsyncIOScheduler:
     """앱 시작 시 호출. 이미 시작돼 있으면 그대로 반환.
 
-    Jobs:
-      · slot_verification_v2  — 15분 슬롯 (dry-run 기본 ON)
-      · slot_verification     — 시간 슬롯 [v1, KEEP_V1_SCHEDULER=true 일 때만]
+    Jobs (2026-05-01 통합 후):
+      · slot_verification_v2  — 15분 슬롯 (기본 본가동, dry-run OFF)
+      · slot_verification     — 시간 슬롯 [v1, 기본 OFF; KEEP_V1_SCHEDULER=true 일 때만]
     """
     global _scheduler
     if _scheduler and _scheduler.running:
