@@ -235,8 +235,16 @@ function RunRow({ run }: { run: VerificationRunOut }) {
     })
   }, [run.started_at])
 
+  // 정상률 = (정상 노출 + 변경 노출) / 등록갯수 — 변경 노출도 정상 분류 (Place ID 살아있음)
+  // 변경 노출 = total - ok - dead - pending (VerificationRun 에 mismatch_count 컬럼이 없어 파생 계산)
+  const changedCount = Math.max(
+    0,
+    run.total_count - run.ok_count - run.dead_count - run.pending_count,
+  )
   const okRate =
-    run.total_count > 0 ? Math.round((run.ok_count / run.total_count) * 100) : 0
+    run.total_count > 0
+      ? Math.round(((run.ok_count + changedCount) / run.total_count) * 100)
+      : 0
 
   // 결과 톤: 변경 발생 / DEAD 多 → warning, 모두 OK → success
   const hasIssue = run.events_count > 0 || run.dead_count > 0

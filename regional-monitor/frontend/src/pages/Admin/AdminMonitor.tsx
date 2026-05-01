@@ -4,8 +4,9 @@
  * 슈퍼어드민이 전 회원의 등록건수 + 검증상태 분포를 한눈에 보는 페이지.
  *
  * 표 컬럼:
- *   회원명 / 업체명 / 회원등급 / 등록갯수 / 정상노출 / 네이버 미노출 / 변경 노출
+ *   회원명 / 업체명 / 회원등급 / 등록갯수 / 정상 노출 / 변경 노출 / 네이버 미노출
  *   (참고용으로 검증대기 컬럼도 함께 표시)
+ *   정상률 = (정상 노출 + 변경 노출) / 등록갯수 — 변경 노출도 정상 분류
  *
  * 백엔드: GET /api/v1/admin/users/monitor
  *   - 쿼리 파라미터로 검색(q) / 플랜 / 정렬 / 등록≥1 필터 지원
@@ -97,17 +98,17 @@ export function AdminMonitor() {
           value={summary?.ok_total ?? 0}
         />
         <SummaryCard
-          icon={<XCircle className="h-4 w-4" />}
-          tone="danger"
-          label="네이버 미노출"
-          value={summary?.dead_total ?? 0}
-        />
-        <SummaryCard
           icon={<AlertTriangle className="h-4 w-4" />}
           tone="info"
           label="변경 노출"
           value={summary?.mismatch_total ?? 0}
           sub={`검증대기 ${summary?.pending_total ?? 0}`}
+        />
+        <SummaryCard
+          icon={<XCircle className="h-4 w-4" />}
+          tone="danger"
+          label="네이버 미노출"
+          value={summary?.dead_total ?? 0}
         />
       </div>
 
@@ -144,8 +145,8 @@ export function AdminMonitor() {
             aria-label="정렬"
           >
             <option value="places">등록갯수 많은 순</option>
-            <option value="dead">네이버 미노출 많은 순</option>
             <option value="mismatch">변경 노출 많은 순</option>
+            <option value="dead">네이버 미노출 많은 순</option>
             <option value="pending">검증대기 많은 순</option>
             <option value="recent">최근 가입 순</option>
           </select>
@@ -206,8 +207,8 @@ export function AdminMonitor() {
                   <th className="px-3 py-3 font-semibold">회원등급</th>
                   <th className="px-3 py-3 font-semibold text-right">등록갯수</th>
                   <th className="px-3 py-3 font-semibold text-right">정상 노출</th>
-                  <th className="px-3 py-3 font-semibold text-right">네이버 미노출</th>
                   <th className="px-3 py-3 font-semibold text-right">변경 노출</th>
+                  <th className="px-3 py-3 font-semibold text-right">네이버 미노출</th>
                   <th className="px-3 py-3 font-semibold text-right">검증 대기</th>
                   <th className="px-3 py-3 font-semibold text-center">최근 모드</th>
                   <th className="px-card-sm py-3 font-semibold text-right">정상률</th>
@@ -229,9 +230,12 @@ export function AdminMonitor() {
 /* ───────────── 서브 컴포넌트 ───────────── */
 
 function MonitorRow({ row, idx }: { row: AdminMonitorRow; idx: number }) {
+  // 정상률 = (정상 노출 + 변경 노출) / 등록갯수 — 변경 노출도 정상 분류 (Place ID 살아있음)
   const okRate =
     row.place_count > 0
-      ? Math.round((row.ok_count / row.place_count) * 1000) / 10
+      ? Math.round(
+          ((row.ok_count + row.mismatch_count) / row.place_count) * 1000,
+        ) / 10
       : 0
 
   const planLabel = PLAN_LABEL[row.plan as AdminPlanKey] ?? row.plan
@@ -275,23 +279,23 @@ function MonitorRow({ row, idx }: { row: AdminMonitorRow; idx: number }) {
       <td className="px-3 py-3 text-right tabular-nums">
         <span
           className={
-            row.dead_count > 0
-              ? 'text-status-danger font-semibold'
-              : 'text-ink-soft'
-          }
-        >
-          {row.dead_count.toLocaleString()}
-        </span>
-      </td>
-      <td className="px-3 py-3 text-right tabular-nums">
-        <span
-          className={
             row.mismatch_count > 0
               ? 'text-status-info font-semibold'
               : 'text-ink-soft'
           }
         >
           {row.mismatch_count.toLocaleString()}
+        </span>
+      </td>
+      <td className="px-3 py-3 text-right tabular-nums">
+        <span
+          className={
+            row.dead_count > 0
+              ? 'text-status-danger font-semibold'
+              : 'text-ink-soft'
+          }
+        >
+          {row.dead_count.toLocaleString()}
         </span>
       </td>
       <td className="px-3 py-3 text-right tabular-nums">
