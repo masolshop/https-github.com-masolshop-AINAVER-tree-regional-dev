@@ -22,6 +22,7 @@ import Seo from '@/pages/Seo'
 import Admin from '@/pages/Admin'
 import KeywordDiscover from '@/pages/Keyword/Discover'
 import Competition from '@/pages/Competition'
+import KeywordDna from '@/pages/KeywordDna'
 import ResetPassword from '@/pages/ResetPassword'
 
 const queryClient = new QueryClient({
@@ -148,6 +149,14 @@ export default function App() {
               element={
                 <ProtectedRoute redirectTo="/competition">
                   <Competition />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/keyword-dna"
+              element={
+                <ProtectedRoute redirectTo="/keyword-dna">
+                  <KeywordDna />
                 </ProtectedRoute>
               }
             />
