@@ -21,6 +21,7 @@ import Monitor from '@/pages/Monitor'
 import History from '@/pages/History'
 import Seo from '@/pages/Seo'
 import Admin from '@/pages/Admin'
+import KeywordDiscover from '@/pages/Keyword/Discover'
 import ResetPassword from '@/pages/ResetPassword'
 
 const queryClient = new QueryClient({
@@ -140,6 +141,22 @@ export default function App() {
               }
             />
             <Route path="/seo" element={<Seo />} />
+            <Route
+              path="/keyword"
+              element={
+                <ProtectedRoute redirectTo="/keyword">
+                  <KeywordDiscover />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/keyword"
+              element={
+                <ProtectedRoute redirectTo="/keyword">
+                  <KeywordDiscover />
+                </ProtectedRoute>
+              }
+            />
             <Route
               path="/admin"
               element={

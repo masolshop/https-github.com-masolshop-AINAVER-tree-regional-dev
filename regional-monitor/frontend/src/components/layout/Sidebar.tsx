@@ -21,6 +21,7 @@ import {
   Radio,
   History,
   Search,
+  Sparkles,
   LogIn,
   LogOut,
   User as UserIcon,
@@ -61,6 +62,7 @@ const MENU: MenuItem[] = [
   { to: '/intro',    label: '타지역솔루션 소개',             icon: BookOpen,        requireAuth: false },
   { to: '/monitor',  label: '네이버노출관리솔루션',          icon: Radio,           requireAuth: true  },
   { to: '/history',  label: '자동 노출 검증 관리',          icon: History,         requireAuth: true  },
+  { to: '/keyword',  label: '키워드 발굴\n(메인/타지역 분류)', icon: Sparkles,      requireAuth: true,  multiline: true },
   { to: '/seo',      label: '네이버 1페이지노출\nSEO 최적화 솔루션', icon: Search, requireAuth: false, multiline: true },
 ]
 
