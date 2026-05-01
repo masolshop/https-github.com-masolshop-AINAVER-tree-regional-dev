@@ -73,7 +73,6 @@ interface MenuGroup {
 
 const MENU: MenuItem[] = [
   { to: '/',         label: '타지역닷컴',                    icon: LayoutDashboard, requireAuth: false },
-  { to: '/intro',    label: '타지역 4종솔루션소개',          icon: BookOpen,        requireAuth: false },
   { to: '/keyword-dna', label: '타지역키워드\nDNA 파싱솔루션',     icon: Dna,            requireAuth: true,  multiline: true },
   { to: '/keyword',  label: '네이버1페이지 노출\n키워드 발굴솔루션', icon: Sparkles,      requireAuth: true,  multiline: true },
   { to: '/competition', label: '지역별 노출경쟁도\n분석솔루션',   icon: MapPin,         requireAuth: true,  multiline: true },
@@ -89,6 +88,19 @@ const ABOUT_GROUP: MenuGroup = {
     { to: '/about/what-is',              label: '타지역서비스란?',  icon: Info,      requireAuth: false },
     { to: '/about/essential-categories', label: '타지역 필수업종',  icon: Briefcase, requireAuth: false },
     { to: '/about/keyword-logic',        label: '타지역 키워드로직', icon: Cpu,       requireAuth: false },
+  ],
+}
+
+const SOLUTIONS_GROUP: MenuGroup = {
+  key: 'intro',
+  label: '타지역 4종솔루션소개',
+  icon: BookOpen,
+  pathPrefix: '/intro',
+  children: [
+    { to: '/intro/keyword-dna',       label: '타지역키워드 DNA 파싱',  icon: Dna,      requireAuth: false },
+    { to: '/intro/keyword-discover',  label: '키워드 발굴솔루션',       icon: Sparkles, requireAuth: false },
+    { to: '/intro/competition',       label: '노출경쟁도 분석솔루션',    icon: MapPin,   requireAuth: false },
+    { to: '/intro/monitor',           label: '노출관리 자동체크솔루션',  icon: Radio,    requireAuth: false },
   ],
 }
 
@@ -143,6 +155,12 @@ export function Sidebar({ onItemClick }: SidebarProps = {}) {
   const isAboutActive = typeof window !== 'undefined'
     && window.location.pathname.startsWith(ABOUT_GROUP.pathPrefix)
   const [aboutOpen, setAboutOpen] = useState<boolean>(isAboutActive)
+
+  // "타지역 4종솔루션소개" 그룹: 현재 경로가 /intro/* 또는 /intro 이면 자동 펼침
+  const isSolutionsActive = typeof window !== 'undefined'
+    && (window.location.pathname === '/intro'
+        || window.location.pathname.startsWith(SOLUTIONS_GROUP.pathPrefix + '/'))
+  const [solutionsOpen, setSolutionsOpen] = useState<boolean>(isSolutionsActive)
 
   const handleMenuClick = (item: MenuItem, e: React.MouseEvent) => {
     if (item.requireAuth && !isAuthenticated) {
@@ -311,7 +329,67 @@ export function Sidebar({ onItemClick }: SidebarProps = {}) {
           </div>
         )}
 
-        {/* 3) 나머지 메뉴 (4종 솔루션 소개 + 4개 솔루션) */}
+        {/* 3) 타지역 4종솔루션소개 그룹 (확장형) */}
+        <div className="flex items-stretch gap-0.5">
+          <NavLink
+            to="/intro"
+            onClick={(e) => {
+              if (!isSolutionsActive) setSolutionsOpen(true)
+              onItemClick?.()
+              // 부모 라벨 클릭 시 통합 소개 페이지(/intro)로 이동
+              void e
+            }}
+            className={({ isActive }) =>
+              clsx(
+                'sidebar-item flex-1',
+                (isActive || isSolutionsActive) && 'active',
+              )
+            }
+          >
+            <SOLUTIONS_GROUP.icon size={18} className="shrink-0" />
+            <span className="flex-1 text-[clamp(13px,2.6vw,19px)] whitespace-nowrap leading-none">
+              {SOLUTIONS_GROUP.label}
+            </span>
+          </NavLink>
+          <button
+            type="button"
+            onClick={() => setSolutionsOpen((v) => !v)}
+            aria-label="서브메뉴 토글"
+            className="sidebar-item px-2 shrink-0"
+          >
+            <ChevronDown
+              size={16}
+              className={clsx(
+                'shrink-0 transition-transform',
+                solutionsOpen ? 'rotate-180' : '',
+              )}
+            />
+          </button>
+        </div>
+        {solutionsOpen && (
+          <div className="ml-4 pl-3 border-l border-bg-subtle flex flex-col gap-1">
+            {SOLUTIONS_GROUP.children.map((child) => {
+              const ChildIcon = child.icon
+              return (
+                <NavLink
+                  key={child.to}
+                  to={child.to}
+                  onClick={(e) => handleMenuClick(child, e)}
+                  className={({ isActive }) =>
+                    clsx('sidebar-item', isActive && 'active')
+                  }
+                >
+                  <ChildIcon size={15} className="shrink-0" />
+                  <span className="flex-1 text-[clamp(12px,2.4vw,15px)] whitespace-nowrap leading-none">
+                    {child.label}
+                  </span>
+                </NavLink>
+              )
+            })}
+          </div>
+        )}
+
+        {/* 4) 4개 솔루션 본 메뉴 */}
         {MENU.slice(1).map((item) => renderMenuItem(item, isAuthenticated, handleMenuClick))}
 
         {/* 슈퍼어드민 전용 메뉴 */}

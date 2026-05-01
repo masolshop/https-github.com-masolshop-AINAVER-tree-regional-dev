@@ -26,6 +26,10 @@ import ResetPassword from '@/pages/ResetPassword'
 import WhatIs from '@/pages/About/WhatIs'
 import EssentialCategories from '@/pages/About/EssentialCategories'
 import KeywordLogic from '@/pages/About/KeywordLogic'
+import KeywordDnaIntro from '@/pages/Solutions/KeywordDnaIntro'
+import KeywordDiscoverIntro from '@/pages/Solutions/KeywordDiscoverIntro'
+import CompetitionIntro from '@/pages/Solutions/CompetitionIntro'
+import MonitorIntro from '@/pages/Solutions/MonitorIntro'
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -125,6 +129,10 @@ export default function App() {
           <Route element={<AppLayout />}>
             <Route path="/" element={<Home />} />
             <Route path="/intro" element={<Intro />} />
+            <Route path="/intro/keyword-dna" element={<KeywordDnaIntro />} />
+            <Route path="/intro/keyword-discover" element={<KeywordDiscoverIntro />} />
+            <Route path="/intro/competition" element={<CompetitionIntro />} />
+            <Route path="/intro/monitor" element={<MonitorIntro />} />
             <Route path="/about/what-is" element={<WhatIs />} />
             <Route path="/about/essential-categories" element={<EssentialCategories />} />
             <Route path="/about/keyword-logic" element={<KeywordLogic />} />
