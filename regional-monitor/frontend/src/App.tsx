@@ -22,6 +22,7 @@ import History from '@/pages/History'
 import Seo from '@/pages/Seo'
 import Admin from '@/pages/Admin'
 import KeywordDiscover from '@/pages/Keyword/Discover'
+import Competition from '@/pages/Competition'
 import ResetPassword from '@/pages/ResetPassword'
 
 const queryClient = new QueryClient({
@@ -150,18 +151,10 @@ export default function App() {
               }
             />
             <Route
-              path="/keyword"
+              path="/competition"
               element={
-                <ProtectedRoute redirectTo="/keyword">
-                  <KeywordDiscover />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/keyword"
-              element={
-                <ProtectedRoute redirectTo="/keyword">
-                  <KeywordDiscover />
+                <ProtectedRoute redirectTo="/competition">
+                  <Competition />
                 </ProtectedRoute>
               }
             />
