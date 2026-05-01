@@ -249,12 +249,12 @@ def _build_email_body(
     dead_n = rs.get("dead", 0)
     mismatch_n = rs.get("mismatch", 0)
     pending_n = rs.get("pending", 0)
-    issue_n = (dead_n or 0) + (mismatch_n or 0)  # "이상" = DEAD + MISMATCH
     elapsed = _format_elapsed(rs.get("elapsed_ms"))
     trigger_label = _trigger_label(rs.get("trigger"), rs.get("mode"))
+    # 정상률 = (정상 노출 + 변경 노출) / 등록갯수 — 변경 노출도 정상 분류 (Place ID 살아있음)
     ok_rate = None
     if total and ok_n is not None and total > 0:
-        ok_rate = round((ok_n / total) * 100, 1)
+        ok_rate = round(((ok_n + (mismatch_n or 0)) / total) * 100, 1)
 
     # 위험도별 카운트
     n_danger = sum(1 for e in events if _meta(e.event_type)["severity"] == "danger")
@@ -271,9 +271,13 @@ def _build_email_body(
         ]
         if total:
             lines.append("─── 회차 요약 ───")
-            lines.append(f"  검증: {total}곳   정상: {ok_n}곳   이상: {issue_n}곳   변경: {n}건")
+            # 순서 통일: 정상 노출 → 변경 노출 → 네이버 미노출
+            lines.append(
+                f"  검증: {total}곳   정상 노출: {ok_n}곳   "
+                f"변경 노출: {mismatch_n}곳   네이버 미노출: {dead_n}곳"
+            )
             if ok_rate is not None:
-                lines.append(f"  정상 노출률: {ok_rate}%   소요시간: {elapsed}")
+                lines.append(f"  정상률: {ok_rate}%  (정상+변경)/등록   소요시간: {elapsed}")
             lines.append("")
         lines.append("─── 변경 상세 ───")
         for e in events:
@@ -315,9 +319,9 @@ def _build_email_body(
               <table role="presentation" style="width:100%;border-collapse:separate;border-spacing:8px 0;">
                 <tr>
                   {_kpi_cell("검증", str(total), "#1F2D4D")}
-                  {_kpi_cell("정상", str(ok_n if ok_n is not None else "—"), "#059669")}
-                  {_kpi_cell("이상", str(issue_n), "#DC2626" if issue_n > 0 else "#9CA3AF")}
-                  {_kpi_cell("변경", str(n), "#D97706" if n > 0 else "#9CA3AF")}
+                  {_kpi_cell("정상 노출", str(ok_n if ok_n is not None else "—"), "#059669")}
+                  {_kpi_cell("변경 노출", str(mismatch_n or 0), "#2563EB" if (mismatch_n or 0) > 0 else "#9CA3AF")}
+                  {_kpi_cell("네이버 미노출", str(dead_n or 0), "#DC2626" if (dead_n or 0) > 0 else "#9CA3AF")}
                 </tr>
               </table>
               <div style="margin-top:14px;display:flex;align-items:center;gap:10px;">
@@ -326,7 +330,8 @@ def _build_email_body(
                 </div>
               </div>
               <div style="margin-top:8px;font-size:12px;color:#6B7280;">
-                정상 노출률 <b style="color:#1F2D4D;">{ok_rate_txt}</b>
+                정상률 <b style="color:#1F2D4D;">{ok_rate_txt}</b>
+                <span style="color:#9CA3AF;">(정상+변경)/등록</span>
                 &nbsp;·&nbsp; 소요시간 <b style="color:#1F2D4D;">{elapsed}</b>
                 {f'&nbsp;·&nbsp; 대기 <b style="color:#1F2D4D;">{pending_n}건</b>' if pending_n else ''}
               </div>

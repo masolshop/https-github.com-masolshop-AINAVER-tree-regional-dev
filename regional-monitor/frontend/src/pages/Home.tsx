@@ -30,9 +30,10 @@ export default function Home() {
   const summaryQuery = usePlacesSummary()
   const summary = summaryQuery.data
   const hasRealData = (summary?.total ?? 0) > 0
+  // 정상률 = (정상 노출 + 변경 노출) / 등록갯수 — 변경 노출도 정상 분류 (Place ID 살아있음)
   const okRate =
     summary && summary.total > 0
-      ? ((summary.ok / summary.total) * 100).toFixed(1)
+      ? (((summary.ok + summary.warning) / summary.total) * 100).toFixed(1)
       : '99.2'
 
   return (
