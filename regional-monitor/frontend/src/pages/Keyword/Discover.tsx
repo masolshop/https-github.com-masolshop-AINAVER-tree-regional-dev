@@ -933,8 +933,9 @@ function BulkRegionTab({
   openLoginModal: (returnTo?: string) => void
 }) {
   const [regions, setRegions] = useState<RegionsResponse | null>(null)
-  const [scope, setScope] = useState<'sido' | 'nationwide'>('sido')
+  const [scope, setScope] = useState<'sido' | 'nationwide' | 'sigungu'>('sido')
   const [sido, setSido] = useState<string>('')
+  const [sigungu, setSigungu] = useState<string>('')
   const [text, setText] = useState<string>('선불폰')
   const [display, setDisplay] = useState<number>(10)
   const [paceMs, setPaceMs] = useState<number>(500)
@@ -971,6 +972,26 @@ function BulkRegionTab({
   }, [isAuthenticated])  // eslint-disable-line react-hooks/exhaustive-deps
 
   const sidos = useMemo(() => (regions ? Object.keys(regions.tree) : []), [regions])
+  const bulkSigungus = useMemo(() => {
+    if (!regions || !sido) return [] as string[]
+    return Object.keys(regions.tree[sido] || {})
+  }, [regions, sido])
+
+  // scope=sigungu 전환 시 시도/시군구 자동 채움
+  useEffect(() => {
+    if (scope !== 'sigungu') return
+    if (!regions) return
+    if (!sido && sidos.length) setSido(sidos[0])
+  }, [scope, regions, sidos]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // 시도 변경 시 시군구 첫 항목으로
+  useEffect(() => {
+    if (!bulkSigungus.length) {
+      setSigungu('')
+      return
+    }
+    if (!bulkSigungus.includes(sigungu)) setSigungu(bulkSigungus[0])
+  }, [bulkSigungus]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // 폴링
   useEffect(() => {
@@ -1002,9 +1023,14 @@ function BulkRegionTab({
     if (scope === 'nationwide') {
       return regions.summary.sigungu_count * keywords.length
     }
-    if (!sido) return 0
-    return Object.keys(regions.tree[sido] || {}).length * keywords.length
-  }, [regions, scope, sido, keywords])
+    if (scope === 'sido') {
+      if (!sido) return 0
+      return Object.keys(regions.tree[sido] || {}).length * keywords.length
+    }
+    // scope === 'sigungu' — 해당 시군구의 동/리 수 × 키워드
+    if (!sido || !(sigungu in (regions.tree[sido] || {}))) return 0
+    return (regions.tree[sido][sigungu]?.length || 0) * keywords.length
+  }, [regions, scope, sido, sigungu, keywords])
 
   async function startJob() {
     setErrMsg('')
@@ -1020,8 +1046,12 @@ function BulkRegionTab({
       setErrMsg('지역 일괄은 한 번에 최대 5개 키워드까지 가능합니다.')
       return
     }
-    if (scope === 'sido' && !sido) {
+    if ((scope === 'sido' || scope === 'sigungu') && !sido) {
       setErrMsg('시도를 선택해 주세요.')
+      return
+    }
+    if (scope === 'sigungu' && !(sigungu in (regions?.tree[sido] || {}))) {
+      setErrMsg('시군구를 선택해 주세요.')
       return
     }
     setStarting(true)
@@ -1030,9 +1060,9 @@ function BulkRegionTab({
     try {
       const r = await keywordApi.discoverBulkRegion({
         scope,
-        sido: scope === 'sido' ? sido : '',
+        sido: scope === 'nationwide' ? '' : sido,
+        sigungu: scope === 'sigungu' ? sigungu : '',
         keywords,
-        mode: 'sigungu',
         display,
         pace_ms: paceMs,
         concurrency,
@@ -1060,19 +1090,22 @@ function BulkRegionTab({
             <div className="mb-1 font-semibold">범위</div>
             <select
               value={scope}
-              onChange={(e) => setScope(e.target.value as 'sido' | 'nationwide')}
+              onChange={(e) => setScope(e.target.value as 'sido' | 'nationwide' | 'sigungu')}
               className="w-full border border-line rounded-lg px-2 py-2 text-sm"
             >
-              <option value="sido">시도 단위</option>
+              <option value="sido">시도 단위 (시도 안의 시군구 일괄)</option>
+              <option value="sigungu">시군구 단위 (시군구 안의 동/리 일괄)</option>
               <option value="nationwide">전국 (229개 시군구)</option>
             </select>
           </label>
-          <label className="text-xs text-ink-muted md:col-span-2">
-            <div className="mb-1 font-semibold">시도 선택 (시도 단위에만 사용)</div>
+          <label className="text-xs text-ink-muted">
+            <div className="mb-1 font-semibold">
+              시도 선택 {scope === 'nationwide' && '(전국에서는 사용 안 함)'}
+            </div>
             <select
               value={sido}
               onChange={(e) => setSido(e.target.value)}
-              disabled={scope !== 'sido'}
+              disabled={scope === 'nationwide'}
               className="w-full border border-line rounded-lg px-2 py-2 text-sm disabled:bg-slate-50"
             >
               {sidos.map((s) => (
@@ -1082,7 +1115,32 @@ function BulkRegionTab({
               ))}
             </select>
           </label>
+          <label className="text-xs text-ink-muted">
+            <div className="mb-1 font-semibold">
+              시군구 선택 {scope !== 'sigungu' && '(시군구 단위에만 사용)'}
+            </div>
+            <select
+              value={sigungu}
+              onChange={(e) => setSigungu(e.target.value)}
+              disabled={scope !== 'sigungu' || !bulkSigungus.length}
+              className="w-full border border-line rounded-lg px-2 py-2 text-sm disabled:bg-slate-50"
+            >
+              {bulkSigungus.map((s) => (
+                <option key={s || '__empty__'} value={s}>
+                  {s || '(세종 — 시군구 없음)'} ({(regions?.tree[sido]?.[s] || []).length}개 동/리)
+                </option>
+              ))}
+            </select>
+          </label>
         </div>
+
+        {scope === 'sigungu' && (
+          <div className="mt-3 px-3 py-2 rounded-lg bg-emerald-50 border border-emerald-200 text-xs text-emerald-800">
+            <strong>시군구 단위:</strong> 선택한 <strong>{sido} {sigungu || '(세종)'}</strong> 안의 모든 동/리에 대해
+            “<span className="font-mono">동·리 + 키워드</span>”로 검색합니다 (동/리 모드).
+            결과 0건은 “타지역 노출 없음”으로 표시됩니다.
+          </div>
+        )}
 
         <div className="mt-4 flex flex-col lg:flex-row gap-3">
           <textarea
@@ -1095,7 +1153,12 @@ function BulkRegionTab({
           <div className="flex flex-row lg:flex-col gap-2 lg:w-44">
             <button
               onClick={startJob}
-              disabled={starting || !keywords.length || (scope === 'sido' && !sido)}
+              disabled={
+                starting ||
+                !keywords.length ||
+                ((scope === 'sido' || scope === 'sigungu') && !sido) ||
+                (scope === 'sigungu' && !(sigungu in (regions?.tree[sido] || {})))
+              }
               className="flex-1 inline-flex items-center justify-center gap-1.5 bg-brand-600 hover:bg-brand-700 disabled:bg-slate-300 text-white font-semibold rounded-lg px-4 py-2 text-sm transition-colors"
             >
               {starting ? (
@@ -1205,6 +1268,7 @@ function BulkRegionTab({
                 <tr>
                   <th className="px-3 py-2 text-left">시도</th>
                   <th className="px-3 py-2 text-left">시군구</th>
+                  <th className="px-3 py-2 text-left">동/리</th>
                   <th className="px-3 py-2 text-left">키워드</th>
                   <th className="px-3 py-2 text-left">쿼리</th>
                   <th className="px-3 py-2 text-right">총</th>
@@ -1222,9 +1286,10 @@ function BulkRegionTab({
                     const sm = r.summary
                     const ratio = (sm?.third_party_ratio ?? 0) * 100
                     return (
-                      <tr key={`${r.sido}-${r.sigungu}-${r.keyword}-${i}`} className="border-t border-line hover:bg-bg-subtle/50">
+                      <tr key={`${r.sido}-${r.sigungu}-${r.dong}-${r.keyword}-${i}`} className="border-t border-line hover:bg-bg-subtle/50">
                         <td className="px-3 py-2">{r.sido || '-'}</td>
                         <td className="px-3 py-2 font-medium text-ink">{r.sigungu || '(없음)'}</td>
+                        <td className="px-3 py-2 text-ink">{r.dong || '-'}</td>
                         <td className="px-3 py-2">{r.keyword}</td>
                         <td className="px-3 py-2 font-mono text-xs text-ink-muted">{r.query}</td>
                         <td className="px-3 py-2 text-right tabular-nums">{sm?.total ?? 0}</td>
@@ -1252,9 +1317,9 @@ function BulkRegionTab({
 
       {!job && !starting && (
         <Card className="p-8 text-center text-sm text-ink-muted">
-          시도 또는 전국을 선택하고 키워드를 입력한 뒤 <strong>일괄 시작</strong>을 눌러주세요.
+          범위(시도/시군구/전국)를 선택하고 키워드를 입력한 뒤 <strong>일괄 시작</strong>을 눌러주세요.
           <br />
-          현재 일괄 모드는 <strong>시군구 검색</strong>만 지원합니다 (전국 229개 × 키워드).
+          시도/전국은 시군구 검색, 시군구 단위는 해당 시군구의 모든 동/리를 검색합니다.
         </Card>
       )}
     </div>

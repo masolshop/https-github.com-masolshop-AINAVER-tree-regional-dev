@@ -118,12 +118,17 @@ class DiscoverByRegionRequest(BaseModel):
 
 
 class DiscoverBulkRegionRequest(BaseModel):
-    """시도(또는 전국) × 키워드 일괄 검색 — 비동기 job."""
-    scope: str = Field("nationwide", pattern="^(nationwide|sido)$")
-    sido: str = Field("", max_length=20, description="scope=sido 일 때만 사용")
+    """시도/시군구/전국 × 키워드 일괄 검색 — 비동기 job.
+
+    scope 옵션:
+      · nationwide — 전국 229개 시군구 검색 (시군구 모드)
+      · sido       — 해당 시도의 시군구 전체 (시군구 모드)
+      · sigungu    — 특정 시군구 안의 모든 동/리 (동/리 모드)
+    """
+    scope: str = Field("nationwide", pattern="^(nationwide|sido|sigungu)$")
+    sido: str = Field("", max_length=20, description="scope=sido/sigungu 시 필수")
+    sigungu: str = Field("", max_length=40, description="scope=sigungu 시 필수")
     keywords: list[str] = Field(..., min_length=1, max_length=5)
-    mode: str = Field("sigungu", pattern="^(sigungu)$",
-                      description="현재는 시군구 일괄만 지원 (동 일괄은 비용 과다)")
     display: int = Field(10, ge=1, le=20)
     pace_ms: int = Field(500, ge=200, le=3000)
     concurrency: int = Field(5, ge=1, le=8)
@@ -450,33 +455,39 @@ async def _run_bulk_job(
     job: _Job, *, pairs: list[dict[str, str]], keywords: list[str],
     mode: str, display: int, pace_ms: int, concurrency: int, use_cache: bool,
 ) -> None:
-    """백그라운드 실행: (시군구, 키워드) 조합 모두 처리."""
+    """백그라운드 실행: (지역pair, 키워드) 조합 모두 처리.
+
+    pair 구조:
+      · mode='sigungu': {sido, sigungu}
+      · mode='dong'   : {sido, sigungu, dong}
+    """
     sem = asyncio.Semaphore(concurrency)
 
     async def one(pair: dict[str, str], kw: str) -> dict[str, Any]:
         async with sem:
             try:
                 res = await _discover_one_region(
-                    sigungu=pair["sigungu"],
-                    dong="",
+                    sigungu=pair.get("sigungu", ""),
+                    dong=pair.get("dong", ""),
                     mode=mode,
                     keyword=kw,
                     display=display,
                     use_cache=use_cache,
                 )
-                res["sido"] = pair["sido"]
+                res["sido"] = pair.get("sido", "")
                 # pace 지연 (호출당)
                 await asyncio.sleep(pace_ms / 1000.0)
                 return res
             except Exception as e:  # noqa: BLE001
-                logger.warning("bulk pair failed sido=%s sg=%s kw=%s err=%s",
-                               pair.get("sido"), pair.get("sigungu"), kw, e)
+                logger.warning("bulk pair failed sido=%s sg=%s d=%s kw=%s err=%s",
+                               pair.get("sido"), pair.get("sigungu"),
+                               pair.get("dong"), kw, e)
                 return {
                     "scope": "region",
                     "mode": mode,
-                    "sido": pair.get("sido"),
-                    "sigungu": pair.get("sigungu"),
-                    "dong": "",
+                    "sido": pair.get("sido", ""),
+                    "sigungu": pair.get("sigungu", ""),
+                    "dong": pair.get("dong", ""),
                     "keyword": kw,
                     "summary": {
                         "total": 0, "main_count": 0, "third_party_count": 0,
@@ -511,28 +522,53 @@ async def keyword_discover_bulk_region(
     req: DiscoverBulkRegionRequest,
     user: User = Depends(require_complete_profile),
 ):
-    """시도 또는 전국 시군구 × 키워드 일괄 검색 (백그라운드 job).
+    """시도 / 시군구 / 전국 × 키워드 일괄 검색 (백그라운드 job).
 
-    - scope=nationwide: 전국 229개 시군구 × keywords
-    - scope=sido     : 해당 시도의 시군구 × keywords
-    - 동/리 일괄은 비용이 과도(229×N)하므로 제공하지 않음.
+    - scope=nationwide: 전국 229개 시군구 × keywords (시군구 모드)
+    - scope=sido     : 해당 시도의 시군구 × keywords (시군구 모드)
+    - scope=sigungu  : 해당 시군구의 모든 동/리 × keywords (동/리 모드)
     """
     keywords = [k.strip() for k in req.keywords if k and k.strip()]
     if not keywords:
         raise HTTPException(status_code=400, detail="keywords 비어 있음")
 
+    tree = load_regions()
+
     if req.scope == "nationwide":
         pairs = all_sigungu()
-    else:
+        mode = "sigungu"
+    elif req.scope == "sido":
         sido = (req.sido or "").strip()
         if not sido:
             raise HTTPException(status_code=400, detail="scope=sido 시 sido 필수")
+        if sido not in tree:
+            raise HTTPException(status_code=400, detail=f"알 수 없는 시도: {sido}")
         pairs = sigungu_in_sido(sido)
         if not pairs:
+            raise HTTPException(status_code=400, detail=f"시군구 목록이 비어 있음: {sido}")
+        mode = "sigungu"
+    else:  # scope == "sigungu" — 시군구 안의 동/리 일괄
+        sido = (req.sido or "").strip()
+        sigungu = (req.sigungu or "").strip()
+        if not sido:
+            raise HTTPException(status_code=400, detail="scope=sigungu 시 sido 필수")
+        if sido not in tree:
             raise HTTPException(status_code=400, detail=f"알 수 없는 시도: {sido}")
+        # 세종특별자치시는 sigungu가 빈 문자열로 저장되어 있음 → 빈값도 허용
+        if sigungu not in tree[sido]:
+            raise HTTPException(
+                status_code=400, detail=f"알 수 없는 시군구: {sido} {sigungu}",
+            )
+        dongs = tree[sido][sigungu]
+        if not dongs:
+            raise HTTPException(
+                status_code=400, detail=f"동/리 목록이 비어 있음: {sido} {sigungu}",
+            )
+        pairs = [{"sido": sido, "sigungu": sigungu, "dong": d} for d in dongs]
+        mode = "dong"
 
     total_pairs = len(pairs) * len(keywords)
-    # 안전 상한 — 너무 큰 작업 차단 (229*5 = 1145 까지 허용)
+    # 안전 상한 — 너무 큰 작업 차단 (전국 229*5 = 1145, 큰 시군구 동 100*5 = 500)
     MAX_PAIRS = 1500
     if total_pairs > MAX_PAIRS:
         raise HTTPException(
@@ -548,7 +584,7 @@ async def keyword_discover_bulk_region(
         job,
         pairs=pairs,
         keywords=keywords,
-        mode=req.mode,
+        mode=mode,
         display=req.display,
         pace_ms=req.pace_ms,
         concurrency=req.concurrency,
@@ -564,8 +600,9 @@ async def keyword_discover_bulk_region(
         "total": total_pairs,
         "scope": req.scope,
         "sido": req.sido,
+        "sigungu": req.sigungu,
         "keywords": keywords,
-        "mode": req.mode,
+        "mode": mode,
         "estimated_seconds": est_seconds,
     }
 

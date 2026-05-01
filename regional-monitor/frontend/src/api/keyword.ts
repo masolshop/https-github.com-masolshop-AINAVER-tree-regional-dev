@@ -130,11 +130,13 @@ export interface DiscoverByRegionResponse {
 }
 
 // ── 지역 일괄 검색 (job) ──────────────────────────────────
+export type BulkScope = 'nationwide' | 'sido' | 'sigungu'
+
 export interface DiscoverBulkRegionRequest {
-  scope: 'nationwide' | 'sido'
+  scope: BulkScope
   sido?: string
+  sigungu?: string
   keywords: string[]
-  mode?: 'sigungu'
   display?: number
   pace_ms?: number
   concurrency?: number
@@ -145,10 +147,11 @@ export interface BulkJobStartResponse {
   job_id: string
   status: 'running'
   total: number
-  scope: 'nationwide' | 'sido'
+  scope: BulkScope
   sido: string
+  sigungu: string
   keywords: string[]
-  mode: 'sigungu'
+  mode: 'sigungu' | 'dong'
   estimated_seconds: number
 }
 
