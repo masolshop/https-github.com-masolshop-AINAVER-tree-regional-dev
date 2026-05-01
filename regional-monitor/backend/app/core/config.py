@@ -60,6 +60,14 @@ class Settings(BaseSettings):
     # 운영 자체 호스팅에서 키 파일 경로를 못 줄 때, 키 본문 자체를 환경변수로 주입 가능.
     GA4_CREDENTIALS_JSON: str = ""                  # JSON 문자열 (선택)
 
+    # ── GA4 OAuth (서비스 계정 권한 부여 불가 시 개인 Gmail 인증) ──
+    GA4_OAUTH_CLIENT_ID: str = ""
+    GA4_OAUTH_CLIENT_SECRET: str = ""
+    GA4_OAUTH_REDIRECT_URI: str = ""                # 예: https://taziyuk.com/api/v1/admin/analytics/oauth/callback
+    GA4_OAUTH_TOKEN_FILE: str = "/etc/regionwatch/ga4-oauth-token.json"
+    # 인증 후 어드민 대시보드로 돌아갈 URL (콜백 처리 후 redirect 대상)
+    GA4_OAUTH_SUCCESS_REDIRECT: str = "/admin?tab=analytics"
+
     # ── CORS ──
     CORS_ALLOW_ORIGINS: list[str] = [
         "http://localhost:5173",

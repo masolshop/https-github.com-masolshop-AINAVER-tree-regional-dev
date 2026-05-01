@@ -18,13 +18,14 @@ import {
   Activity,
   AlertTriangle,
   BarChart3,
+  CheckCircle2,
   Globe2,
+  LogIn,
+  LogOut,
   MonitorSmartphone,
   RefreshCw,
   TrendingUp,
   Users,
-  ExternalLink,
-  Settings,
   ArrowUpRight,
 } from 'lucide-react'
 
@@ -161,11 +162,16 @@ export function AdminAnalytics() {
   }
 
   if (!isConfigured) {
-    return <NotConfiguredCard />
+    return <NotConfiguredCard health={healthQ.data} onChanged={() => healthQ.refetch()} />
   }
 
   return (
     <div className="space-y-6">
+      {/* OAuth 연결 상태 표시 */}
+      {healthQ.data?.credentials_source === 'oauth_user' && (
+        <OAuthStatusBar health={healthQ.data} onChanged={() => healthQ.refetch()} />
+      )}
+
       {/* 컨트롤 바 */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2">
@@ -236,64 +242,176 @@ export function AdminAnalytics() {
 // 미설정 안내 카드
 // ──────────────────────────────────────────────────────────────
 
-function NotConfiguredCard() {
+function NotConfiguredCard({
+  health,
+  onChanged,
+}: {
+  health?: { oauth_configured?: boolean; oauth_connected?: boolean; property_id?: string | null } | undefined
+  onChanged?: () => void
+}) {
+  const oauthAvailable = !!health?.oauth_configured
+  const propertySet = !!health?.property_id
+
   return (
-    <div className="rounded-card border border-amber-200 bg-amber-50 p-6">
-      <div className="flex items-start gap-3">
-        <AlertTriangle className="h-6 w-6 text-amber-600 shrink-0 mt-0.5" />
-        <div className="flex-1">
-          <h3 className="text-lg font-bold text-amber-900 mb-1">
-            GA4 데이터 API가 아직 설정되지 않았습니다
-          </h3>
-          <p className="text-sm text-amber-800 mb-4">
-            방문자 분석 대시보드를 사용하려면 다음 환경변수를 백엔드에 주입해야 합니다.
-          </p>
-          <div className="bg-white rounded-md border border-amber-200 p-4 space-y-2 font-mono text-xs">
-            <div>
-              <span className="text-amber-700 font-bold">GA4_PROPERTY_ID</span>=
-              <span className="text-ink">486271234</span>{' '}
-              <span className="text-ink-muted">— GA4 속성 ID(숫자)</span>
-            </div>
-            <div>
-              <span className="text-amber-700 font-bold">GA4_CREDENTIALS_FILE</span>=
-              <span className="text-ink">/etc/regionwatch/ga4-sa.json</span>{' '}
-              <span className="text-ink-muted">— 서비스 계정 JSON 키 경로</span>
-            </div>
-            <div className="text-ink-muted">또는</div>
-            <div>
-              <span className="text-amber-700 font-bold">GA4_CREDENTIALS_JSON</span>=
-              <span className="text-ink">{`{"type":"service_account",...}`}</span>{' '}
-              <span className="text-ink-muted">— JSON 본문 자체</span>
-            </div>
-            <div className="pt-2 border-t border-amber-100">
-              <span className="text-amber-700 font-bold">VITE_GA_MEASUREMENT_ID</span>=
-              <span className="text-ink">G-XXXXXXXXXX</span>{' '}
-              <span className="text-ink-muted">— 프론트엔드 gtag 측정 ID(빌드 시)</span>
-            </div>
-          </div>
-          <div className="mt-4 space-y-1.5 text-sm text-amber-900">
-            <p className="flex items-start gap-2">
-              <Settings className="h-4 w-4 mt-0.5 shrink-0" />
-              <span>
-                Google Cloud Console에서 <strong>서비스 계정</strong>을 생성한 뒤,
-                GA4 <strong>관리자 → 속성 → 속성 액세스 관리</strong>에서 해당 계정 이메일에
-                "뷰어" 권한을 부여하세요.
-              </span>
+    <div className="space-y-4">
+      {/* OAuth 연결 카드 (권장) */}
+      {oauthAvailable && propertySet && (
+        <OAuthConnectCard onChanged={onChanged} />
+      )}
+
+      {/* 환경변수 안내 */}
+      <div className="rounded-card border border-amber-200 bg-amber-50 p-6">
+        <div className="flex items-start gap-3">
+          <AlertTriangle className="h-6 w-6 text-amber-600 shrink-0 mt-0.5" />
+          <div className="flex-1">
+            <h3 className="text-lg font-bold text-amber-900 mb-1">
+              GA4 데이터 API가 아직 설정되지 않았습니다
+            </h3>
+            <p className="text-sm text-amber-800 mb-4">
+              {oauthAvailable
+                ? '위의 "Google로 GA4 연결" 버튼으로 본인 Gmail 계정 인증을 완료하면 즉시 데이터가 표시됩니다. 또는 아래 환경변수를 백엔드에 주입해도 됩니다.'
+                : '방문자 분석 대시보드를 사용하려면 다음 환경변수를 백엔드에 주입해야 합니다.'}
             </p>
-            <p className="flex items-start gap-2">
-              <ExternalLink className="h-4 w-4 mt-0.5 shrink-0" />
-              <a
-                href="https://developers.google.com/analytics/devguides/reporting/data/v1/quickstart-client-libraries"
-                target="_blank"
-                rel="noreferrer"
-                className="underline hover:text-amber-700"
-              >
-                GA4 Data API Quickstart 문서
-              </a>
-            </p>
+            <div className="bg-white rounded-md border border-amber-200 p-4 space-y-2 font-mono text-xs">
+              <div>
+                <span className="text-amber-700 font-bold">GA4_PROPERTY_ID</span>=
+                <span className="text-ink">535479231</span>{' '}
+                <span className="text-ink-muted">— GA4 속성 ID(숫자)</span>
+              </div>
+              <div className="text-ink-muted">— OAuth(개인 Gmail) —</div>
+              <div>
+                <span className="text-amber-700 font-bold">GA4_OAUTH_CLIENT_ID</span>=
+                <span className="text-ink">…apps.googleusercontent.com</span>
+              </div>
+              <div>
+                <span className="text-amber-700 font-bold">GA4_OAUTH_CLIENT_SECRET</span>=
+                <span className="text-ink">GOCSPX-…</span>
+              </div>
+              <div>
+                <span className="text-amber-700 font-bold">GA4_OAUTH_REDIRECT_URI</span>=
+                <span className="text-ink">https://taziyuk.com/api/v1/admin/analytics/oauth/callback</span>
+              </div>
+              <div className="text-ink-muted">— 또는 서비스 계정 —</div>
+              <div>
+                <span className="text-amber-700 font-bold">GA4_CREDENTIALS_FILE</span>=
+                <span className="text-ink">/etc/regionwatch/ga4-sa.json</span>
+              </div>
+            </div>
           </div>
         </div>
       </div>
+    </div>
+  )
+}
+
+// ──────────────────────────────────────────────────────────────
+// OAuth 연결 카드 (미연결 상태)
+// ──────────────────────────────────────────────────────────────
+
+function OAuthConnectCard({ onChanged }: { onChanged?: () => void }) {
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState<string | null>(null)
+
+  // 콜백 완료 시 부모창 갱신용 메시지 수신
+  useEffect(() => {
+    const handler = (ev: MessageEvent) => {
+      if (ev.data && ev.data.type === 'ga4-oauth-result') {
+        onChanged?.()
+      }
+    }
+    window.addEventListener('message', handler)
+    return () => window.removeEventListener('message', handler)
+  }, [onChanged])
+
+  const onConnect = async () => {
+    setBusy(true)
+    setErr(null)
+    try {
+      const r = await AdminAnalyticsApi.oauthStart()
+      // 새 탭으로 열어 인증 후 자동 닫기
+      window.open(r.authorization_url, '_blank', 'width=520,height=680')
+    } catch (e: any) {
+      setErr(e?.message || 'OAuth 시작 실패')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="rounded-card border-2 border-brand-300 bg-gradient-to-br from-brand-50 to-white p-6">
+      <div className="flex items-start gap-3">
+        <CheckCircle2 className="h-6 w-6 text-brand-600 shrink-0 mt-0.5" />
+        <div className="flex-1">
+          <h3 className="text-lg font-bold text-brand-900 mb-1">
+            본인 Google 계정으로 GA4 데이터 연결하기 (권장)
+          </h3>
+          <p className="text-sm text-ink mb-4 leading-relaxed">
+            서비스 계정 권한 부여가 막혀있는 경우, GA4 속성에 이미 접근 권한이 있는
+            <strong> 본인 Gmail 계정</strong>으로 1회 OAuth 인증을 거치면 즉시
+            데이터가 표시됩니다. 토큰은 서버에 안전하게 저장되며 자동 갱신됩니다.
+          </p>
+          <button
+            onClick={onConnect}
+            disabled={busy}
+            className="inline-flex items-center gap-2 px-5 py-2.5 rounded-md bg-brand-600 hover:bg-brand-700 text-white font-semibold shadow disabled:opacity-50"
+          >
+            <LogIn className="h-4 w-4" />
+            {busy ? '인증 창 여는 중…' : 'Google 로 GA4 연결'}
+          </button>
+          {err && <div className="mt-3 text-sm text-rose-600">⚠ {err}</div>}
+          <p className="mt-3 text-xs text-ink-muted">
+            ※ 인증 새 창에서 "확인되지 않은 앱" 경고가 보이면 <strong>고급 → (계속) 이동</strong>을 클릭하세요.
+            (GCP 동의 화면이 외부/테스트 모드일 때 발생하는 정상 안내)
+          </p>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ──────────────────────────────────────────────────────────────
+// OAuth 연결 상태 표시 바 (이미 연결됨)
+// ──────────────────────────────────────────────────────────────
+
+function OAuthStatusBar({
+  health,
+  onChanged,
+}: {
+  health: { oauth_account_email?: string | null; property_id?: string | null }
+  onChanged?: () => void
+}) {
+  const [busy, setBusy] = useState(false)
+  const onDisconnect = async () => {
+    if (!confirm('GA4 OAuth 연결을 해제하시겠습니까? 데이터 접근이 중단됩니다.')) return
+    setBusy(true)
+    try {
+      await AdminAnalyticsApi.oauthDisconnect()
+      onChanged?.()
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="flex items-center justify-between gap-3 rounded-card border border-emerald-200 bg-emerald-50 px-4 py-2.5 text-sm">
+      <div className="flex items-center gap-2">
+        <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+        <span className="text-emerald-900">
+          GA4 OAuth 연결됨 —{' '}
+          <strong className="font-semibold">{health.oauth_account_email || '계정 식별 안 됨'}</strong>
+          {health.property_id && (
+            <span className="text-emerald-700 ml-2">(Property {health.property_id})</span>
+          )}
+        </span>
+      </div>
+      <button
+        onClick={onDisconnect}
+        disabled={busy}
+        className="inline-flex items-center gap-1 px-3 py-1.5 rounded-md text-xs border border-emerald-300 bg-white hover:bg-emerald-100 text-emerald-700 disabled:opacity-50"
+      >
+        <LogOut className="h-3.5 w-3.5" />
+        {busy ? '해제 중…' : '연결 해제'}
+      </button>
     </div>
   )
 }

@@ -3,6 +3,7 @@ from fastapi import APIRouter
 
 from .admin import router as admin_router
 from .admin_analytics import router as admin_analytics_router
+from .admin_analytics import oauth_callback_router as admin_analytics_oauth_callback_router
 from .auth import router as auth_router
 from .backup import router as backup_router
 from .events import router as events_router
@@ -24,6 +25,7 @@ api_router.include_router(events_router)
 api_router.include_router(settings_router)
 api_router.include_router(admin_router)
 api_router.include_router(admin_analytics_router)
+api_router.include_router(admin_analytics_oauth_callback_router)
 api_router.include_router(backup_router)
 api_router.include_router(keyword_router)
 api_router.include_router(competition_router)

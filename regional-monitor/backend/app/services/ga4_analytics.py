@@ -26,25 +26,53 @@ logger = logging.getLogger(__name__)
 
 
 def is_ga4_configured() -> bool:
-    """GA4 Data API 호출이 가능한 환경인지 확인."""
-    return bool(
-        settings.GA4_PROPERTY_ID
-        and (settings.GA4_CREDENTIALS_FILE or settings.GA4_CREDENTIALS_JSON)
-    )
+    """GA4 Data API 호출이 가능한 환경인지 확인.
+
+    1) Property ID 가 있고
+    2) 서비스 계정 키(파일/JSON) 또는 OAuth 사용자 토큰 중 하나라도 존재해야 한다.
+    """
+    if not settings.GA4_PROPERTY_ID:
+        return False
+    if settings.GA4_CREDENTIALS_FILE or settings.GA4_CREDENTIALS_JSON:
+        return True
+    # OAuth 사용자 토큰 확인
+    try:
+        from app.services import ga4_oauth
+        return ga4_oauth.has_user_token()
+    except Exception:
+        return False
 
 
 def _get_client():
-    """BetaAnalyticsDataClient 인스턴스 반환. 미설정/미설치 시 None."""
-    if not is_ga4_configured():
+    """BetaAnalyticsDataClient 인스턴스 반환. 미설정/미설치 시 None.
+
+    우선순위:
+      1) OAuth 사용자 토큰 (개인 Gmail 인증, 서비스 계정 차단 우회)
+      2) 서비스 계정 JSON 환경변수
+      3) 서비스 계정 키 파일
+    """
+    if not settings.GA4_PROPERTY_ID:
         return None
     try:
-        from google.oauth2 import service_account
         from google.analytics.data_v1beta import BetaAnalyticsDataClient
     except ImportError:
         logger.warning("google-analytics-data 패키지가 설치되지 않았습니다.")
         return None
 
+    # 1) OAuth 사용자 토큰 우선 시도
     try:
+        from app.services import ga4_oauth
+        user_creds = ga4_oauth.build_user_credentials()
+        if user_creds is not None:
+            return BetaAnalyticsDataClient(credentials=user_creds)
+    except Exception as e:
+        logger.warning("OAuth credential 사용 실패, 서비스 계정 fallback: %s", e)
+
+    # 2/3) 서비스 계정 fallback
+    if not (settings.GA4_CREDENTIALS_FILE or settings.GA4_CREDENTIALS_JSON):
+        return None
+    try:
+        from google.oauth2 import service_account
         if settings.GA4_CREDENTIALS_JSON:
             info = json.loads(settings.GA4_CREDENTIALS_JSON)
             credentials = service_account.Credentials.from_service_account_info(info)

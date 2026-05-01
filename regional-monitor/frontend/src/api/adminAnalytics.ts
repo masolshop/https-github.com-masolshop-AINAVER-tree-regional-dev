@@ -17,7 +17,15 @@ export type GaRange =
 export interface GaHealth {
   configured: boolean
   property_id: string | null
-  credentials_source: 'json_env' | 'file' | null
+  credentials_source: 'json_env' | 'file' | 'oauth_user' | null
+  oauth_configured: boolean
+  oauth_connected: boolean
+  oauth_account_email: string | null
+}
+
+export interface GaOAuthStart {
+  authorization_url: string
+  state: string
 }
 
 export interface GaSummary {
@@ -86,4 +94,6 @@ export const AdminAnalyticsApi = {
   sources: (range: GaRange = '7daysAgo', limit = 15) =>
     api.get<GaSourceRow[]>(`/api/v1/admin/analytics/sources?range=${range}&limit=${limit}`),
   realtime: () => api.get<GaRealtime>('/api/v1/admin/analytics/realtime'),
+  oauthStart: () => api.get<GaOAuthStart>('/api/v1/admin/analytics/oauth/start'),
+  oauthDisconnect: () => api.post<{ disconnected: boolean }>('/api/v1/admin/analytics/oauth/disconnect'),
 }
