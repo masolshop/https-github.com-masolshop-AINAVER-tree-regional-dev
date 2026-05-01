@@ -367,7 +367,7 @@ export default function Competition() {
       {/* 헤더 */}
       <div>
         <h1 className="text-xl lg:text-2xl font-bold flex items-center gap-2">
-          <MapPin className="text-rose-600" size={24} />
+          <MapPin className="text-blue-600" size={24} />
           지역별 경쟁도 분석 솔루션
         </h1>
         <p className="text-sm text-ink-2 mt-1">
@@ -385,8 +385,8 @@ export default function Competition() {
             className={clsx(
               'px-4 py-2 rounded-lg border text-sm font-semibold flex items-center gap-2 transition',
               scanMode === 'fast'
-                ? 'bg-rose-600 text-white border-rose-600 shadow-sm'
-                : 'bg-white text-ink-1 border-slate-300 hover:border-rose-400',
+                ? 'bg-blue-600 text-white border-blue-600 shadow-sm'
+                : 'bg-white text-ink-1 border-slate-300 hover:border-blue-400',
             )}
           >
             <Zap size={16} /> Fast 모드
@@ -398,8 +398,8 @@ export default function Competition() {
             className={clsx(
               'px-4 py-2 rounded-lg border text-sm font-semibold flex items-center gap-2 transition',
               scanMode === 'precise'
-                ? 'bg-rose-600 text-white border-rose-600 shadow-sm'
-                : 'bg-white text-ink-1 border-slate-300 hover:border-rose-400',
+                ? 'bg-blue-600 text-white border-blue-600 shadow-sm'
+                : 'bg-white text-ink-1 border-slate-300 hover:border-blue-400',
             )}
           >
             <Crosshair size={16} /> Precise 모드
@@ -432,7 +432,7 @@ export default function Competition() {
                 className={clsx(
                   'px-3 py-1.5 rounded-md border text-sm',
                   scope === 'nationwide'
-                    ? 'bg-rose-50 text-rose-700 border-rose-300'
+                    ? 'bg-blue-50 text-blue-700 border-blue-300'
                     : 'bg-white text-ink-1 border-slate-300',
                 )}
               >
@@ -445,7 +445,7 @@ export default function Competition() {
               className={clsx(
                 'px-3 py-1.5 rounded-md border text-sm',
                 scope === 'sido'
-                  ? 'bg-rose-50 text-rose-700 border-rose-300'
+                  ? 'bg-blue-50 text-blue-700 border-blue-300'
                   : 'bg-white text-ink-1 border-slate-300',
               )}
             >
@@ -457,7 +457,7 @@ export default function Competition() {
               className={clsx(
                 'px-3 py-1.5 rounded-md border text-sm',
                 scope === 'sigungu'
-                  ? 'bg-rose-50 text-rose-700 border-rose-300'
+                  ? 'bg-blue-50 text-blue-700 border-blue-300'
                   : 'bg-white text-ink-1 border-slate-300',
               )}
             >
@@ -546,7 +546,7 @@ export default function Competition() {
               type="button"
               onClick={startFast}
               disabled={fastLoading}
-              className="px-5 py-2 rounded-md bg-rose-600 text-white text-sm font-semibold flex items-center gap-2 hover:bg-rose-700 disabled:opacity-50"
+              className="px-5 py-2 rounded-md bg-blue-600 text-white text-sm font-semibold flex items-center gap-2 hover:bg-blue-700 disabled:opacity-50"
             >
               <SearchIcon size={16} />
               {fastLoading ? '분석 중…' : 'Fast 분석 시작'}
@@ -556,7 +556,7 @@ export default function Competition() {
               type="button"
               onClick={startPrecise}
               disabled={starting || isPreciseRunning}
-              className="px-5 py-2 rounded-md bg-rose-600 text-white text-sm font-semibold flex items-center gap-2 hover:bg-rose-700 disabled:opacity-50"
+              className="px-5 py-2 rounded-md bg-blue-600 text-white text-sm font-semibold flex items-center gap-2 hover:bg-blue-700 disabled:opacity-50"
             >
               <Crosshair size={16} />
               {starting ? '시작 중…' : isPreciseRunning ? '진행 중…' : 'Precise 분석 시작'}
@@ -599,7 +599,7 @@ export default function Competition() {
           </div>
           <div className="mt-2 h-2 w-full bg-slate-200 rounded-full overflow-hidden">
             <div
-              className="h-2 bg-rose-500 transition-all"
+              className="h-2 bg-blue-500 transition-all"
               style={{ width: `${Math.round(job.progress * 100)}%` }}
             />
           </div>
@@ -611,7 +611,7 @@ export default function Competition() {
         <Card className="p-4 space-y-4">
           <div className="flex items-center justify-between flex-wrap gap-2">
             <div className="text-base font-bold flex items-center gap-2">
-              <span className="text-rose-600">{result.keyword}</span>
+              <span className="text-blue-600">{result.keyword}</span>
               <span className="text-ink-2 text-sm font-normal">
                 {scanMode === 'fast'
                   ? `· Fast (${(fastResult?.elapsed_ms || 0) / 1000}초)`
@@ -622,16 +622,16 @@ export default function Competition() {
               <button
                 type="button"
                 onClick={exportSummary}
-                className="px-3 py-1.5 rounded-md border border-slate-300 text-xs font-semibold flex items-center gap-1 bg-white hover:bg-slate-50"
+                className="px-4 py-2 rounded-lg border-2 border-emerald-600 text-sm font-bold flex items-center gap-1.5 bg-emerald-600 text-white hover:bg-emerald-700 hover:border-emerald-700 shadow-sm transition"
               >
-                <Download size={14} /> 요약 Excel
+                <Download size={16} /> 요약 Excel
               </button>
               <button
                 type="button"
                 onClick={exportDetail}
-                className="px-3 py-1.5 rounded-md border border-slate-300 text-xs font-semibold flex items-center gap-1 bg-white hover:bg-slate-50"
+                className="px-4 py-2 rounded-lg border-2 border-blue-600 text-sm font-bold flex items-center gap-1.5 bg-blue-600 text-white hover:bg-blue-700 hover:border-blue-700 shadow-sm transition"
               >
-                <Download size={14} /> 상세 Excel
+                <Download size={16} /> 상세 Excel
               </button>
             </div>
           </div>
@@ -715,7 +715,7 @@ export default function Competition() {
                       key={r.key}
                       onClick={() => r.items.length > 0 && setDetail(r)}
                       className={clsx(
-                        'border-t border-slate-100 hover:bg-rose-50/40',
+                        'border-t border-slate-100 hover:bg-blue-50/40',
                         r.items.length > 0 ? 'cursor-pointer' : 'cursor-default',
                       )}
                     >
@@ -723,7 +723,7 @@ export default function Competition() {
                       <td className="px-3 py-2 text-xs">{r.sido}</td>
                       <td className="px-3 py-2 text-xs">{r.sigungu}</td>
                       <td className="px-3 py-2">
-                        <span className="text-rose-700 font-semibold underline-offset-2 hover:underline">
+                        <span className="text-blue-700 font-semibold underline-offset-2 hover:underline">
                           {r.dong}
                         </span>
                       </td>
@@ -802,7 +802,7 @@ function DetailModal({ row, onClose }: { row: CompetitionRow; onClose: () => voi
             <span className="text-ink-2">·</span>
             <span className="text-sm text-ink-2">{row.sigungu}</span>
             <span className="text-ink-2">·</span>
-            <span className="text-base font-bold text-rose-700">{row.dong}</span>
+            <span className="text-base font-bold text-blue-700">{row.dong}</span>
             <GradePill g={row.grade} />
           </div>
           <button
@@ -895,7 +895,7 @@ function PlaceRow({ it, rank }: { it: CompetitionPlace; rank: number }) {
             href={placeUrl}
             target="_blank"
             rel="noreferrer"
-            className="inline-flex items-center gap-1 text-xs text-rose-700 hover:underline"
+            className="inline-flex items-center gap-1 text-xs text-blue-700 hover:underline"
           >
             열기 <ExternalLink size={11} />
           </a>
