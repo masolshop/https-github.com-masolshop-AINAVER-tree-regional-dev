@@ -327,7 +327,7 @@ export function AdminWeeklyReport() {
                     </div>
                     <div className="mt-2 flex flex-wrap gap-1.5 text-[11px]">
                       <span className="rounded bg-emerald-50 px-1.5 py-0.5 text-emerald-700">
-                        ✓ {r.sent_users}
+                        OK {r.sent_users}
                       </span>
                       <span className="rounded bg-gray-100 px-1.5 py-0.5 text-gray-600">
                         활동 X {r.skipped_no_activity}
