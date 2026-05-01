@@ -1,20 +1,22 @@
 /**
- * Monitor 페이지 — 3탭 셸
+ * Monitor 페이지 — 4탭 셸
  *  ├─ 등록 관리 (RegisterTab)
  *  ├─ 실시간 노출 확인 (LiveCheckTab)
+ *  ├─ 자동 노출 검증 (HistoryBody) — 2026-05 사이드바에서 이동
  *  └─ 설정 (SettingsTab)
  *
- * URL: /monitor?tab=register | live | settings
+ * URL: /monitor?tab=register | live | history | settings
  */
 import { useSearchParams } from 'react-router-dom'
 import { TopBar } from '@/components/layout/TopBar'
-import { ClipboardList, Activity, Settings } from 'lucide-react'
+import { ClipboardList, Activity, History as HistoryIcon, Settings } from 'lucide-react'
 import RegisterTab from './RegisterTab'
 import LiveCheckTab from './LiveCheckTab'
 import SettingsTab from './SettingsTab'
+import { HistoryBody } from '../History'
 import clsx from 'clsx'
 
-type TabKey = 'register' | 'live' | 'settings'
+type TabKey = 'register' | 'live' | 'history' | 'settings'
 
 const TABS: { key: TabKey; label: string; icon: React.ReactNode; desc: string }[] = [
   {
@@ -28,6 +30,12 @@ const TABS: { key: TabKey; label: string; icon: React.ReactNode; desc: string }[
     label: '실시간 노출 확인',
     icon: <Activity size={16} />,
     desc: '플레이스 ID 기반 즉시 4중 검증',
+  },
+  {
+    key: 'history',
+    label: '자동 노출 검증',
+    icon: <HistoryIcon size={16} />,
+    desc: '자동/수동 검증 회차별 결과 요약',
   },
   {
     key: 'settings',
@@ -78,6 +86,7 @@ export default function Monitor() {
       {/* ───── 활성 탭 콘텐츠 ───── */}
       {tab === 'register' && <RegisterTab />}
       {tab === 'live' && <LiveCheckTab />}
+      {tab === 'history' && <HistoryBody />}
       {tab === 'settings' && <SettingsTab />}
     </div>
   )

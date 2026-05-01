@@ -18,7 +18,6 @@ import { useMe } from '@/hooks/useAuth'
 import Home from '@/pages/Home'
 import Intro from '@/pages/Intro'
 import Monitor from '@/pages/Monitor'
-import History from '@/pages/History'
 import Seo from '@/pages/Seo'
 import Admin from '@/pages/Admin'
 import KeywordDiscover from '@/pages/Keyword/Discover'
@@ -133,14 +132,8 @@ export default function App() {
                 </ProtectedRoute>
               }
             />
-            <Route
-              path="/history"
-              element={
-                <ProtectedRoute redirectTo="/history">
-                  <History />
-                </ProtectedRoute>
-              }
-            />
+            {/* /history 는 /monitor?tab=history 로 리다이렉트 (2026-05 통합) */}
+            <Route path="/history" element={<Navigate to="/monitor?tab=history" replace />} />
             <Route path="/seo" element={<Seo />} />
             <Route
               path="/keyword"

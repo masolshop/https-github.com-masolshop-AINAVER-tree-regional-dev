@@ -35,6 +35,21 @@ import type { VerificationRunOut } from '@/api/types'
 type TriggerFilter = 'all' | 'scheduler' | 'manual'
 
 export default function History() {
+  return (
+    <div className="space-y-5">
+      <TopBar
+        title="자동 노출 검증 관리"
+        subtitle="자동/수동 검증 회차별 결과 요약을 시간순으로 확인합니다"
+      />
+      <HistoryBody />
+    </div>
+  )
+}
+
+/**
+ * History 본문 (TopBar 제외) — Monitor 페이지의 탭으로도 임베드됨.
+ */
+export function HistoryBody() {
   const runsQuery = useVerificationRuns(50)
   const schedulerQuery = useSchedulerStatus()
 
@@ -71,11 +86,6 @@ export default function History() {
 
   return (
     <div className="space-y-5">
-      <TopBar
-        title="자동 노출 검증 관리"
-        subtitle="자동/수동 검증 회차별 결과 요약을 시간순으로 확인합니다"
-      />
-
       {/* 1) KPI 카드 */}
       <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
         <KpiTile label="전체 회차" value={stats.total} icon={Inbox} tone="default" />
