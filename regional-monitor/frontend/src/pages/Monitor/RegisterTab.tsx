@@ -41,14 +41,15 @@ import {
   Zap,
 } from 'lucide-react'
 
-/* ─────────── 불일치 판별 ─────────── */
+/* ─────────── 다운로드/필터 분류 ─────────── */
 /**
- * "불일치"로 간주할 verdict 집합 (다운로드용).
+ * 다운로드 대상 (xlsx 출력용).
  * - OK / PENDING / CHECKING 은 제외 (정상이거나 아직 미검증)
- * - PHONE/DONG/NAME/REGION_MISMATCH (warning, 주의)
+ * - PHONE/DONG/REGION_MISMATCH (변경 노출 — 정상 노출의 일종)
+ * - NAME_MISMATCH (상호 불일치 — 실제 업체 변경 가능성)
  * - DEAD (danger, 네이버 미노출)
  */
-const MISMATCH_VERDICTS = new Set([
+const DOWNLOAD_TARGET_VERDICTS = new Set([
   'PHONE_MISMATCH',
   'DONG_MISMATCH',
   'NAME_MISMATCH',
@@ -57,25 +58,30 @@ const MISMATCH_VERDICTS = new Set([
 ])
 
 /* ─────────── 상태 필터 (요약 카드 클릭) ─────────── */
-type StatusFilter = 'all' | 'ok' | 'warning' | 'danger'
+type StatusFilter = 'all' | 'ok' | 'changed' | 'warning' | 'danger'
 
 /**
- * 용어 통일:
- * - 주의(불일치): 전화/동/상호/지역 불일치 모두 포함
- * - 네이버 미노출: DEAD(페이지 삭제) 만 해당
+ * 용어 통일 (변경 노출 정책):
+ * - 정상 노출: OK
+ * - 변경 노출 (info, 정상의 일종): 전화/동/지역 불일치
+ *   → Place ID 가 살아있어 네이버 노출 자체는 정상.
+ *      재노출 과정에서 등록 정보와 차이가 발생하는 필연적 데이터 변경.
+ * - 상호 불일치 (warning): 상호 불일치만 별도 — 실제 업체 변경 가능성
+ * - 네이버 미노출 (danger): DEAD
  */
-const WARNING_VERDICTS = new Set([
+const CHANGED_VERDICTS = new Set([
   'PHONE_MISMATCH',
   'DONG_MISMATCH',
-  'NAME_MISMATCH',
   'REGION_MISMATCH',
 ])
+const WARNING_VERDICTS = new Set(['NAME_MISMATCH'])
 const DANGER_VERDICTS = new Set(['DEAD'])
 
 /** 상태 필터에 해당하는 등록만 추출. */
 function matchStatusFilter(p: RegisteredPlace, filter: StatusFilter): boolean {
   if (filter === 'all') return true
   if (filter === 'ok') return p.current_verdict === 'OK'
+  if (filter === 'changed') return CHANGED_VERDICTS.has(p.current_verdict)
   if (filter === 'warning') return WARNING_VERDICTS.has(p.current_verdict)
   if (filter === 'danger') return DANGER_VERDICTS.has(p.current_verdict)
   return true
@@ -84,10 +90,10 @@ function matchStatusFilter(p: RegisteredPlace, filter: StatusFilter): boolean {
 /* ko-KR 라벨 (xlsx 시트용) */
 const VERDICT_LABEL_KO: Record<string, string> = {
   OK: '정상 노출',
-  PHONE_MISMATCH: '전화 불일치',
-  DONG_MISMATCH: '동 불일치',
+  PHONE_MISMATCH: '변경 노출',
+  DONG_MISMATCH: '변경 노출',
+  REGION_MISMATCH: '변경 노출',
   NAME_MISMATCH: '상호 불일치',
-  REGION_MISMATCH: '지역 불일치',
   DEAD: '네이버 미노출',
   PENDING: '검증 대기',
   CHECKING: '검증 중',
@@ -109,9 +115,9 @@ export default function RegisterTab() {
   const summary = data?.summary ?? { total: 0, ok: 0, warning: 0, danger: 0, pending: 0 }
   const places = data?.items ?? []
 
-  /** 불일치 항목만 추출 (warning + danger). OK / PENDING / CHECKING 제외. */
+  /** 다운로드 대상 추출 (변경 노출 + 상호 불일치 + 네이버 미노출). OK / PENDING / CHECKING 제외. */
   const mismatchedPlaces = useMemo(
-    () => places.filter((p) => MISMATCH_VERDICTS.has(p.current_verdict)),
+    () => places.filter((p) => DOWNLOAD_TARGET_VERDICTS.has(p.current_verdict)),
     [places],
   )
 
@@ -239,10 +245,10 @@ export default function RegisterTab() {
     }
   }
 
-  /** 불일치 명단을 .xlsx 로 다운로드. */
+  /** 변경 노출/상호 불일치/네이버 미노출 명단을 .xlsx 로 다운로드. */
   const handleDownloadMismatch = async () => {
     if (mismatchedPlaces.length === 0) {
-      alert('불일치 항목이 없습니다. (OK / 검증 대기 / 검증 중 제외)')
+      alert('다운로드할 항목이 없습니다. (정상 노출 / 검증 대기 / 검증 중 제외)')
       return
     }
     setDownloading(true)
@@ -275,10 +281,10 @@ export default function RegisterTab() {
         { wch: 18 },  // 최근 점검
       ]
       const wb = XLSX.utils.book_new()
-      XLSX.utils.book_append_sheet(wb, ws, '불일치 명단')
+      XLSX.utils.book_append_sheet(wb, ws, '검증 결과 명단')
 
       const today = todayKST() // YYYY-MM-DD (KST)
-      const filename = `타지역서비스_불일치명단_${today}_${mismatchedPlaces.length}건.xlsx`
+      const filename = `타지역서비스_검증결과명단_${today}_${mismatchedPlaces.length}건.xlsx`
       XLSX.writeFile(wb, filename)
     } catch (e) {
       alert(`다운로드 실패: ${formatApiError(e)}`)
@@ -311,12 +317,18 @@ export default function RegisterTab() {
           }
         />
         <SummaryPill
-          label="주의 (불일치)"
-          value={summary.warning}
-          tone="warning"
-          active={statusFilter === 'warning'}
+          label="변경 노출"
+          value={
+            // 전화/동/지역 변경 노출(info, 정상의 일종) + 상호 불일치(warning) 합산
+            // 백엔드 summary.warning 가 PHONE/DONG/NAME/REGION_MISMATCH 합계이므로 그대로 사용
+            summary.warning
+          }
+          tone="info"
+          active={statusFilter === 'changed' || statusFilter === 'warning'}
           onClick={() =>
-            setStatusFilter((f) => (f === 'warning' ? 'all' : 'warning'))
+            setStatusFilter((f) =>
+              f === 'changed' || f === 'warning' ? 'all' : 'changed',
+            )
           }
         />
         <SummaryPill
@@ -372,13 +384,16 @@ export default function RegisterTab() {
                   className={`ml-2 inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold ${
                     statusFilter === 'ok'
                       ? 'bg-green-50 text-status-success'
+                      : statusFilter === 'changed'
+                      ? 'bg-blue-50 text-status-info'
                       : statusFilter === 'warning'
                       ? 'bg-amber-50 text-status-warning'
                       : 'bg-red-50 text-status-danger'
                   }`}
                 >
                   {statusFilter === 'ok' && '정상 노출만 보기'}
-                  {statusFilter === 'warning' && '주의(불일치)만 보기'}
+                  {statusFilter === 'changed' && '변경 노출만 보기'}
+                  {statusFilter === 'warning' && '상호 불일치만 보기'}
                   {statusFilter === 'danger' && '네이버 미노출만 보기'}
                   <button
                     type="button"
@@ -445,8 +460,8 @@ export default function RegisterTab() {
               className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-pill bg-amber-50 text-amber-700 font-semibold text-body-sm hover:bg-amber-100 disabled:opacity-40 disabled:cursor-not-allowed transition-colors whitespace-nowrap"
               title={
                 mismatchedPlaces.length === 0
-                  ? '다운로드할 불일치 항목이 없습니다'
-                  : `검증 결과 불일치(전화/동/상호/지역 불일치, 네이버 미노출) ${mismatchedPlaces.length}건을 .xlsx 로 저장`
+                  ? '다운로드할 항목이 없습니다'
+                  : `검증 결과(변경 노출, 상호 불일치, 네이버 미노출) ${mismatchedPlaces.length}건을 .xlsx 로 저장`
               }
             >
               {downloading ? (
@@ -454,7 +469,7 @@ export default function RegisterTab() {
               ) : (
                 <FileDown size={14} />
               )}
-              불일치 다운로드
+              검증결과 다운로드
               {mismatchedPlaces.length > 0 && (
                 <span className="ml-0.5 px-1.5 py-0.5 rounded-full bg-amber-500 text-white text-[10px] font-bold tabular-nums">
                   {mismatchedPlaces.length}
@@ -555,8 +570,10 @@ export default function RegisterTab() {
                   <td colSpan={8} className="text-center py-12 text-ink-muted text-body-sm">
                     {search
                       ? '검색 결과가 없습니다.'
+                      : statusFilter === 'changed'
+                      ? '변경 노출 항목이 없습니다.'
                       : statusFilter === 'warning'
-                      ? '주의(불일치) 항목이 없습니다.'
+                      ? '상호 불일치 항목이 없습니다.'
                       : statusFilter === 'danger'
                       ? '네이버 미노출 항목이 없습니다.'
                       : statusFilter === 'ok'

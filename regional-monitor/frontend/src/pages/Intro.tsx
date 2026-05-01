@@ -117,7 +117,7 @@ export default function Intro() {
                 </li>
                 <li className="flex items-start gap-2">
                   <CheckCircle2 size={16} className="text-brand-300 shrink-0 mt-0.5" />
-                  <span>등록 동(洞) 일치 여부 (지역 불일치 감지)</span>
+                  <span>등록 동(洞) 일치 여부 (변경 노출 감지)</span>
                 </li>
                 <li className="flex items-start gap-2">
                   <CheckCircle2 size={16} className="text-brand-300 shrink-0 mt-0.5" />
@@ -138,21 +138,21 @@ export default function Intro() {
                 expected="서울 종로구 종로1가 / 바비네"
                 actual="서울 종로구 홍지동 / 바비네"
                 verdict="DONG_MISMATCH"
-                tone="warning"
+                tone="info"
               />
               <VerdictRow
                 phone="070-4534-7941"
                 expected="서울 강남구 / 대구방충망"
                 actual="대구 달서구 두류동 / 대구방충망"
                 verdict="REGION_MISMATCH"
-                tone="warning"
+                tone="info"
               />
               <VerdictRow
                 phone="070-4534-2010"
                 expected="서울 / 청결한방충망"
                 actual="경기 / 청결한방충망"
                 verdict="REGION_MISMATCH"
-                tone="warning"
+                tone="info"
               />
               <VerdictRow
                 phone="070-9999-9999"
@@ -265,7 +265,7 @@ export default function Intro() {
           />
           <FaqItem
             q="잘못된 지역으로 노출되는 경우도 감지하나요?"
-            a="네. '070 서초동 등록인데 인계동 노출' 같은 케이스를 4중 검증으로 정확히 감지합니다. 동 불일치(DONG_MISMATCH) 이벤트로 분류해 즉시 알림이 발송됩니다."
+            a="네. '070 서초동 등록인데 인계동 노출' 같은 케이스를 4중 검증으로 정확히 감지합니다. 변경 노출(DONG_MISMATCH) 이벤트로 분류해 즉시 안내됩니다."
           />
           <FaqItem
             q="검증은 얼마나 자주 진행되나요?"
@@ -327,7 +327,7 @@ interface VerdictRowProps {
   expected: string
   actual: string
   verdict: string
-  tone: 'success' | 'warning' | 'danger'
+  tone: 'success' | 'warning' | 'danger' | 'info'
 }
 
 function VerdictRow({ phone, expected, actual, verdict, tone }: VerdictRowProps) {
@@ -335,6 +335,7 @@ function VerdictRow({ phone, expected, actual, verdict, tone }: VerdictRowProps)
     success: 'bg-green-50 text-status-success border-green-200',
     warning: 'bg-amber-50 text-status-warning border-amber-200',
     danger: 'bg-red-50 text-status-danger border-red-200',
+    info: 'bg-brand-50 text-brand-700 border-brand-200',
   }[tone]
 
   return (

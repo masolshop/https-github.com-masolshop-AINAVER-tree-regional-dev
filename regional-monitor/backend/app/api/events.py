@@ -72,13 +72,15 @@ class SchedulerStatusOut(BaseModel):
 
 
 _SEVERITY_MAP: dict[str, Literal["danger", "warning", "info"]] = {
-    # 통일 용어 정책:
+    # 통일 용어 정책 (변경 노출 정책):
     #   - 네이버 미노출(danger): PAGE_DELETED, EXPOSURE_LOST
-    #   - 주의/불일치(warning): REGION_CHANGED, DONG_CHANGED, NAME_CHANGED
+    #   - 변경 노출(info, 정상): REGION_CHANGED, DONG_CHANGED, OTHER_CHANGED
+    #     → Place ID 가 살아있어 네이버 노출 자체는 정상.
+    #   - 상호 불일치(warning): NAME_CHANGED — 실제 업체 변경 가능성
     "PAGE_DELETED":   "danger",
     "EXPOSURE_LOST":  "danger",
-    "REGION_CHANGED": "warning",
-    "DONG_CHANGED":   "warning",
+    "REGION_CHANGED": "info",
+    "DONG_CHANGED":   "info",
     "NAME_CHANGED":   "warning",
     "OTHER_CHANGED":  "info",
     "RECOVERED":      "info",

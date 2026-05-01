@@ -244,11 +244,11 @@ export function EventRow({ event }: { event: ChangeEventOut }) {
 export const EVENT_TYPE_LABEL: Record<string, string> = {
   PAGE_DELETED:   '네이버 미노출',
   EXPOSURE_LOST:  '네이버 미노출',
-  REGION_CHANGED: '지역 불일치',
-  DONG_CHANGED:   '동 불일치',
+  REGION_CHANGED: '변경 노출',
+  DONG_CHANGED:   '변경 노출',
   NAME_CHANGED:   '상호 불일치',
   RECOVERED:      '정상 회복',
-  OTHER_CHANGED:  '기타 변경',
+  OTHER_CHANGED:  '변경 노출',
 }
 
 function severityIcon(s: ChangeEventSeverity) {

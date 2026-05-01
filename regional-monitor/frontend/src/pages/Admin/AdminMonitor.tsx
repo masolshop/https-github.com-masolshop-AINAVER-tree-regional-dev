@@ -4,7 +4,7 @@
  * 슈퍼어드민이 전 회원의 등록건수 + 검증상태 분포를 한눈에 보는 페이지.
  *
  * 표 컬럼:
- *   회원명 / 업체명 / 회원등급 / 등록갯수 / 정상노출 / 네이버 미노출 / 불일치
+ *   회원명 / 업체명 / 회원등급 / 등록갯수 / 정상노출 / 네이버 미노출 / 변경 노출
  *   (참고용으로 검증대기 컬럼도 함께 표시)
  *
  * 백엔드: GET /api/v1/admin/users/monitor
@@ -104,8 +104,8 @@ export function AdminMonitor() {
         />
         <SummaryCard
           icon={<AlertTriangle className="h-4 w-4" />}
-          tone="warning"
-          label="불일치"
+          tone="info"
+          label="변경 노출"
           value={summary?.mismatch_total ?? 0}
           sub={`검증대기 ${summary?.pending_total ?? 0}`}
         />
@@ -145,7 +145,7 @@ export function AdminMonitor() {
           >
             <option value="places">등록갯수 많은 순</option>
             <option value="dead">네이버 미노출 많은 순</option>
-            <option value="mismatch">불일치 많은 순</option>
+            <option value="mismatch">변경 노출 많은 순</option>
             <option value="pending">검증대기 많은 순</option>
             <option value="recent">최근 가입 순</option>
           </select>
@@ -207,7 +207,7 @@ export function AdminMonitor() {
                   <th className="px-3 py-3 font-semibold text-right">등록갯수</th>
                   <th className="px-3 py-3 font-semibold text-right">정상 노출</th>
                   <th className="px-3 py-3 font-semibold text-right">네이버 미노출</th>
-                  <th className="px-3 py-3 font-semibold text-right">불일치</th>
+                  <th className="px-3 py-3 font-semibold text-right">변경 노출</th>
                   <th className="px-3 py-3 font-semibold text-right">검증 대기</th>
                   <th className="px-3 py-3 font-semibold text-center">최근 모드</th>
                   <th className="px-card-sm py-3 font-semibold text-right">정상률</th>
@@ -287,7 +287,7 @@ function MonitorRow({ row, idx }: { row: AdminMonitorRow; idx: number }) {
         <span
           className={
             row.mismatch_count > 0
-              ? 'text-status-warning font-semibold'
+              ? 'text-status-info font-semibold'
               : 'text-ink-soft'
           }
         >

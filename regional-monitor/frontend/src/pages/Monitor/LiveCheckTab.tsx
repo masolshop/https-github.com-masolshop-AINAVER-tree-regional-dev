@@ -137,17 +137,21 @@ export default function LiveCheckTab() {
 
   // 누적 요약
   const summary = useMemo(() => {
-    // 용어 통일: 주의=전화/동/상호/지역 불일치, 네이버 미노출(danger)=DEAD
-    const s = { ok: 0, warning: 0, danger: 0 }
+    // 용어 통일 (변경 노출 정책):
+    //   - 정상 노출: OK
+    //   - 변경 노출(info, 정상의 일종): 전화/동/지역 불일치
+    //   - 상호 불일치(warning): NAME_MISMATCH
+    //   - 네이버 미노출(danger): DEAD
+    const s = { ok: 0, changed: 0, warning: 0, danger: 0 }
     for (const r of results) {
       if (r.verdict === 'OK') s.ok++
       else if (
         r.verdict === 'PHONE_MISMATCH' ||
         r.verdict === 'DONG_MISMATCH' ||
-        r.verdict === 'NAME_MISMATCH' ||
         r.verdict === 'REGION_MISMATCH'
       )
-        s.warning++
+        s.changed++
+      else if (r.verdict === 'NAME_MISMATCH') s.warning++
       else if (r.verdict === 'DEAD') s.danger++
     }
     return s
@@ -522,9 +526,9 @@ export default function LiveCheckTab() {
           />
           <SummaryStat
             icon={<XCircle size={16} />}
-            label="주의 (불일치)"
-            value={summary.warning}
-            tone="warning"
+            label="변경 노출"
+            value={summary.changed + summary.warning}
+            tone="info"
           />
           <SummaryStat
             icon={<XCircle size={16} />}

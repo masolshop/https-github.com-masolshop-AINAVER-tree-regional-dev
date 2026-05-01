@@ -45,11 +45,14 @@ if not logger.handlers and not logging.getLogger().handlers:
 _EVENT_META: dict[str, dict[str, str]] = {
     "PAGE_DELETED":   {"emoji": "🚫", "label": "네이버 미노출", "severity": "danger"},
     "EXPOSURE_LOST":  {"emoji": "🚫", "label": "네이버 미노출", "severity": "danger"},
-    "REGION_CHANGED": {"emoji": "📍", "label": "지역 불일치",  "severity": "warning"},
-    "DONG_CHANGED":   {"emoji": "🏘️", "label": "동 불일치",   "severity": "warning"},
+    # 변경 노출(info, 정상의 일종): Place ID 가 살아있어 네이버 노출 자체는 정상.
+    # 재노출 과정에서 등록 정보와 데이터 차이가 발생하는 필연적 변경.
+    "REGION_CHANGED": {"emoji": "🔄", "label": "변경 노출",    "severity": "info"},
+    "DONG_CHANGED":   {"emoji": "🔄", "label": "변경 노출",    "severity": "info"},
+    # 상호는 실제 업체 변경 가능성이 있어 경고로 분리 유지
     "NAME_CHANGED":   {"emoji": "🏷️", "label": "상호 불일치", "severity": "warning"},
     "RECOVERED":      {"emoji": "✅", "label": "정상 회복",    "severity": "info"},
-    "OTHER_CHANGED":  {"emoji": "ℹ️", "label": "기타 변경",    "severity": "info"},
+    "OTHER_CHANGED":  {"emoji": "🔄", "label": "변경 노출",    "severity": "info"},
 }
 
 

@@ -157,11 +157,11 @@ export default function Home() {
               />
               <MetricTile
                 icon={<AlertTriangle size={18} />}
-                label="주의 (불일치)"
+                label="변경 노출"
                 value={summary.warning.toLocaleString()}
                 unit="건"
-                trend="동·상호 불일치"
-                tone={summary.warning > 0 ? 'warning' : 'info'}
+                trend="재노출 과정의 데이터 변경"
+                tone={summary.warning > 0 ? 'info' : 'info'}
               />
               <MetricTile
                 icon={<Zap size={18} />}
@@ -252,7 +252,7 @@ export default function Home() {
 
           <div className="space-y-4">
             <DistBar label="정상 노출" count={87} total={100} colorClass="bg-status-success" />
-            <DistBar label="동 불일치" count={6} total={100} colorClass="bg-status-warning" />
+            <DistBar label="변경 노출" count={6} total={100} colorClass="bg-status-info" />
             <DistBar label="상호 불일치" count={4} total={100} colorClass="bg-brand-400" />
             <DistBar label="네이버 미노출" count={3} total={100} colorClass="bg-status-danger" />
           </div>
