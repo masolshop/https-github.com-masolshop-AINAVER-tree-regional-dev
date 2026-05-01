@@ -24,8 +24,10 @@
 from __future__ import annotations
 
 import logging
+import secrets
 import smtplib
 import ssl
+import time as _time
 from datetime import timedelta
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
@@ -39,12 +41,19 @@ from app.core.time_utils import now_kst
 from app.models.user import User
 from app.models.place import RegisteredPlace
 from app.models.check import ChangeEvent
+from app.models.weekly_report_log import WeeklyReportLog
 
 logger = logging.getLogger("weekly_report")
 logger.setLevel(logging.INFO)
 
 
 SITE_URL = "https://taziyuk.com"
+
+
+def _new_run_id() -> str:
+    """회차 식별자 — weekly-YYYYMMDD-HHMMSS-rand4."""
+    ts = now_kst().strftime("%Y%m%d-%H%M%S")
+    return f"weekly-{ts}-{secrets.token_hex(2)}"
 
 
 def _collect_recipients(user: User) -> tuple[str, list[str]]:
@@ -257,13 +266,24 @@ def _send_weekly_email_sync(user: User, summary: dict) -> bool:
         return False
 
 
-async def run_weekly_report() -> dict:
-    """주간 리포트 작업 — 모든 활성 회원에게 발송.
+async def run_weekly_report(trigger: str = "scheduled") -> dict:
+    """주간 리포트 작업 — 모든 활성 회원에게 발송 + WeeklyReportLog 기록.
+
+    Args:
+        trigger: 'scheduled' (월 09:00 자동) | 'manual' (관리자 수동) |
+                 'manual_dry_run' (드라이런 — SMTP 호출 안 함, 콘솔 폴백만)
 
     Returns:
-        {"sent": N, "skipped_no_activity": M, "skipped_disabled": K, "errors": L}
+        {"run_id": str, "sent": N, "skipped_no_activity": M,
+         "skipped_disabled": K, "errors": L, "total_candidates": T,
+         "elapsed_ms": int, "dry_run": bool}
     """
     import asyncio
+
+    started = _time.time()
+    started_at = now_kst()
+    run_id = _new_run_id()
+    is_dry_run = trigger == "manual_dry_run" or not (getattr(settings, "SMTP_HOST", "") or "")
 
     sent = 0
     skipped_no_activity = 0
@@ -271,42 +291,157 @@ async def run_weekly_report() -> dict:
     errors = 0
 
     async with AsyncSessionLocal() as db:
-        users_q = await db.execute(
-            select(User).where(
-                User.is_active == True,                       # noqa: E712
-                User.is_profile_complete == True,             # noqa: E712
-                User.email_alerts == True,                    # noqa: E712
-            )
-        )
-        users = list(users_q.scalars().all())
+        users_q = await db.execute(select(User))
+        all_users = list(users_q.scalars().all())
 
-        for user in users:
+        candidates: list[User] = []
+        # email_alerts/is_active/is_profile_complete 미달 회원은 skipped_disabled 로 기록
+        for u in all_users:
+            if not (u.is_active and u.is_profile_complete and u.email_alerts):
+                skipped_disabled += 1
+                to_addr, cc_addrs = _collect_recipients(u)
+                db.add(WeeklyReportLog(
+                    run_id=run_id,
+                    trigger=trigger,
+                    started_at=started_at,
+                    sent_at=None,
+                    user_id=u.id,
+                    email=to_addr or u.email,
+                    cc_emails=", ".join(cc_addrs) if cc_addrs else None,
+                    status="skipped_disabled",
+                    new_count=0, excluded_count=0, changed_exposure=0,
+                    dead_exposure=0, user_override=0, activity_total=0,
+                    dry_run=is_dry_run,
+                    error=None,
+                ))
+                continue
+            candidates.append(u)
+
+        if skipped_disabled:
+            await db.commit()
+
+        for user in candidates:
             try:
                 summary = await _compute_user_summary(db, user.id)
+                to_addr, cc_addrs = _collect_recipients(user)
+
                 if summary["activity_total"] == 0:
                     skipped_no_activity += 1
+                    db.add(WeeklyReportLog(
+                        run_id=run_id,
+                        trigger=trigger,
+                        started_at=started_at,
+                        sent_at=None,
+                        user_id=user.id,
+                        email=to_addr or user.email,
+                        cc_emails=", ".join(cc_addrs) if cc_addrs else None,
+                        status="skipped_no_activity",
+                        new_count=summary["new_count"],
+                        excluded_count=summary["excluded_count"],
+                        changed_exposure=summary["changed_exposure"],
+                        dead_exposure=summary["dead_exposure"],
+                        user_override=summary["user_override"],
+                        activity_total=0,
+                        dry_run=is_dry_run,
+                        error=None,
+                    ))
                     continue
 
                 # 동기 SMTP 호출은 별도 스레드에서 (이벤트 루프 블록 방지)
                 ok = await asyncio.get_running_loop().run_in_executor(
                     None, _send_weekly_email_sync, user, summary,
                 )
+                # SMTP_HOST 미설정이면 _send_weekly_email_sync 가 콘솔 폴백 후 True 반환
+                fallback = not (getattr(settings, "SMTP_HOST", "") or "")
+                row_status = (
+                    "sent_fallback" if (ok and fallback)
+                    else ("sent" if ok else "failed")
+                )
                 if ok:
                     sent += 1
                 else:
                     errors += 1
+
+                db.add(WeeklyReportLog(
+                    run_id=run_id,
+                    trigger=trigger,
+                    started_at=started_at,
+                    sent_at=now_kst() if ok else None,
+                    user_id=user.id,
+                    email=to_addr or user.email,
+                    cc_emails=", ".join(cc_addrs) if cc_addrs else None,
+                    status=row_status,
+                    new_count=summary["new_count"],
+                    excluded_count=summary["excluded_count"],
+                    changed_exposure=summary["changed_exposure"],
+                    dead_exposure=summary["dead_exposure"],
+                    user_override=summary["user_override"],
+                    activity_total=summary["activity_total"],
+                    dry_run=is_dry_run,
+                    error=None if ok else "SMTP send failed (see backend logs)",
+                ))
+                # 회원 단위로 commit — 잡이 도중에 죽어도 진행분은 유지
+                await db.commit()
             except Exception as e:  # noqa: BLE001
                 errors += 1
                 logger.warning(
                     "[weekly_report] user_id=%s failed: %s", user.id, e,
                 )
+                try:
+                    db.add(WeeklyReportLog(
+                        run_id=run_id,
+                        trigger=trigger,
+                        started_at=started_at,
+                        sent_at=None,
+                        user_id=user.id,
+                        email=user.email,
+                        cc_emails=None,
+                        status="failed",
+                        new_count=0, excluded_count=0, changed_exposure=0,
+                        dead_exposure=0, user_override=0, activity_total=0,
+                        dry_run=is_dry_run,
+                        error=str(e)[:1000],
+                    ))
+                    await db.commit()
+                except Exception:  # noqa: BLE001
+                    pass
+
+        elapsed_ms = int((_time.time() - started) * 1000)
+        # 잡 요약 행 (user_id NULL)
+        try:
+            db.add(WeeklyReportLog(
+                run_id=run_id,
+                trigger=trigger,
+                started_at=started_at,
+                sent_at=now_kst(),
+                user_id=None,
+                email=None,
+                cc_emails=None,
+                status="run_summary",
+                new_count=0, excluded_count=0, changed_exposure=0,
+                dead_exposure=0, user_override=0, activity_total=0,
+                sent_users=sent,
+                skipped_no_activity=skipped_no_activity,
+                skipped_disabled=skipped_disabled,
+                errors=errors,
+                total_candidates=len(all_users),
+                elapsed_ms=elapsed_ms,
+                dry_run=is_dry_run,
+                error=None,
+            ))
+            await db.commit()
+        except Exception as e:  # noqa: BLE001
+            logger.warning("[weekly_report] run_summary log failed: %s", e)
 
     result = {
+        "run_id": run_id,
         "sent": sent,
         "skipped_no_activity": skipped_no_activity,
         "skipped_disabled": skipped_disabled,
         "errors": errors,
-        "total_candidates": len(users) if "users" in locals() else 0,
+        "total_candidates": len(all_users) if "all_users" in locals() else 0,
+        "elapsed_ms": elapsed_ms if "elapsed_ms" in locals() else 0,
+        "dry_run": is_dry_run,
     }
     logger.info("[weekly_report] completed: %s", result)
     return result

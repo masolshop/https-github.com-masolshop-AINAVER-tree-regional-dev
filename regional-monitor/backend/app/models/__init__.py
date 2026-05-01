@@ -5,10 +5,12 @@ from .check import DailyHealthCheck, ChangeEvent, VerificationRun
 from .payment import Payment
 from .verify_job import VerifyJob
 from .verify_schedule_log import VerifyScheduleLog
+from .weekly_report_log import WeeklyReportLog
 
 __all__ = [
     "User", "RegisteredPlace",
     "DailyHealthCheck", "ChangeEvent", "VerificationRun",
     "Payment", "VerifyJob",
     "VerifyScheduleLog",
+    "WeeklyReportLog",
 ]

@@ -25,6 +25,7 @@ import {
   HardDrive,
   Activity,
   Clock,
+  Mail,
 } from 'lucide-react'
 
 import { useAuthStore } from '@/store/auth'
@@ -36,19 +37,21 @@ import { AdminPayments } from './AdminPayments'
 import { AdminBackup } from './AdminBackup'
 import { AdminMonitor } from './AdminMonitor'
 import { AdminSchedule } from './AdminSchedule'
+import { AdminWeeklyReport } from './AdminWeeklyReport'
 
-type TabKey = 'stats' | 'monitor' | 'schedule' | 'users' | 'payments' | 'backup'
+type TabKey = 'stats' | 'monitor' | 'schedule' | 'weekly-report' | 'users' | 'payments' | 'backup'
 
 const TABS: { key: TabKey; label: string; icon: React.ReactNode; desc: string }[] = [
   { key: 'stats', label: '대시보드', icon: <LayoutDashboard className="h-4 w-4" />, desc: '시스템 전체 통계' },
   { key: 'monitor', label: '회원 모니터링', icon: <Activity className="h-4 w-4" />, desc: '전 회원 등록·검증상태 요약' },
   { key: 'schedule', label: '검증 스케줄', icon: <Clock className="h-4 w-4" />, desc: '자동 검증 주기·슬롯 v2' },
+  { key: 'weekly-report', label: '주간 리포트', icon: <Mail className="h-4 w-4" />, desc: '주간 메일 발송 이력·수동 발송' },
   { key: 'users', label: '사용자 관리', icon: <UsersIcon className="h-4 w-4" />, desc: '회원 목록·플랜·차단' },
   { key: 'payments', label: '결제 관리', icon: <CreditCard className="h-4 w-4" />, desc: '결제 이력·수동 부여·환불' },
   { key: 'backup', label: '백업', icon: <HardDrive className="h-4 w-4" />, desc: 'DB·사용자·코드 자동 백업' },
 ]
 
-const VALID_TABS: TabKey[] = ['stats', 'monitor', 'schedule', 'users', 'payments', 'backup']
+const VALID_TABS: TabKey[] = ['stats', 'monitor', 'schedule', 'weekly-report', 'users', 'payments', 'backup']
 
 function pickInitialTab(pathname: string, searchTab: string | null): TabKey {
   // /admin/monitor, /admin/schedule 형태 우선
@@ -141,6 +144,7 @@ export default function Admin() {
           {tab === 'stats' && <AdminStats />}
           {tab === 'monitor' && <AdminMonitor />}
           {tab === 'schedule' && <AdminSchedule />}
+          {tab === 'weekly-report' && <AdminWeeklyReport />}
           {tab === 'users' && <AdminUsers />}
           {tab === 'payments' && <AdminPayments />}
           {tab === 'backup' && <AdminBackup />}

@@ -310,4 +310,134 @@ export const adminApi = {
 
   rebalanceSchedule: (body: AdminScheduleRebalanceIn = {}) =>
     api.post<AdminScheduleRebalanceOut>('/api/v1/admin/schedule/rebalance', body),
+
+  // 주간 리포트 메일 ───────────────────────────────────────────
+  weeklyReportRun: (dryRun: boolean) =>
+    api.post<WeeklyReportRunResult>(
+      `/api/v1/admin/weekly-report/run?dry_run=${dryRun ? 'true' : 'false'}`,
+      {},
+    ),
+  weeklyReportPreview: (userId: number) =>
+    api.get<WeeklyReportPreviewOut>(`/api/v1/admin/weekly-report/preview/${userId}`),
+  weeklyReportRuns: (limit = 20) =>
+    api.get<WeeklyReportRunsOut>(`/api/v1/admin/weekly-report/runs?limit=${limit}`),
+  weeklyReportRunDetail: (runId: string, statusFilter?: string) =>
+    api.get<WeeklyReportRunDetailOut>(
+      `/api/v1/admin/weekly-report/runs/${encodeURIComponent(runId)}${statusFilter ? `?status_filter=${encodeURIComponent(statusFilter)}` : ''}`,
+    ),
+  weeklyReportUserHistory: (userId: number, limit = 20) =>
+    api.get<WeeklyReportUserHistoryOut>(
+      `/api/v1/admin/weekly-report/users/${userId}/history?limit=${limit}`,
+    ),
+}
+
+// ── 주간 리포트 타입 ──────────────────────────────────────────
+export type WeeklyReportTrigger = 'scheduled' | 'manual' | 'manual_dry_run'
+export type WeeklyReportRowStatus =
+  | 'sent'
+  | 'sent_fallback'
+  | 'skipped_no_activity'
+  | 'skipped_disabled'
+  | 'failed'
+  | 'run_summary'
+
+export interface WeeklyReportSummary {
+  new_count: number
+  excluded_count: number
+  changed_exposure: number
+  dead_exposure: number
+  user_override: number
+  total: number
+  activity_total: number
+}
+
+export interface WeeklyReportRunResult {
+  run_id: string
+  sent: number
+  skipped_no_activity: number
+  skipped_disabled: number
+  errors: number
+  total_candidates: number
+  elapsed_ms: number
+  dry_run: boolean
+}
+
+export interface WeeklyReportPreviewOut {
+  user_id: number
+  email: string
+  name: string | null
+  is_active: boolean
+  email_alerts: boolean
+  is_profile_complete: boolean
+  would_send: boolean
+  to: string
+  cc: string[]
+  summary: WeeklyReportSummary
+}
+
+export interface WeeklyReportRunRow {
+  id: number
+  run_id: string
+  trigger: WeeklyReportTrigger
+  started_at: string | null
+  sent_at: string | null
+  sent_users: number
+  skipped_no_activity: number
+  skipped_disabled: number
+  errors: number
+  total_candidates: number
+  elapsed_ms: number
+  dry_run: boolean
+}
+
+export interface WeeklyReportRunsOut {
+  total: number
+  items: WeeklyReportRunRow[]
+}
+
+export interface WeeklyReportUserRow {
+  id: number
+  user_id: number | null
+  email: string | null
+  user_email_now?: string | null
+  user_name_now?: string | null
+  cc_emails: string | null
+  status: WeeklyReportRowStatus
+  sent_at: string | null
+  new_count: number
+  excluded_count: number
+  changed_exposure: number
+  dead_exposure: number
+  user_override: number
+  activity_total: number
+  dry_run: boolean
+  error: string | null
+}
+
+export interface WeeklyReportRunDetailOut {
+  summary: WeeklyReportRunRow
+  items: WeeklyReportUserRow[]
+}
+
+export interface WeeklyReportUserHistoryItem {
+  id: number
+  run_id: string
+  trigger: WeeklyReportTrigger
+  started_at: string | null
+  sent_at: string | null
+  status: WeeklyReportRowStatus
+  new_count: number
+  excluded_count: number
+  changed_exposure: number
+  dead_exposure: number
+  user_override: number
+  activity_total: number
+  dry_run: boolean
+  error: string | null
+}
+
+export interface WeeklyReportUserHistoryOut {
+  user_id: number
+  total: number
+  items: WeeklyReportUserHistoryItem[]
 }

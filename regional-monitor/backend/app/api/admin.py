@@ -28,6 +28,7 @@ from app.models.user import User
 from app.models.place import RegisteredPlace
 from app.models.check import ChangeEvent, DailyHealthCheck, VerificationRun
 from app.models.payment import Payment
+from app.models.weekly_report_log import WeeklyReportLog
 from app.schemas.admin import (
     AdminUserOut,
     AdminUserListOut,
@@ -972,7 +973,7 @@ async def rebalance_schedule(
 
 
 # ──────────────────────────────────────────────────────────────
-# 주간 리포트 메일 — 수동 트리거 / 미리보기
+# 주간 리포트 메일 — 수동 트리거 / 미리보기 / 발송 이력
 # ──────────────────────────────────────────────────────────────
 
 @router.post("/weekly-report/run")
@@ -984,6 +985,7 @@ async def run_weekly_report_now(
     · 매주 월요일 09:00 KST 자동 실행되는 잡과 동일한 로직.
     · dry_run=True 면 SMTP 호출을 건너뛰고 대상자 통계만 반환 (콘솔 폴백 로그).
     · 활동(신규+미포함+변경+미노출+고객요청 변경)이 0건인 회원은 자동 스킵.
+    · 모든 호출은 weekly_report_log 테이블에 회차/회원 단위로 기록됨.
     """
     from app.services.weekly_report import run_weekly_report
 
@@ -993,14 +995,12 @@ async def run_weekly_report_now(
         _orig = _s.SMTP_HOST
         _s.SMTP_HOST = ""
         try:
-            result = await run_weekly_report()
+            result = await run_weekly_report(trigger="manual_dry_run")
         finally:
             _s.SMTP_HOST = _orig
-        result["dry_run"] = True
         return result
 
-    result = await run_weekly_report()
-    result["dry_run"] = False
+    result = await run_weekly_report(trigger="manual")
     return result
 
 
@@ -1038,6 +1038,169 @@ async def preview_weekly_report(
         "to": to_addr,
         "cc": cc_addrs,
         "summary": summary,
+    }
+
+
+@router.get("/weekly-report/runs")
+async def list_weekly_report_runs(
+    limit: int = Query(20, ge=1, le=200, description="회차 수 (기본 20)"),
+    db: AsyncSession = Depends(get_db),
+):
+    """최근 주간 리포트 회차 목록 — 잡 요약(run_summary) 행만 반환.
+
+    회차당 1행: started_at, trigger, sent_users, skipped_no_activity,
+    skipped_disabled, errors, total_candidates, elapsed_ms, dry_run.
+    """
+    q = await db.execute(
+        select(WeeklyReportLog)
+        .where(WeeklyReportLog.status == "run_summary")
+        .order_by(desc(WeeklyReportLog.started_at))
+        .limit(limit)
+    )
+    rows = list(q.scalars().all())
+    return {
+        "total": len(rows),
+        "items": [
+            {
+                "id": r.id,
+                "run_id": r.run_id,
+                "trigger": r.trigger,
+                "started_at": r.started_at.isoformat() if r.started_at else None,
+                "sent_at": r.sent_at.isoformat() if r.sent_at else None,
+                "sent_users": r.sent_users,
+                "skipped_no_activity": r.skipped_no_activity,
+                "skipped_disabled": r.skipped_disabled,
+                "errors": r.errors,
+                "total_candidates": r.total_candidates,
+                "elapsed_ms": r.elapsed_ms,
+                "dry_run": r.dry_run,
+            }
+            for r in rows
+        ],
+    }
+
+
+@router.get("/weekly-report/runs/{run_id}")
+async def get_weekly_report_run(
+    run_id: str,
+    status_filter: str | None = Query(
+        None,
+        description="status 필터: sent / sent_fallback / skipped_no_activity / skipped_disabled / failed",
+    ),
+    db: AsyncSession = Depends(get_db),
+):
+    """특정 회차(run_id)의 회원 단위 발송 이력.
+
+    · run_summary 행 + 회원별 상세 행을 모두 반환.
+    · status_filter 로 필터링 가능 (예: failed 만 보기).
+    """
+    summary_q = await db.execute(
+        select(WeeklyReportLog)
+        .where(
+            WeeklyReportLog.run_id == run_id,
+            WeeklyReportLog.status == "run_summary",
+        )
+        .limit(1)
+    )
+    summary = summary_q.scalar_one_or_none()
+    if summary is None:
+        raise HTTPException(status_code=404, detail="run_id not found")
+
+    rows_q_stmt = (
+        select(WeeklyReportLog, User.email.label("user_email_now"), User.name.label("user_name_now"))
+        .join(User, User.id == WeeklyReportLog.user_id, isouter=True)
+        .where(
+            WeeklyReportLog.run_id == run_id,
+            WeeklyReportLog.status != "run_summary",
+        )
+        .order_by(desc(WeeklyReportLog.activity_total), WeeklyReportLog.id)
+    )
+    if status_filter:
+        rows_q_stmt = rows_q_stmt.where(WeeklyReportLog.status == status_filter)
+
+    rows_q = await db.execute(rows_q_stmt)
+    items = []
+    for r, user_email_now, user_name_now in rows_q.all():
+        items.append({
+            "id": r.id,
+            "user_id": r.user_id,
+            "email": r.email,
+            "user_email_now": user_email_now,
+            "user_name_now": user_name_now,
+            "cc_emails": r.cc_emails,
+            "status": r.status,
+            "sent_at": r.sent_at.isoformat() if r.sent_at else None,
+            "new_count": r.new_count,
+            "excluded_count": r.excluded_count,
+            "changed_exposure": r.changed_exposure,
+            "dead_exposure": r.dead_exposure,
+            "user_override": r.user_override,
+            "activity_total": r.activity_total,
+            "dry_run": r.dry_run,
+            "error": r.error,
+        })
+
+    return {
+        "summary": {
+            "id": summary.id,
+            "run_id": summary.run_id,
+            "trigger": summary.trigger,
+            "started_at": summary.started_at.isoformat() if summary.started_at else None,
+            "sent_at": summary.sent_at.isoformat() if summary.sent_at else None,
+            "sent_users": summary.sent_users,
+            "skipped_no_activity": summary.skipped_no_activity,
+            "skipped_disabled": summary.skipped_disabled,
+            "errors": summary.errors,
+            "total_candidates": summary.total_candidates,
+            "elapsed_ms": summary.elapsed_ms,
+            "dry_run": summary.dry_run,
+        },
+        "items": items,
+    }
+
+
+@router.get("/weekly-report/users/{user_id}/history")
+async def user_weekly_report_history(
+    user_id: int,
+    limit: int = Query(20, ge=1, le=100),
+    db: AsyncSession = Depends(get_db),
+):
+    """특정 회원의 최근 N회 주간 리포트 발송 이력.
+
+    회원별 모니터링 페이지/사용자 상세에서 활용.
+    """
+    q = await db.execute(
+        select(WeeklyReportLog)
+        .where(
+            WeeklyReportLog.user_id == user_id,
+            WeeklyReportLog.status != "run_summary",
+        )
+        .order_by(desc(WeeklyReportLog.started_at))
+        .limit(limit)
+    )
+    rows = list(q.scalars().all())
+    return {
+        "user_id": user_id,
+        "total": len(rows),
+        "items": [
+            {
+                "id": r.id,
+                "run_id": r.run_id,
+                "trigger": r.trigger,
+                "started_at": r.started_at.isoformat() if r.started_at else None,
+                "sent_at": r.sent_at.isoformat() if r.sent_at else None,
+                "status": r.status,
+                "new_count": r.new_count,
+                "excluded_count": r.excluded_count,
+                "changed_exposure": r.changed_exposure,
+                "dead_exposure": r.dead_exposure,
+                "user_override": r.user_override,
+                "activity_total": r.activity_total,
+                "dry_run": r.dry_run,
+                "error": r.error,
+            }
+            for r in rows
+        ],
     }
 
 
