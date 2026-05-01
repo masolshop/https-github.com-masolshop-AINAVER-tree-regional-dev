@@ -97,9 +97,10 @@ const SOLUTIONS_GROUP: MenuGroup = {
   icon: BookOpen,
   pathPrefix: '/intro',
   children: [
+    { to: '/intro',                   label: '타지역 4종 솔루션이란',   icon: BookOpen, requireAuth: false },
     { to: '/intro/keyword-dna',       label: '타지역키워드 DNA 파싱',  icon: Dna,      requireAuth: false },
     { to: '/intro/keyword-discover',  label: '키워드 발굴솔루션',       icon: Sparkles, requireAuth: false },
-    { to: '/intro/competition',       label: '노출경쟁도 분석솔루션',    icon: MapPin,   requireAuth: false },
+    { to: '/intro/competition',       label: '지역 경쟁도 분석솔루션',  icon: MapPin,   requireAuth: false },
     { to: '/intro/monitor',           label: '노출관리 자동체크솔루션',  icon: Radio,    requireAuth: false },
   ],
 }
@@ -331,32 +332,18 @@ export function Sidebar({ onItemClick }: SidebarProps = {}) {
 
         {/* 3) 타지역 4종솔루션소개 그룹 (확장형) */}
         <div className="flex items-stretch gap-0.5">
-          <NavLink
-            to="/intro"
-            onClick={(e) => {
-              if (!isSolutionsActive) setSolutionsOpen(true)
-              onItemClick?.()
-              // 부모 라벨 클릭 시 통합 소개 페이지(/intro)로 이동
-              void e
-            }}
-            className={({ isActive }) =>
-              clsx(
-                'sidebar-item flex-1',
-                (isActive || isSolutionsActive) && 'active',
-              )
-            }
-          >
-            <SOLUTIONS_GROUP.icon size={18} className="shrink-0" />
-            <span className="flex-1 text-[clamp(13px,2.6vw,19px)] whitespace-nowrap leading-none">
-              {SOLUTIONS_GROUP.label}
-            </span>
-          </NavLink>
           <button
             type="button"
             onClick={() => setSolutionsOpen((v) => !v)}
-            aria-label="서브메뉴 토글"
-            className="sidebar-item px-2 shrink-0"
+            className={clsx(
+              'sidebar-item flex-1',
+              isSolutionsActive && 'active',
+            )}
           >
+            <SOLUTIONS_GROUP.icon size={18} className="shrink-0" />
+            <span className="flex-1 text-left text-[clamp(13px,2.6vw,19px)] whitespace-nowrap leading-none">
+              {SOLUTIONS_GROUP.label}
+            </span>
             <ChevronDown
               size={16}
               className={clsx(
