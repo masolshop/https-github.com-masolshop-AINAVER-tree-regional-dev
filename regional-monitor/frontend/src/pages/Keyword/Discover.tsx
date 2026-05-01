@@ -949,6 +949,8 @@ function BulkRegionTab({
   const [errMsg, setErrMsg] = useState<string>('')
   const [starting, setStarting] = useState<boolean>(false)
   const [detailRow, setDetailRow] = useState<any | null>(null)
+  const [minRatio, setMinRatio] = useState<number>(0)        // 타지역비율 N% 이상만 표시
+  const [hideZero, setHideZero] = useState<boolean>(false)   // 노출 0건 행 숨김
 
   const keywords = useMemo(
     () =>
@@ -1079,10 +1081,127 @@ function BulkRegionTab({
     }
   }
 
-  const exposed = useMemo(() => {
+  // exposed memo (전체 노출된 조합 — KPI 표시용 보조)
+  void useMemo(() => {
     if (!job?.results) return []
     return job.results.filter((r) => r.exposed)
   }, [job])
+
+  // 결과 필터 (타지역비율 ≥ minRatio, 노출 0건 숨김 옵션) + 정렬
+  const filteredResults = useMemo(() => {
+    if (!job?.results) return [] as any[]
+    const minRatioFrac = minRatio / 100
+    const arr = job.results.filter((r: any) => {
+      const sm = r.summary || {}
+      const ratio = sm.third_party_ratio ?? 0
+      const total = sm.total ?? 0
+      if (hideZero && total === 0) return false
+      if (ratio < minRatioFrac) return false
+      return true
+    })
+    return arr.sort(
+      (a: any, b: any) =>
+        (b.summary?.third_party_ratio ?? 0) - (a.summary?.third_party_ratio ?? 0),
+    )
+  }, [job, minRatio, hideZero])
+
+  // (a) 일괄 결과 요약 Excel 다운로드
+  function downloadSummaryXlsx() {
+    if (!filteredResults.length) return
+    const rows = filteredResults.map((r: any) => {
+      const sm = r.summary || {}
+      return {
+        시도: r.sido || '',
+        시군구: r.sigungu || '',
+        '동/리': r.dong || '',
+        키워드: r.keyword || '',
+        검색쿼리: r.query || '',
+        총: sm.total ?? 0,
+        메인: sm.main_count ?? 0,
+        타지역: sm.third_party_count ?? 0,
+        의심: sm.third_party_suspect_count ?? 0,
+        '타지역비율(%)': Math.round((sm.third_party_ratio ?? 0) * 100),
+        타지역키워드: sm.is_third_party_keyword ? 'YES' : '',
+        소요ms: r.elapsed_ms ?? '',
+        오류: r.error || '',
+      }
+    })
+    const ws = XLSX.utils.json_to_sheet(rows)
+    ws['!cols'] = [
+      { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 22 },
+      { wch: 6 }, { wch: 6 }, { wch: 8 }, { wch: 6 }, { wch: 12 },
+      { wch: 12 }, { wch: 8 }, { wch: 20 },
+    ]
+    const wb = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(wb, ws, '일괄검색_요약')
+    XLSX.writeFile(wb, `네이버_지역일괄_요약_${todayKstDate()}.xlsx`)
+  }
+
+  // (b) 일괄 결과 + 업체 상세 Excel 다운로드 (모달과 동일한 정보)
+  function downloadDetailXlsx() {
+    if (!filteredResults.length) return
+    const summaryRows = filteredResults.map((r: any) => {
+      const sm = r.summary || {}
+      return {
+        시도: r.sido || '',
+        시군구: r.sigungu || '',
+        '동/리': r.dong || '',
+        키워드: r.keyword || '',
+        검색쿼리: r.query || '',
+        총: sm.total ?? 0,
+        메인: sm.main_count ?? 0,
+        타지역: sm.third_party_count ?? 0,
+        의심: sm.third_party_suspect_count ?? 0,
+        '타지역비율(%)': Math.round((sm.third_party_ratio ?? 0) * 100),
+        타지역키워드: sm.is_third_party_keyword ? 'YES' : '',
+      }
+    })
+    const detailRows: Record<string, any>[] = []
+    for (const r of filteredResults) {
+      const items: any[] = (r as any).items || []
+      for (const it of items) {
+        detailRows.push({
+          시도: r.sido || '',
+          시군구: r.sigungu || '',
+          '동/리': r.dong || '',
+          키워드: r.keyword || '',
+          검색쿼리: r.query || '',
+          순위: it.rank,
+          분류: (CLS_LABEL as Record<string, string>)[it.classification] || it.classification,
+          카테고리: it.category || '',
+          전번: it.phone || '',
+          상호: it.name || '',
+          주소: it.road_address || it.address || '',
+          영업상태: it.business_status || '',
+          예약: it.naver_booking ? 'YES' : '',
+          방문리뷰: it.visitor_review_count ?? 0,
+          블로그리뷰: it.blog_review_count ?? 0,
+          PlaceID: it.place_id || '',
+          URL: it.place_id
+            ? `https://m.place.naver.com/place/${it.place_id}`
+            : '',
+        })
+      }
+    }
+    const wb = XLSX.utils.book_new()
+    const ws1 = XLSX.utils.json_to_sheet(summaryRows)
+    ws1['!cols'] = [
+      { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 22 },
+      { wch: 6 }, { wch: 6 }, { wch: 8 }, { wch: 6 }, { wch: 12 }, { wch: 12 },
+    ]
+    XLSX.utils.book_append_sheet(wb, ws1, '일괄검색_요약')
+
+    const ws2 = XLSX.utils.json_to_sheet(detailRows)
+    ws2['!cols'] = [
+      { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 22 },
+      { wch: 5 }, { wch: 12 }, { wch: 16 }, { wch: 16 }, { wch: 24 },
+      { wch: 36 }, { wch: 10 }, { wch: 6 }, { wch: 8 }, { wch: 8 },
+      { wch: 14 }, { wch: 40 },
+    ]
+    XLSX.utils.book_append_sheet(wb, ws2, '업체_상세')
+
+    XLSX.writeFile(wb, `네이버_지역일괄_상세_${todayKstDate()}.xlsx`)
+  }
 
   return (
     <div className="space-y-5">
@@ -1261,8 +1380,47 @@ function BulkRegionTab({
 
       {job && job.results && job.results.length > 0 && (
         <Card className="p-0 overflow-hidden">
-          <div className="px-5 py-3 border-b border-line bg-bg-subtle text-sm font-semibold text-ink">
-            노출된 조합 ({exposed.length} / {job.results.length})
+          <div className="px-5 py-3 border-b border-line bg-bg-subtle flex flex-wrap items-center gap-3">
+            <span className="text-sm font-semibold text-ink">
+              결과 ({filteredResults.length} / {job.results.length})
+            </span>
+            <label className="flex items-center gap-1.5 text-xs text-ink-muted">
+              타지역비율 ≥
+              <input
+                type="number"
+                min={0}
+                max={100}
+                step={10}
+                value={minRatio}
+                onChange={(e) => setMinRatio(Math.min(100, Math.max(0, parseInt(e.target.value || '0', 10))))}
+                className="w-16 border border-line rounded px-2 py-1"
+              />
+              <span>%</span>
+            </label>
+            <label className="flex items-center gap-1.5 text-xs text-ink-muted">
+              <input type="checkbox" checked={hideZero} onChange={(e) => setHideZero(e.target.checked)} />
+              노출 0건 숨김
+            </label>
+            <div className="ml-auto flex items-center gap-2">
+              <button
+                type="button"
+                onClick={downloadSummaryXlsx}
+                disabled={!filteredResults.length}
+                className="inline-flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-300 text-white font-semibold rounded-lg px-3 py-1.5 text-xs transition-colors"
+              >
+                <Download size={13} />
+                요약 Excel
+              </button>
+              <button
+                type="button"
+                onClick={downloadDetailXlsx}
+                disabled={!filteredResults.length}
+                className="inline-flex items-center gap-1.5 bg-brand-600 hover:bg-brand-700 disabled:bg-slate-300 text-white font-semibold rounded-lg px-3 py-1.5 text-xs transition-colors"
+              >
+                <Download size={13} />
+                상세 Excel
+              </button>
+            </div>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
@@ -1282,61 +1440,66 @@ function BulkRegionTab({
                 </tr>
               </thead>
               <tbody>
-                {[...job.results]
-                  .sort((a, b) => (b.summary?.third_party_ratio ?? 0) - (a.summary?.third_party_ratio ?? 0))
-                  .map((r, i) => {
-                    const sm = r.summary
-                    const ratio = (sm?.third_party_ratio ?? 0) * 100
-                    const hasItems = (r.items?.length ?? 0) > 0
-                    return (
-                      <tr
-                        key={`${r.sido}-${r.sigungu}-${r.dong}-${r.keyword}-${i}`}
-                        className={clsx(
-                          'border-t border-line',
-                          hasItems
-                            ? 'hover:bg-brand-50 cursor-pointer'
-                            : 'hover:bg-bg-subtle/50',
+                {filteredResults.map((r, i) => {
+                  const sm = r.summary
+                  const ratio = (sm?.third_party_ratio ?? 0) * 100
+                  const hasItems = (r.items?.length ?? 0) > 0
+                  return (
+                    <tr
+                      key={`${r.sido}-${r.sigungu}-${r.dong}-${r.keyword}-${i}`}
+                      className={clsx(
+                        'border-t border-line',
+                        hasItems
+                          ? 'hover:bg-brand-50 cursor-pointer'
+                          : 'hover:bg-bg-subtle/50',
+                      )}
+                      onClick={() => hasItems && setDetailRow(r)}
+                      title={hasItems ? '클릭하면 순위별 업체 목록' : ''}
+                    >
+                      <td className="px-3 py-2">{r.sido || '-'}</td>
+                      <td className="px-3 py-2 font-medium text-ink">{r.sigungu || '(없음)'}</td>
+                      <td className="px-3 py-2 text-ink">
+                        {hasItems ? (
+                          <button
+                            type="button"
+                            className="text-brand-700 hover:underline font-medium"
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              setDetailRow(r)
+                            }}
+                          >
+                            {r.dong || '-'}
+                          </button>
+                        ) : (
+                          <span>{r.dong || '-'}</span>
                         )}
-                        onClick={() => hasItems && setDetailRow(r)}
-                        title={hasItems ? '클릭하면 순위별 업체 목록' : ''}
-                      >
-                        <td className="px-3 py-2">{r.sido || '-'}</td>
-                        <td className="px-3 py-2 font-medium text-ink">{r.sigungu || '(없음)'}</td>
-                        <td className="px-3 py-2 text-ink">
-                          {hasItems ? (
-                            <button
-                              type="button"
-                              className="text-brand-700 hover:underline font-medium"
-                              onClick={(e) => {
-                                e.stopPropagation()
-                                setDetailRow(r)
-                              }}
-                            >
-                              {r.dong || '-'}
-                            </button>
-                          ) : (
-                            <span>{r.dong || '-'}</span>
-                          )}
-                        </td>
-                        <td className="px-3 py-2">{r.keyword}</td>
-                        <td className="px-3 py-2 font-mono text-xs text-ink-muted">{r.query}</td>
-                        <td className="px-3 py-2 text-right tabular-nums">{sm?.total ?? 0}</td>
-                        <td className="px-3 py-2 text-right tabular-nums text-emerald-700">{sm?.main_count ?? 0}</td>
-                        <td className="px-3 py-2 text-right tabular-nums text-orange-700">{sm?.third_party_count ?? 0}</td>
-                        <td className="px-3 py-2 text-right tabular-nums text-yellow-700">{sm?.third_party_suspect_count ?? 0}</td>
-                        <td className="px-3 py-2 text-right tabular-nums">{ratio.toFixed(0)}%</td>
-                        <td className="px-3 py-2">
-                          {sm?.is_third_party_keyword ? (
-                            <span className="px-2 py-0.5 rounded-full bg-orange-100 text-orange-800 ring-1 ring-orange-200 text-[11px] font-bold">
-                              YES
-                            </span>
-                          ) : (
-                            <span className="text-ink-muted text-[11px]">-</span>
-                          )}
-                        </td>
-                      </tr>
-                    )
-                  })}
+                      </td>
+                      <td className="px-3 py-2">{r.keyword}</td>
+                      <td className="px-3 py-2 font-mono text-xs text-ink-muted">{r.query}</td>
+                      <td className="px-3 py-2 text-right tabular-nums">{sm?.total ?? 0}</td>
+                      <td className="px-3 py-2 text-right tabular-nums text-emerald-700">{sm?.main_count ?? 0}</td>
+                      <td className="px-3 py-2 text-right tabular-nums text-orange-700">{sm?.third_party_count ?? 0}</td>
+                      <td className="px-3 py-2 text-right tabular-nums text-yellow-700">{sm?.third_party_suspect_count ?? 0}</td>
+                      <td className="px-3 py-2 text-right tabular-nums">{ratio.toFixed(0)}%</td>
+                      <td className="px-3 py-2">
+                        {sm?.is_third_party_keyword ? (
+                          <span className="px-2 py-0.5 rounded-full bg-orange-100 text-orange-800 ring-1 ring-orange-200 text-[11px] font-bold">
+                            YES
+                          </span>
+                        ) : (
+                          <span className="text-ink-muted text-[11px]">-</span>
+                        )}
+                      </td>
+                    </tr>
+                  )
+                })}
+                {filteredResults.length === 0 && (
+                  <tr>
+                    <td colSpan={11} className="px-3 py-8 text-center text-ink-muted text-sm">
+                      필터 조건에 맞는 결과가 없습니다.
+                    </td>
+                  </tr>
+                )}
               </tbody>
             </table>
           </div>
@@ -1372,6 +1535,40 @@ function RegionDetailModal({
   const items: KeywordPlaceItem[] = row.items || []
   const ratio = ((sm.third_party_ratio ?? 0) * 100).toFixed(0)
 
+  function downloadModalXlsx() {
+    if (!items.length) return
+    const rows = items.map((it: any) => ({
+      시도: row.sido || '',
+      시군구: row.sigungu || '',
+      '동/리': row.dong || '',
+      키워드: row.keyword || '',
+      검색쿼리: row.query || '',
+      순위: it.rank,
+      분류: (CLS_LABEL as Record<string, string>)[it.classification] || it.classification,
+      카테고리: it.category || '',
+      전번: it.phone || '',
+      상호: it.name || '',
+      주소: it.road_address || it.address || '',
+      영업상태: it.business_status || '',
+      예약: it.naver_booking ? 'YES' : '',
+      방문리뷰: it.visitor_review_count ?? 0,
+      블로그리뷰: it.blog_review_count ?? 0,
+      PlaceID: it.place_id || '',
+      URL: it.place_id ? `https://m.place.naver.com/place/${it.place_id}` : '',
+    }))
+    const ws = XLSX.utils.json_to_sheet(rows)
+    ws['!cols'] = [
+      { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 22 },
+      { wch: 5 }, { wch: 12 }, { wch: 16 }, { wch: 16 }, { wch: 24 },
+      { wch: 36 }, { wch: 10 }, { wch: 6 }, { wch: 8 }, { wch: 8 },
+      { wch: 14 }, { wch: 40 },
+    ]
+    const wb = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(wb, ws, '업체_상세')
+    const safeRegion = `${row.sido || ''}_${row.sigungu || ''}_${row.dong || ''}`.replace(/\s+/g, '')
+    XLSX.writeFile(wb, `네이버_${safeRegion}_${row.keyword}_${todayKstDate()}.xlsx`)
+  }
+
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4"
@@ -1395,8 +1592,18 @@ function RegionDetailModal({
           </span>
           <button
             type="button"
+            onClick={downloadModalXlsx}
+            disabled={!items.length}
+            className="inline-flex items-center gap-1 bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-300 text-white font-semibold rounded-lg px-2.5 py-1 text-xs transition-colors"
+            title="이 동/리 결과 Excel 다운로드"
+          >
+            <Download size={12} />
+            Excel
+          </button>
+          <button
+            type="button"
             onClick={onClose}
-            className="ml-2 p-1 rounded hover:bg-slate-200 text-ink-muted"
+            className="ml-1 p-1 rounded hover:bg-slate-200 text-ink-muted"
             aria-label="닫기"
           >
             <X size={18} />
