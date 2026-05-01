@@ -1,14 +1,5 @@
 /**
- * 타지역키워드 DNA 파싱 솔루션 (솔루션 #3)
- *
- * 데이터 소스: 타지역 등록 상호 1,875개 + 업종 216개 (회선수 가중치)
- * 분석: 규칙 기반 형태소 분석 (AI 미사용) — Aho-Corasick 최장 일치
- * 카테고리: main / action / material / place / brand / tag (6 카테고리)
- *
- * 동작:
- *   1) 사용자가 키워드 입력 (예: 흥신소, 하수구, 누수, 보일러)
- *   2) 백엔드: 키워드 포함 상호 추출 → 토큰화 → 6 카테고리 DNA + golden combos
- *   3) 프론트: DNA 카드 6개 + 골든 키워드 그래프 + 매칭 상호 샘플 + Excel 다운로드
+ * Tab 1: DNA 분석 (단일 키워드)
  */
 import { useEffect, useState } from 'react'
 import * as XLSX from 'xlsx'
@@ -23,121 +14,49 @@ import {
   X,
 } from 'lucide-react'
 import { Card } from '@/components/ui/Card'
-import { TopBar } from '@/components/layout/TopBar'
 import {
   KeywordDnaApi,
-  type DnaCategory,
   type DnaResult,
   type RecommendedItem,
 } from '@/api/keywordDna'
 import { ApiError } from '@/api/client'
 import { useAuthStore } from '@/store/auth'
+import {
+  CATEGORIES,
+  CAT_LABEL,
+  CAT_DESC,
+  CAT_PILL,
+  CAT_BAR,
+  CAT_ICON,
+  SAMPLE_KEYWORDS,
+  todayKstDate,
+  safeFilename,
+  fmtNum,
+  pctOf,
+} from './shared'
 
-// ─────────────────────────────────────────────────────────
-// 카테고리 메타
-// ─────────────────────────────────────────────────────────
-const CATEGORIES: DnaCategory[] = ['main', 'action', 'material', 'place', 'brand', 'tag']
-
-const CAT_LABEL: Record<DnaCategory, string> = {
-  main: '메인 키워드',
-  action: '동작/서비스',
-  material: '재료/원인',
-  place: '장소/대상',
-  brand: '브랜드',
-  tag: '수식어/태그',
-}
-
-const CAT_DESC: Record<DnaCategory, string> = {
-  main: '핵심 명사 — 검색 시 가장 많이 노출되는 본 키워드',
-  action: '뚫음·설치·수리·청소 등 행동 동명사 (네이버 봇이 매칭)',
-  material: '변기·싱크대·도어락·폐기물 등 대상 자재/원인',
-  place: '아파트·사무실·화장실 등 위치/대상 공간',
-  brand: 'LG·삼성·린나이 등 제조사/브랜드',
-  tag: '24시·전문·업체·당일 등 수식어/태그',
-}
-
-const CAT_PILL: Record<DnaCategory, string> = {
-  main: 'bg-blue-50 text-blue-700 ring-1 ring-blue-200',
-  action: 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200',
-  material: 'bg-violet-50 text-violet-700 ring-1 ring-violet-200',
-  place: 'bg-amber-50 text-amber-700 ring-1 ring-amber-200',
-  brand: 'bg-rose-50 text-rose-700 ring-1 ring-rose-200',
-  tag: 'bg-slate-50 text-slate-700 ring-1 ring-slate-200',
-}
-
-const CAT_BAR: Record<DnaCategory, string> = {
-  main: 'bg-blue-500',
-  action: 'bg-emerald-500',
-  material: 'bg-violet-500',
-  place: 'bg-amber-500',
-  brand: 'bg-rose-500',
-  tag: 'bg-slate-400',
-}
-
-const CAT_ICON: Record<DnaCategory, string> = {
-  main: '🎯',
-  action: '⚙️',
-  material: '🧱',
-  place: '📍',
-  brand: '🏷️',
-  tag: '✨',
-}
-
-const SAMPLE_KEYWORDS = ['흥신소', '하수구', '누수', '보일러', '열쇠', '에어컨', '폐기물', '유품정리']
-
-function todayKstDate(): string {
-  const d = new Date()
-  const kst = new Date(d.getTime() + (9 * 60 + d.getTimezoneOffset()) * 60000)
-  return kst.toISOString().slice(0, 10)
-}
-
-function safeFilename(s: string): string {
-  return (s || '').replace(/[\\/:*?"<>|]/g, '_').replace(/\s+/g, '_').slice(0, 80)
-}
-
-function fmtNum(n: number): string {
-  return Math.round(n).toLocaleString('ko-KR')
-}
-
-function pctOf(n: number, base: number): number {
-  if (!base) return 0
-  return Math.min(100, Math.round((n / base) * 100))
-}
-
-// ─────────────────────────────────────────────────────────
-// 메인 페이지
-// ─────────────────────────────────────────────────────────
-export default function KeywordDna() {
+export default function DnaTab() {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated)
   const openLoginModal = useAuthStore((s) => s.openLoginModal)
 
   const [keyword, setKeyword] = useState('흥신소')
   const [topPerCat, setTopPerCat] = useState(15)
   const [minDf, setMinDf] = useState(2)
-
   const [result, setResult] = useState<DnaResult | null>(null)
   const [loading, setLoading] = useState(false)
   const [errMsg, setErrMsg] = useState<string | null>(null)
-
   const [recommended, setRecommended] = useState<RecommendedItem[]>([])
-  const [dictStats, setDictStats] = useState<any | null>(null)
-
   const [detailExample, setDetailExample] = useState<{
     name: string
     weight: number
     tokens: string[]
   } | null>(null)
 
-  // 인증 후 추천 키워드 + 사전 통계 로드
   useEffect(() => {
     if (!isAuthenticated) return
-    Promise.all([
-      KeywordDnaApi.recommended(40).catch(() => ({ items: [] })),
-      KeywordDnaApi.dictionaryStats().catch(() => null),
-    ]).then(([rec, stats]) => {
-      setRecommended((rec as any).items || [])
-      setDictStats(stats)
-    })
+    KeywordDnaApi.recommended(40)
+      .then((rec) => setRecommended(rec.items || []))
+      .catch(() => setRecommended([]))
   }, [isAuthenticated])
 
   const submit = async (kw?: string) => {
@@ -161,23 +80,19 @@ export default function KeywordDna() {
       })
       setResult(r)
       if (r.stats.matched === 0) {
-        setErrMsg(`'${target}'을(를) 포함하는 등록 상호가 없습니다. 다른 키워드를 시도해 보세요.`)
+        setErrMsg(`'${target}'을(를) 포함하는 등록 상호가 없습니다.`)
       }
     } catch (e: any) {
-      const msg = e instanceof ApiError ? e.message : (e?.message || '분석에 실패했습니다.')
-      setErrMsg(msg)
+      setErrMsg(e instanceof ApiError ? e.message : (e?.message || '분석 실패'))
       setResult(null)
     } finally {
       setLoading(false)
     }
   }
 
-  // Excel 다운로드 (DNA 요약 + 매칭 상호 + 골든 조합)
   const downloadExcel = () => {
     if (!result) return
     const wb = XLSX.utils.book_new()
-
-    // Sheet 1: DNA 요약
     const summaryRows: any[] = []
     for (const cat of CATEGORIES) {
       for (const t of result.dna[cat] || []) {
@@ -190,74 +105,41 @@ export default function KeywordDna() {
         })
       }
     }
-    const ws1 = XLSX.utils.json_to_sheet(summaryRows)
-    XLSX.utils.book_append_sheet(wb, ws1, 'DNA_요약')
-
-    // Sheet 2: 골든 조합
-    const goldenRows = result.golden.map((g, i) => ({
-      순위: i + 1,
-      조합: g.combo,
-      메인: g.main,
-      수식어: g.modifier,
-      카테고리: CAT_LABEL[g.modifier_category],
-      가중치: Math.round(g.weight),
-    }))
-    const ws2 = XLSX.utils.json_to_sheet(goldenRows)
-    XLSX.utils.book_append_sheet(wb, ws2, '골든_조합')
-
-    // Sheet 3: 매칭 상호
-    const exRows = result.examples.map((e, i) => ({
-      순위: i + 1,
-      상호: e.name,
-      회선수: Math.round(e.weight),
-      파싱토큰: e.tokens.join(' / '),
-    }))
-    const ws3 = XLSX.utils.json_to_sheet(exRows)
-    XLSX.utils.book_append_sheet(wb, ws3, '매칭_상호')
-
-    XLSX.writeFile(wb, `타지역_키워드DNA_${safeFilename(result.normalized)}_${todayKstDate()}.xlsx`)
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(summaryRows), 'DNA_요약')
+    XLSX.utils.book_append_sheet(
+      wb,
+      XLSX.utils.json_to_sheet(
+        result.golden.map((g, i) => ({
+          순위: i + 1,
+          조합: g.combo,
+          메인: g.main,
+          수식어: g.modifier,
+          카테고리: CAT_LABEL[g.modifier_category],
+          가중치: Math.round(g.weight),
+        })),
+      ),
+      '골든_조합',
+    )
+    XLSX.utils.book_append_sheet(
+      wb,
+      XLSX.utils.json_to_sheet(
+        result.examples.map((e, i) => ({
+          순위: i + 1,
+          상호: e.name,
+          회선수: Math.round(e.weight),
+          파싱토큰: e.tokens.join(' / '),
+        })),
+      ),
+      '매칭_상호',
+    )
+    XLSX.writeFile(
+      wb,
+      `타지역_키워드DNA_${safeFilename(result.normalized)}_${todayKstDate()}.xlsx`,
+    )
   }
 
   return (
     <div className="space-y-5">
-      <TopBar
-        title="타지역 키워드 DNA 파싱 솔루션"
-        subtitle="네이버 봇이 키워드 형태소로 상호를 읽는 로직을 분석 — 등록 상호 DNA를 6 카테고리로 도식화 (AI 미사용 규칙 기반)"
-      />
-
-      {/* 사전 통계 카드 */}
-      {dictStats?.stats && (
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          <div className="bg-white rounded-xl border border-slate-200 px-4 py-3">
-            <div className="text-[11px] text-slate-500">분석 대상 상호</div>
-            <div className="text-xl font-bold text-slate-800">
-              {fmtNum(dictStats.stats.business_count)}
-              <span className="text-xs text-slate-500 ml-1">개</span>
-            </div>
-          </div>
-          <div className="bg-white rounded-xl border border-slate-200 px-4 py-3">
-            <div className="text-[11px] text-slate-500">등록 업종</div>
-            <div className="text-xl font-bold text-slate-800">
-              {fmtNum(dictStats.stats.category_count)}
-              <span className="text-xs text-slate-500 ml-1">종</span>
-            </div>
-          </div>
-          <div className="bg-white rounded-xl border border-slate-200 px-4 py-3">
-            <div className="text-[11px] text-slate-500">사전 토큰</div>
-            <div className="text-xl font-bold text-slate-800">
-              {fmtNum(dictStats.stats.token_count)}
-              <span className="text-xs text-slate-500 ml-1">개</span>
-            </div>
-          </div>
-          <div className="bg-white rounded-xl border border-slate-200 px-4 py-3">
-            <div className="text-[11px] text-slate-500">총 회선수 가중치</div>
-            <div className="text-xl font-bold text-slate-800">
-              {fmtNum(dictStats.stats.total_weight)}
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* 검색 패널 */}
       <Card variant="white" className="p-5">
         <div className="flex items-start gap-2 mb-3">
@@ -265,24 +147,19 @@ export default function KeywordDna() {
           <div>
             <div className="text-base font-bold text-slate-800">키워드 DNA 분석</div>
             <div className="text-xs text-slate-500">
-              타지역 봇은 상호에서 키워드 형태소만 매칭합니다. 입력 키워드가 어떤 행동·자재·장소와 함께 등록돼 있는지 분석합니다.
+              타지역 봇은 상호에서 키워드 형태소만 매칭합니다. 입력 키워드가 어떤 행동·재료·장소와 함께 등록돼 있는지 분석합니다.
             </div>
           </div>
         </div>
 
         <div className="flex flex-wrap gap-2 items-stretch">
           <div className="relative flex-1 min-w-[260px]">
-            <SearchIcon
-              size={16}
-              className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
-            />
+            <SearchIcon size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
             <input
               type="text"
               value={keyword}
               onChange={(e) => setKeyword(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') submit()
-              }}
+              onKeyDown={(e) => { if (e.key === 'Enter') submit() }}
               placeholder="예: 흥신소, 하수구, 누수, 보일러"
               className="w-full pl-9 pr-3 py-2.5 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
               maxLength={30}
@@ -293,35 +170,21 @@ export default function KeywordDna() {
             disabled={loading}
             className="inline-flex items-center gap-1.5 px-5 py-2.5 text-sm font-bold text-white bg-blue-600 hover:bg-blue-700 disabled:bg-slate-400 rounded-lg shadow-sm transition"
           >
-            {loading ? (
-              <>
-                <Loader2 size={16} className="animate-spin" />
-                분석 중...
-              </>
-            ) : (
-              <>
-                <Sparkles size={16} />
-                DNA 분석
-              </>
-            )}
+            {loading ? <><Loader2 size={16} className="animate-spin" />분석 중...</> : <><Sparkles size={16} />DNA 분석</>}
           </button>
-
           <select
             value={topPerCat}
             onChange={(e) => setTopPerCat(Number(e.target.value))}
             className="px-3 py-2.5 text-xs border border-slate-300 rounded-lg bg-white"
-            title="카테고리당 토큰 수"
           >
             <option value={8}>카테고리당 8개</option>
             <option value={15}>카테고리당 15개</option>
             <option value={25}>카테고리당 25개</option>
           </select>
-
           <select
             value={minDf}
             onChange={(e) => setMinDf(Number(e.target.value))}
             className="px-3 py-2.5 text-xs border border-slate-300 rounded-lg bg-white"
-            title="최소 등장 횟수"
           >
             <option value={1}>1회 이상</option>
             <option value={2}>2회 이상</option>
@@ -329,7 +192,6 @@ export default function KeywordDna() {
           </select>
         </div>
 
-        {/* 샘플 키워드 칩 */}
         <div className="mt-3 flex flex-wrap gap-1.5">
           <span className="text-[11px] text-slate-500 self-center mr-1">빠른 시작:</span>
           {SAMPLE_KEYWORDS.map((s) => (
@@ -348,7 +210,6 @@ export default function KeywordDna() {
           ))}
         </div>
 
-        {/* 추천 키워드 (회선수 상위) */}
         {recommended.length > 0 && (
           <div className="mt-2 flex flex-wrap gap-1.5">
             <span className="text-[11px] text-slate-500 self-center mr-1">회선수 상위:</span>
@@ -373,10 +234,8 @@ export default function KeywordDna() {
         )}
       </Card>
 
-      {/* 결과 */}
       {result && result.stats.matched > 0 && (
         <>
-          {/* 요약 KPI */}
           <Card variant="white" className="p-4">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div className="flex flex-wrap gap-4">
@@ -388,16 +247,12 @@ export default function KeywordDna() {
                   <div className="text-[11px] text-slate-500">매칭 상호</div>
                   <div className="text-lg font-bold text-slate-800">
                     {fmtNum(result.stats.matched)}
-                    <span className="text-xs text-slate-500 ml-1">
-                      / {fmtNum(result.stats.total)}건
-                    </span>
+                    <span className="text-xs text-slate-500 ml-1">/ {fmtNum(result.stats.total)}건</span>
                   </div>
                 </div>
                 <div>
                   <div className="text-[11px] text-slate-500">매칭 회선수</div>
-                  <div className="text-lg font-bold text-emerald-700">
-                    {fmtNum(result.stats.weight_matched)}
-                  </div>
+                  <div className="text-lg font-bold text-emerald-700">{fmtNum(result.stats.weight_matched)}</div>
                 </div>
                 <div>
                   <div className="text-[11px] text-slate-500">시장 점유</div>
@@ -408,37 +263,30 @@ export default function KeywordDna() {
                 <div>
                   <div className="text-[11px] text-slate-500">분석 시간</div>
                   <div className="text-lg font-bold text-slate-800">
-                    {result.stats.elapsed_ms}
-                    <span className="text-xs text-slate-500 ml-0.5">ms</span>
+                    {result.stats.elapsed_ms}<span className="text-xs text-slate-500 ml-0.5">ms</span>
                   </div>
                 </div>
               </div>
-
               <button
                 onClick={downloadExcel}
                 className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-lg border-2 border-blue-700 shadow-sm transition"
               >
-                <Download size={16} />
-                Excel 다운로드
+                <Download size={16} />Excel 다운로드
               </button>
             </div>
           </Card>
 
-          {/* 골든 조합 */}
           {result.golden.length > 0 && (
             <Card variant="white" className="p-5">
               <div className="flex items-center gap-2 mb-3">
                 <Sparkles className="text-amber-500" size={18} />
                 <div>
-                  <div className="text-base font-bold text-slate-800">
-                    🌟 황금 키워드 조합 (Golden Combos)
-                  </div>
+                  <div className="text-base font-bold text-slate-800">🌟 황금 키워드 조합 (Golden Combos)</div>
                   <div className="text-xs text-slate-500">
                     "{result.normalized}" + 동반 행동·재료·장소 — 회선수 가중치 순
                   </div>
                 </div>
               </div>
-
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
                 {result.golden.map((g, idx) => {
                   const maxW = result.golden[0]?.weight || 1
@@ -448,23 +296,16 @@ export default function KeywordDna() {
                       key={`${g.combo}-${idx}`}
                       className="relative bg-gradient-to-br from-blue-50 to-amber-50 rounded-lg px-3 py-2.5 border border-amber-200 overflow-hidden"
                     >
-                      <div
-                        className="absolute left-0 bottom-0 h-1 bg-amber-400"
-                        style={{ width: `${pct}%` }}
-                      />
+                      <div className="absolute left-0 bottom-0 h-1 bg-amber-400" style={{ width: `${pct}%` }} />
                       <div className="flex items-center gap-2">
-                        <span className="text-xs font-bold text-slate-400 tabular-nums">
-                          #{idx + 1}
-                        </span>
+                        <span className="text-xs font-bold text-slate-400 tabular-nums">#{idx + 1}</span>
                         <span className="text-sm font-bold text-slate-800">{g.combo}</span>
                       </div>
                       <div className="mt-1 flex items-center gap-1.5 text-[11px]">
                         <span className={clsx('px-1.5 rounded', CAT_PILL[g.modifier_category])}>
                           {CAT_LABEL[g.modifier_category]}
                         </span>
-                        <span className="text-slate-500">
-                          가중치 {fmtNum(g.weight)}
-                        </span>
+                        <span className="text-slate-500">가중치 {fmtNum(g.weight)}</span>
                       </div>
                     </div>
                   )
@@ -473,7 +314,6 @@ export default function KeywordDna() {
             </Card>
           )}
 
-          {/* 6 카테고리 DNA 카드 */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
             {CATEGORIES.map((cat) => {
               const items = result.dna[cat] || []
@@ -484,47 +324,28 @@ export default function KeywordDna() {
                     <span className="text-lg">{CAT_ICON[cat]}</span>
                     <div className="flex-1">
                       <div className="text-sm font-bold text-slate-800">{CAT_LABEL[cat]}</div>
-                      <div className="text-[11px] text-slate-500 leading-tight">
-                        {CAT_DESC[cat]}
-                      </div>
+                      <div className="text-[11px] text-slate-500 leading-tight">{CAT_DESC[cat]}</div>
                     </div>
-                    <span className={clsx('text-[10px] px-1.5 py-0.5 rounded', CAT_PILL[cat])}>
-                      {items.length}개
-                    </span>
+                    <span className={clsx('text-[10px] px-1.5 py-0.5 rounded', CAT_PILL[cat])}>{items.length}개</span>
                   </div>
-
                   {items.length === 0 ? (
-                    <div className="text-xs text-slate-400 italic py-2">
-                      매칭된 토큰이 없습니다.
-                    </div>
+                    <div className="text-xs text-slate-400 italic py-2">매칭된 토큰이 없습니다.</div>
                   ) : (
                     <ul className="space-y-1.5">
                       {items.map((t, i) => {
                         const pct = pctOf(t.weight, maxW)
                         return (
-                          <li
-                            key={t.token}
-                            className="relative bg-slate-50 hover:bg-blue-50 rounded px-2 py-1.5 transition"
-                          >
-                            <div
-                              className={clsx('absolute left-0 top-0 bottom-0 rounded-l opacity-20', CAT_BAR[cat])}
-                              style={{ width: `${pct}%` }}
-                            />
+                          <li key={t.token} className="relative bg-slate-50 hover:bg-blue-50 rounded px-2 py-1.5 transition">
+                            <div className={clsx('absolute left-0 top-0 bottom-0 rounded-l opacity-20', CAT_BAR[cat])} style={{ width: `${pct}%` }} />
                             <div className="relative flex items-center justify-between gap-2">
                               <div className="flex items-center gap-1.5 min-w-0">
-                                <span className="text-[10px] tabular-nums text-slate-400 w-4">
-                                  {i + 1}
-                                </span>
-                                <span className="text-sm font-bold text-slate-800 truncate">
-                                  {t.token}
-                                </span>
+                                <span className="text-[10px] tabular-nums text-slate-400 w-4">{i + 1}</span>
+                                <span className="text-sm font-bold text-slate-800 truncate">{t.token}</span>
                               </div>
                               <div className="flex items-center gap-1.5 text-[10px] text-slate-500 tabular-nums shrink-0">
                                 <span title="등록 상호 수">{t.df}건</span>
                                 <span className="text-slate-300">·</span>
-                                <span className="font-semibold text-slate-700">
-                                  {fmtNum(t.weight)}
-                                </span>
+                                <span className="font-semibold text-slate-700">{fmtNum(t.weight)}</span>
                               </div>
                             </div>
                           </li>
@@ -537,20 +358,14 @@ export default function KeywordDna() {
             })}
           </div>
 
-          {/* 매칭 상호 샘플 */}
           {result.examples.length > 0 && (
             <Card variant="white" className="p-5">
               <div className="flex items-center justify-between mb-3">
                 <div>
-                  <div className="text-base font-bold text-slate-800">
-                    📋 매칭 상호 샘플 ({result.examples.length}개, 회선수 상위)
-                  </div>
-                  <div className="text-xs text-slate-500">
-                    파싱된 토큰을 클릭하면 상세 분해를 볼 수 있습니다.
-                  </div>
+                  <div className="text-base font-bold text-slate-800">📋 매칭 상호 샘플 ({result.examples.length}개)</div>
+                  <div className="text-xs text-slate-500">행을 클릭하면 토큰 분해를 볼 수 있습니다.</div>
                 </div>
               </div>
-
               <div className="overflow-x-auto -mx-1">
                 <table className="w-full text-xs">
                   <thead>
@@ -568,27 +383,18 @@ export default function KeywordDna() {
                         className="border-b border-slate-100 hover:bg-blue-50/40 cursor-pointer"
                         onClick={() => setDetailExample(ex)}
                       >
-                        <td className="px-2 py-1.5 text-right text-slate-400 tabular-nums">
-                          {i + 1}
-                        </td>
+                        <td className="px-2 py-1.5 text-right text-slate-400 tabular-nums">{i + 1}</td>
                         <td className="px-2 py-1.5 font-medium text-slate-800">{ex.name}</td>
-                        <td className="px-2 py-1.5 text-right tabular-nums text-emerald-700 font-bold">
-                          {fmtNum(ex.weight)}
-                        </td>
+                        <td className="px-2 py-1.5 text-right tabular-nums text-emerald-700 font-bold">{fmtNum(ex.weight)}</td>
                         <td className="px-2 py-1.5">
                           <div className="flex flex-wrap gap-1">
                             {ex.tokens.slice(0, 12).map((tok, ti) => (
-                              <span
-                                key={`${tok}-${ti}`}
-                                className="px-1.5 py-0.5 bg-blue-50 text-blue-700 text-[10px] rounded ring-1 ring-blue-100"
-                              >
+                              <span key={`${tok}-${ti}`} className="px-1.5 py-0.5 bg-blue-50 text-blue-700 text-[10px] rounded ring-1 ring-blue-100">
                                 {tok}
                               </span>
                             ))}
                             {ex.tokens.length > 12 && (
-                              <span className="text-[10px] text-slate-400 self-center">
-                                +{ex.tokens.length - 12}
-                              </span>
+                              <span className="text-[10px] text-slate-400 self-center">+{ex.tokens.length - 12}</span>
                             )}
                           </div>
                         </td>
@@ -602,45 +408,28 @@ export default function KeywordDna() {
         </>
       )}
 
-      {/* 상세 모달 */}
       {detailExample && (
-        <div
-          className="fixed inset-0 z-50 bg-slate-900/50 flex items-center justify-center p-4"
-          onClick={() => setDetailExample(null)}
-        >
-          <div
-            className="bg-white rounded-xl shadow-xl max-w-2xl w-full max-h-[80vh] overflow-y-auto"
-            onClick={(e) => e.stopPropagation()}
-          >
+        <div className="fixed inset-0 z-50 bg-slate-900/50 flex items-center justify-center p-4" onClick={() => setDetailExample(null)}>
+          <div className="bg-white rounded-xl shadow-xl max-w-2xl w-full max-h-[80vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
             <div className="px-5 py-3 border-b border-slate-200 flex items-center justify-between">
               <div>
                 <div className="text-sm font-bold text-slate-800">상호 토큰 분해</div>
                 <div className="text-xs text-slate-500">{detailExample.name}</div>
               </div>
-              <button
-                onClick={() => setDetailExample(null)}
-                className="p-1 hover:bg-slate-100 rounded"
-              >
+              <button onClick={() => setDetailExample(null)} className="p-1 hover:bg-slate-100 rounded">
                 <X size={18} />
               </button>
             </div>
             <div className="p-5 space-y-3">
               <div className="text-sm">
                 <span className="text-slate-500">회선수: </span>
-                <span className="font-bold text-emerald-700">
-                  {fmtNum(detailExample.weight)}
-                </span>
+                <span className="font-bold text-emerald-700">{fmtNum(detailExample.weight)}</span>
               </div>
               <div>
-                <div className="text-xs text-slate-500 mb-1.5">
-                  파싱 토큰 ({detailExample.tokens.length}개) — 최장 일치 순
-                </div>
+                <div className="text-xs text-slate-500 mb-1.5">파싱 토큰 ({detailExample.tokens.length}개) — 최장 일치 순</div>
                 <div className="flex flex-wrap gap-1.5">
                   {detailExample.tokens.map((tok, i) => (
-                    <span
-                      key={`${tok}-${i}`}
-                      className="px-2 py-1 bg-blue-50 text-blue-700 text-xs font-bold rounded ring-1 ring-blue-200"
-                    >
+                    <span key={`${tok}-${i}`} className="px-2 py-1 bg-blue-50 text-blue-700 text-xs font-bold rounded ring-1 ring-blue-200">
                       {tok}
                     </span>
                   ))}

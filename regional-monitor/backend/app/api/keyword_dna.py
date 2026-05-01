@@ -18,6 +18,9 @@ from app.services.keyword_dna import (
     analyze_keyword,
     list_known_keywords,
     load_dictionary,
+    compare_keywords,
+    build_graph,
+    recommend_keywords,
 )
 
 router = APIRouter(prefix="/keyword-dna", tags=["keyword-dna"])
@@ -35,6 +38,24 @@ class AnalyzeBatchRequest(BaseModel):
     top_per_category: int = Field(default=10, ge=3, le=30)
     min_df: int = Field(default=2, ge=1, le=10)
     examples: int = Field(default=15, ge=5, le=50)
+
+
+class CompareRequest(BaseModel):
+    keywords: List[str] = Field(..., min_items=2, max_items=8)
+    top_per_category: int = Field(default=12, ge=3, le=30)
+    min_df: int = Field(default=2, ge=1, le=10)
+
+
+class GraphRequest(BaseModel):
+    keyword: str = Field(..., min_length=1, max_length=30)
+    max_nodes: int = Field(default=40, ge=10, le=80)
+    min_edge_weight: float = Field(default=1.0, ge=0.0)
+
+
+class RecommendRequest(BaseModel):
+    seed: str = Field(..., min_length=1, max_length=30)
+    top: int = Field(default=20, ge=5, le=50)
+    min_modifier_df: int = Field(default=3, ge=1, le=10)
 
 
 @router.get("/health")
@@ -105,3 +126,55 @@ def analyze_batch(
         except Exception as exc:  # pragma: no cover
             results.append({"keyword": kw, "error": str(exc)})
     return {"count": len(results), "results": results}
+
+
+@router.post("/compare")
+def compare(
+    req: CompareRequest,
+    _user=Depends(require_complete_profile),
+):
+    """다중 키워드 비교 매트릭스 — 토큰 × 키워드 가중치 + 유사도."""
+    try:
+        return compare_keywords(
+            req.keywords,
+            top_per_category=req.top_per_category,
+            min_df=req.min_df,
+        )
+    except Exception as exc:  # pragma: no cover
+        raise HTTPException(status_code=500, detail=f"비교 실패: {exc}") from exc
+
+
+@router.post("/graph")
+def graph(
+    req: GraphRequest,
+    _user=Depends(require_complete_profile),
+):
+    """단일 키워드 동시출현 네트워크 (nodes/edges)."""
+    if not req.keyword.strip():
+        raise HTTPException(status_code=422, detail="키워드가 비어 있습니다")
+    try:
+        return build_graph(
+            req.keyword.strip(),
+            max_nodes=req.max_nodes,
+            min_edge_weight=req.min_edge_weight,
+        )
+    except Exception as exc:  # pragma: no cover
+        raise HTTPException(status_code=500, detail=f"그래프 빌드 실패: {exc}") from exc
+
+
+@router.post("/recommend")
+def recommend(
+    req: RecommendRequest,
+    _user=Depends(require_complete_profile),
+):
+    """미커버/저경쟁 키워드 조합 추천 (opportunity score desc)."""
+    if not req.seed.strip():
+        raise HTTPException(status_code=422, detail="seed 키워드가 비어 있습니다")
+    try:
+        return recommend_keywords(
+            req.seed.strip(),
+            top=req.top,
+            min_modifier_df=req.min_modifier_df,
+        )
+    except Exception as exc:  # pragma: no cover
+        raise HTTPException(status_code=500, detail=f"추천 실패: {exc}") from exc

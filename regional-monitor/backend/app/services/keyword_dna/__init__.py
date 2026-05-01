@@ -12,6 +12,9 @@
 from .dictionary import build_dictionary, load_dictionary, CATEGORIES
 from .tokenizer import LongestMatchTokenizer
 from .analyzer import analyze_keyword, list_known_keywords
+from .compare import compare_keywords
+from .graph import build_graph
+from .recommend import recommend_keywords
 
 __all__ = [
     "build_dictionary",
@@ -20,4 +23,7 @@ __all__ = [
     "LongestMatchTokenizer",
     "analyze_keyword",
     "list_known_keywords",
+    "compare_keywords",
+    "build_graph",
+    "recommend_keywords",
 ]
