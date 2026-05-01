@@ -46,6 +46,9 @@ class PlaceOut(BaseModel):
     last_checked_at: datetime | None = None
     created_at: datetime
     updated_at: datetime
+    # 미포함 번호 추적 — 최근 업로드 엑셀에 포함됐는지
+    in_latest_upload: bool = True
+    excluded_at: datetime | None = None
 
 
 class PlaceSummary(BaseModel):
@@ -55,6 +58,7 @@ class PlaceSummary(BaseModel):
     warning: int      # PHONE_MISMATCH + DONG_MISMATCH + NAME_MISMATCH
     danger: int       # REGION_MISMATCH + DEAD
     pending: int      # PENDING + CHECKING
+    excluded: int = 0 # 미포함 번호 (최근 업로드 엑셀에서 빠진 번호)
 
 
 class PlaceListOut(BaseModel):
@@ -81,6 +85,11 @@ class PlaceBulkRequest(BaseModel):
     - 서버 상한은 안전망으로 1000건(이론상). 실 운용은 500건 청크.
     """
     rows: list[PlaceBulkRow] = Field(..., min_length=1, max_length=1000)
+    # 미포함 번호 처리 마커 — 멀티-청크 업로드의 경계 식별용
+    # · is_first_chunk=True : 새 업로드 시작 (이 호출 직전에 미포함 마킹 트랜잭션 실행)
+    # · is_last_chunk=True  : 업로드 종료 (필요 시 후처리; 현재는 정보용)
+    is_first_chunk: bool = False
+    is_last_chunk: bool = False
 
 
 class BulkRowStatus(BaseModel):
@@ -102,6 +111,9 @@ class PlaceBulkResponse(BaseModel):
     quota_exceeded: int
     elapsed_ms: int
     quota_remaining: int                      # 남은 등록 가능 수
+    # 미포함 번호 처리 결과 (재업로드 시)
+    excluded_marked: int = 0                  # 이번 업로드에서 미포함으로 표시된 번호 수
+    excluded_restored: int = 0                # 다시 포함되어 미포함 해제된 번호 수
     rows: list[BulkRowStatus]
 
 

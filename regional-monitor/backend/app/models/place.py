@@ -1,7 +1,7 @@
 """RegisteredPlace 모델 — 사용자가 등록한 070+Place ID 매핑."""
 from datetime import datetime
 from app.core.time_utils import now_kst, KSTDateTime
-from sqlalchemy import String, Integer, DateTime, ForeignKey, Index
+from sqlalchemy import String, Integer, DateTime, ForeignKey, Index, Boolean
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.database import Base
@@ -12,6 +12,7 @@ class RegisteredPlace(Base):
     __table_args__ = (
         Index("ix_user_phone", "user_id", "phone", unique=True),
         Index("ix_user_status", "user_id", "current_verdict"),
+        Index("ix_user_in_latest", "user_id", "in_latest_upload"),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True, autoincrement=True)
@@ -34,6 +35,16 @@ class RegisteredPlace(Base):
     # OK / PHONE_MISMATCH / DONG_MISMATCH / NAME_MISMATCH / REGION_MISMATCH / DEAD / PENDING
     current_verdict: Mapped[str] = mapped_column(String(30), default="PENDING", nullable=False)
     last_checked_at: Mapped[datetime | None] = mapped_column(KSTDateTime, nullable=True)
+
+    # ── 미포함 번호(Excluded number) 추적 ──
+    # 최근 업로드된 엑셀에 포함돼 있는지 여부.
+    # · 신규 INSERT 시 True
+    # · 재업로드(엑셀)에 같은 번호가 다시 있으면 True (excluded_at = NULL 로 복귀)
+    # · 재업로드(엑셀)에 빠지면 False, excluded_at 기록 → UI 에서 "미포함 번호" 뱃지
+    in_latest_upload: Mapped[bool] = mapped_column(
+        Boolean, default=True, nullable=False, server_default="1"
+    )
+    excluded_at: Mapped[datetime | None] = mapped_column(KSTDateTime, nullable=True)
 
     # 타임스탬프
     created_at: Mapped[datetime] = mapped_column(

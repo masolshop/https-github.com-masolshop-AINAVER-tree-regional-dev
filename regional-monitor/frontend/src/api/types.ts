@@ -66,6 +66,9 @@ export interface PlaceOut {
   last_checked_at: string | null
   created_at: string
   updated_at: string
+  // 미포함 번호 추적 — 최근 업로드 엑셀에 포함됐는지
+  in_latest_upload: boolean
+  excluded_at: string | null
 }
 
 export interface PlaceSummary {
@@ -74,6 +77,7 @@ export interface PlaceSummary {
   warning: number
   danger: number
   pending: number
+  excluded: number   // 미포함 번호 (최근 업로드 엑셀에서 빠진 번호)
 }
 
 export interface PlaceListOut {
@@ -91,6 +95,8 @@ export interface PlaceBulkRow {
 
 export interface PlaceBulkRequest {
   rows: PlaceBulkRow[]                 // 1~1000건 (권장 500건 청크)
+  is_first_chunk?: boolean             // 새 업로드 시작 — 미포함 마킹 트랜잭션 실행
+  is_last_chunk?: boolean              // 업로드 종료 (정보용)
 }
 
 export type BulkRowStatusKey =
@@ -117,6 +123,8 @@ export interface PlaceBulkResponse {
   quota_exceeded: number
   elapsed_ms: number
   quota_remaining: number
+  excluded_marked?: number      // 이번 업로드에서 미포함으로 표시된 번호 수
+  excluded_restored?: number    // 다시 포함되어 미포함 해제된 번호 수
   rows: BulkRowStatus[]
 }
 

@@ -52,7 +52,7 @@ import {
 const DOWNLOAD_TARGET_VERDICTS = new Set(['DEAD'])
 
 /* ─────────── 상태 필터 (요약 카드 클릭) ─────────── */
-type StatusFilter = 'all' | 'ok' | 'changed' | 'warning' | 'danger'
+type StatusFilter = 'all' | 'ok' | 'changed' | 'warning' | 'danger' | 'excluded'
 
 /**
  * 용어 통일 (변경 노출 정책):
@@ -78,6 +78,8 @@ function matchStatusFilter(p: RegisteredPlace, filter: StatusFilter): boolean {
   if (filter === 'changed') return CHANGED_VERDICTS.has(p.current_verdict)
   if (filter === 'warning') return WARNING_VERDICTS.has(p.current_verdict)
   if (filter === 'danger') return DANGER_VERDICTS.has(p.current_verdict)
+  // 미포함 번호 — 최근 업로드 엑셀에 포함되지 않은 번호 (수동 삭제 후보)
+  if (filter === 'excluded') return p.in_latest_upload === false
   return true
 }
 
@@ -106,8 +108,14 @@ export default function RegisterTab() {
   const bulkDeleteMut = useBulkDeletePlaces()
   const liveCheck = useLiveCheck()
 
-  const summary = data?.summary ?? { total: 0, ok: 0, warning: 0, danger: 0, pending: 0 }
+  const summary = data?.summary ?? { total: 0, ok: 0, warning: 0, danger: 0, pending: 0, excluded: 0 }
   const places = data?.items ?? []
+
+  /** 미포함 번호 — 최근 업로드 엑셀에서 빠진 번호 (수동 삭제 후보). */
+  const excludedPlaces = useMemo(
+    () => places.filter((p) => p.in_latest_upload === false),
+    [places],
+  )
 
   /** 다운로드 대상 추출 — 네이버 미노출(DEAD)만. 즉시 조치가 필요한 항목으로 한정. */
   const mismatchedPlaces = useMemo(
@@ -216,6 +224,34 @@ export default function RegisterTab() {
     }
   }
 
+  /** 미포함 번호(최근 업로드 엑셀에 빠진 번호)만 일괄 삭제. */
+  const handleDeleteExcluded = async () => {
+    const ids = excludedPlaces.map((p) => p.id)
+    if (ids.length === 0) {
+      alert('삭제할 미포함 번호가 없습니다.')
+      return
+    }
+    if (
+      !confirm(
+        `미포함 번호 ${ids.length}건을 일괄 삭제하시겠습니까?\n\n` +
+          `(최근 업로드 엑셀에 포함되지 않은 번호 — 수동 삭제 후 복구 불가)`,
+      )
+    )
+      return
+    try {
+      const res = await bulkDeleteMut.mutateAsync({ ids, all: false })
+      alert(
+        `미포함 번호 삭제 완료: ${res.deleted}건${
+          res.not_found > 0 ? ` (찾을 수 없음 ${res.not_found}건)` : ''
+        } · ${res.elapsed_ms}ms`,
+      )
+      clearSelection()
+      if (statusFilter === 'excluded') setStatusFilter('all')
+    } catch (e) {
+      alert(`미포함 번호 삭제 실패: ${formatApiError(e)}`)
+    }
+  }
+
   const handleDeleteAll = async () => {
     if (places.length === 0) return
     if (
@@ -292,8 +328,8 @@ export default function RegisterTab() {
 
   return (
     <div className="space-y-6">
-      {/* ───── 요약 카운트 4개 (클릭 시 해당 상태로 리스트 필터) ───── */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+      {/* ───── 요약 카운트 5개 (클릭 시 해당 상태로 리스트 필터) ───── */}
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
         <SummaryPill
           label="전체 등록"
           value={summary.total}
@@ -332,6 +368,15 @@ export default function RegisterTab() {
           active={statusFilter === 'danger'}
           onClick={() =>
             setStatusFilter((f) => (f === 'danger' ? 'all' : 'danger'))
+          }
+        />
+        <SummaryPill
+          label="미포함 번호"
+          value={summary.excluded ?? 0}
+          tone="neutral"
+          active={statusFilter === 'excluded'}
+          onClick={() =>
+            setStatusFilter((f) => (f === 'excluded' ? 'all' : 'excluded'))
           }
         />
       </div>
@@ -382,6 +427,8 @@ export default function RegisterTab() {
                       ? 'bg-blue-50 text-status-info'
                       : statusFilter === 'warning'
                       ? 'bg-amber-50 text-status-warning'
+                      : statusFilter === 'excluded'
+                      ? 'bg-bg-subtle text-ink-muted'
                       : 'bg-red-50 text-status-danger'
                   }`}
                 >
@@ -389,6 +436,7 @@ export default function RegisterTab() {
                   {statusFilter === 'changed' && '변경 노출만 보기'}
                   {statusFilter === 'warning' && '상호 불일치만 보기'}
                   {statusFilter === 'danger' && '네이버 미노출만 보기'}
+                  {statusFilter === 'excluded' && '미포함 번호만 보기'}
                   <button
                     type="button"
                     onClick={() => setStatusFilter('all')}
@@ -446,6 +494,31 @@ export default function RegisterTab() {
                 : `전체 검증`}
             </button>
 
+            {/* 미포함 번호 일괄 삭제 — 최근 업로드 엑셀에 빠진 번호만 한 번에 정리 */}
+            <button
+              type="button"
+              disabled={excludedPlaces.length === 0 || bulkBusy}
+              onClick={handleDeleteExcluded}
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-pill bg-bg-subtle text-ink-muted font-semibold text-body-sm hover:bg-ink-soft/20 disabled:opacity-40 disabled:cursor-not-allowed transition-colors whitespace-nowrap"
+              title={
+                excludedPlaces.length === 0
+                  ? '미포함 번호가 없습니다'
+                  : `최근 업로드 엑셀에 빠진 ${excludedPlaces.length}건을 일괄 삭제`
+              }
+            >
+              {bulkBusy ? (
+                <Loader2 size={14} className="animate-spin" />
+              ) : (
+                <Trash2 size={14} />
+              )}
+              미포함 삭제
+              {excludedPlaces.length > 0 && (
+                <span className="ml-0.5 px-1.5 py-0.5 rounded-full bg-ink-muted text-white text-[10px] font-bold tabular-nums">
+                  {excludedPlaces.length}
+                </span>
+              )}
+            </button>
+
             {/* 불일치 명단 다운로드 (.xlsx) */}
             <button
               type="button"
@@ -467,6 +540,31 @@ export default function RegisterTab() {
               {mismatchedPlaces.length > 0 && (
                 <span className="ml-0.5 px-1.5 py-0.5 rounded-full bg-amber-500 text-white text-[10px] font-bold tabular-nums">
                   {mismatchedPlaces.length}
+                </span>
+              )}
+            </button>
+
+            {/* 미포함 번호 일괄 삭제 — 최근 업로드 엑셀에 빠진 번호만 한번에 정리 */}
+            <button
+              type="button"
+              disabled={excludedPlaces.length === 0 || bulkBusy}
+              onClick={handleDeleteExcluded}
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-pill bg-bg-subtle text-ink-muted font-semibold text-body-sm hover:bg-brand-50 hover:text-brand-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors whitespace-nowrap"
+              title={
+                excludedPlaces.length === 0
+                  ? '미포함 번호가 없습니다 (최근 업로드 엑셀과 일치)'
+                  : `최근 업로드 엑셀에 없는 ${excludedPlaces.length}건 일괄 삭제`
+              }
+            >
+              {bulkBusy ? (
+                <Loader2 size={14} className="animate-spin" />
+              ) : (
+                <Trash2 size={14} />
+              )}
+              미포함 삭제
+              {excludedPlaces.length > 0 && (
+                <span className="ml-0.5 px-1.5 py-0.5 rounded-full bg-ink-muted text-white text-[10px] font-bold tabular-nums">
+                  {excludedPlaces.length}
                 </span>
               )}
             </button>
@@ -572,6 +670,8 @@ export default function RegisterTab() {
                       ? '네이버 미노출 항목이 없습니다.'
                       : statusFilter === 'ok'
                       ? '정상 노출 항목이 없습니다.'
+                      : statusFilter === 'excluded'
+                      ? '미포함 번호가 없습니다. 최근 업로드 엑셀에 모든 번호가 포함돼 있습니다.'
                       : '등록된 번호가 없습니다. 위에서 엑셀·CSV로 일괄 등록해 보세요.'}
                     {statusFilter !== 'all' && !search && (
                       <button
@@ -601,7 +701,21 @@ export default function RegisterTab() {
                       />
                     </td>
                     <td className="px-3 py-3 text-ink font-semibold tabular-nums">
-                      {p.phone}
+                      <div className="flex items-center gap-1.5">
+                        <span>{p.phone}</span>
+                        {p.in_latest_upload === false && (
+                          <span
+                            className="inline-flex items-center px-1.5 py-0.5 rounded-full bg-bg-subtle text-ink-muted text-[10px] font-semibold border border-ink-soft/30"
+                            title={
+                              p.excluded_at
+                                ? `최근 업로드 엑셀에서 빠진 번호 (${formatKSTDateTime(p.excluded_at, '')})`
+                                : '최근 업로드 엑셀에서 빠진 번호'
+                            }
+                          >
+                            미포함
+                          </span>
+                        )}
+                      </div>
                     </td>
                     <td className="px-3 py-3 text-ink-muted tabular-nums font-mono text-caption">
                       {p.place_id ?? <span className="text-ink-soft italic">—</span>}
@@ -670,7 +784,7 @@ export default function RegisterTab() {
 interface SummaryPillProps {
   label: string
   value: number
-  tone: 'success' | 'warning' | 'danger' | 'info'
+  tone: 'success' | 'warning' | 'danger' | 'info' | 'neutral'
   active?: boolean
   onClick?: () => void
 }
@@ -681,6 +795,7 @@ function SummaryPill({ label, value, tone, active = false, onClick }: SummaryPil
     warning: 'text-status-warning bg-amber-50',
     danger: 'text-status-danger bg-red-50',
     info: 'text-brand-700 bg-brand-50',
+    neutral: 'text-ink-muted bg-bg-subtle',
   }[tone]
 
   const ringClass = {
@@ -688,6 +803,7 @@ function SummaryPill({ label, value, tone, active = false, onClick }: SummaryPil
     warning: 'ring-status-warning',
     danger: 'ring-status-danger',
     info: 'ring-brand-500',
+    neutral: 'ring-ink-muted',
   }[tone]
 
   const clickable = !!onClick

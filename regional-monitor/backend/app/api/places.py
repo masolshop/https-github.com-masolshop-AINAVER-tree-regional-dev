@@ -61,6 +61,7 @@ async def list_places(
             1 for p in places
             if p.current_verdict in {"PENDING", "CHECKING"}
         ),
+        excluded=sum(1 for p in places if not p.in_latest_upload),
     )
 
     return PlaceListOut(
@@ -184,9 +185,35 @@ async def bulk_create_places(
       - 네이버 차단/타임아웃에 영향받지 않음
       - 사용자가 "지금 검증 시작" 누르면 verify_job_runner가 추출+검증을 청크로 처리
 
-    응답: 행별 status + 합계 + 남은 quota.
+    미포함 번호 처리 (재업로드 지원):
+      · is_first_chunk=True 인 호출에서 사용자의 기존 모든 번호를
+        in_latest_upload=False, excluded_at=now() 로 일괄 마킹.
+      · 이번 청크/이후 청크에 다시 등장하는 번호는 in_latest_upload=True,
+        excluded_at=NULL 로 복귀(중복 처리 시).
+      · 신규 INSERT 는 in_latest_upload=True 로 시작.
+      · 결과적으로 엑셀에 빠진 번호만 "미포함 번호" 로 남음.
+
+    응답: 행별 status + 합계 + 남은 quota + 미포함/복귀 카운트.
     """
     started = time.time()
+
+    # ── 미포함 번호 마킹 (재업로드 1번째 청크에서만 실행) ──
+    excluded_marked = 0
+    if req.is_first_chunk:
+        from app.core.time_utils import now_kst
+        from sqlalchemy import update
+        # 현재 in_latest_upload=True 인 행을 모두 False 로 (해당 청크/후속 청크에서
+        # duplicate 처리될 때 다시 True 로 복귀시킴)
+        mark_q = await db.execute(
+            update(RegisteredPlace)
+            .where(
+                RegisteredPlace.user_id == user.id,
+                RegisteredPlace.in_latest_upload == True,  # noqa: E712
+            )
+            .values(in_latest_upload=False, excluded_at=now_kst())
+        )
+        excluded_marked = mark_q.rowcount or 0
+        await db.commit()
 
     # 사용자의 현재 등록 수 → 쿼터 계산
     cnt_q = await db.execute(
@@ -195,11 +222,14 @@ async def bulk_create_places(
     current_count = cnt_q.scalar_one() or 0
     remaining_quota = max(user.quota_places - current_count, 0)
 
-    # 사용자의 기존 phone 셋 (중복 체크)
+    # 사용자의 기존 phone → id 매핑 (중복 체크 + 미포함 해제용)
     existing_q = await db.execute(
-        select(RegisteredPlace.phone).where(RegisteredPlace.user_id == user.id)
+        select(RegisteredPlace.id, RegisteredPlace.phone, RegisteredPlace.in_latest_upload)
+        .where(RegisteredPlace.user_id == user.id)
     )
-    existing_phones = {row[0] for row in existing_q.all()}
+    existing_rows = list(existing_q.all())
+    existing_phones = {row[1] for row in existing_rows}
+    existing_phone_to_id = {row[1]: row[0] for row in existing_rows}
 
     # phone 정규화 + 중복/쿼터/형식 검증 + INSERT 객체 누적
     PHONE_RE = re.compile(r"^070-?\d{3,4}-?\d{4}$")
@@ -224,8 +254,9 @@ async def bulk_create_places(
             ))
             continue
 
-        # 사용자 기등록 중복
+        # 사용자 기등록 중복 — 재업로드 시 미포함 해제(in_latest_upload=True 복귀)
         if norm in existing_phones:
+            seen_in_batch.add(norm)
             rows_status.append(BulkRowStatus(
                 phone=norm,
                 status="duplicate",
@@ -277,6 +308,25 @@ async def bulk_create_places(
         db.add_all(to_insert)
         await db.commit()
 
+    # ── 미포함 해제 (재업로드에 다시 등장한 번호) ──
+    # 이번 청크의 phone 들 중 기존 DB 에 있는 것들을 in_latest_upload=True 로 복귀.
+    excluded_restored = 0
+    if seen_in_batch:
+        from sqlalchemy import update as _upd
+        restore_phones = [p for p in seen_in_batch if p in existing_phones]
+        if restore_phones:
+            res = await db.execute(
+                _upd(RegisteredPlace)
+                .where(
+                    RegisteredPlace.user_id == user.id,
+                    RegisteredPlace.phone.in_(restore_phones),
+                    RegisteredPlace.in_latest_upload == False,  # noqa: E712
+                )
+                .values(in_latest_upload=True, excluded_at=None)
+            )
+            excluded_restored = res.rowcount or 0
+            await db.commit()
+
     # 합계 집계 (extract_failed 카테고리는 더 이상 발생하지 않음)
     counts = {"created": 0, "duplicate": 0, "invalid_phone": 0, "extract_failed": 0, "quota_exceeded": 0}
     for r in rows_status:
@@ -292,6 +342,8 @@ async def bulk_create_places(
         quota_exceeded=counts["quota_exceeded"],
         elapsed_ms=elapsed,
         quota_remaining=remaining_quota - counts["created"],
+        excluded_marked=excluded_marked,
+        excluded_restored=excluded_restored,
         rows=rows_status,
     )
 

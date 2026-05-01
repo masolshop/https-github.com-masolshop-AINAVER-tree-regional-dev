@@ -125,6 +125,8 @@ export function BulkUpload() {
       quota_exceeded: 0,
       elapsed_ms: 0,
       quota_remaining: 0,
+      excluded_marked: 0,
+      excluded_restored: 0,
       rows: [],
     }
 
@@ -146,12 +148,17 @@ export function BulkUpload() {
             registered_dong_override: r.dong || null,
             business_name_override: r.name || null,
           })),
+          // 첫 청크에서만 미포함 마킹 트랜잭션을 트리거 (재업로드 시 기존 번호를
+          // 일괄 in_latest_upload=False 로 표시 후, 청크들에서 다시 등장한 번호만 복귀)
+          is_first_chunk: i === 0,
+          is_last_chunk: i === chunks.length - 1,
         })
         const ms = Date.now() - t0
         console.log(
           `[BulkUpload] 청크 ${i + 1}/${chunks.length} 완료 (${ms}ms): ` +
             `created=${res.created} dup=${res.duplicate} invalid=${res.invalid_phone} ` +
-            `extract_fail=${res.extract_failed} quota_exc=${res.quota_exceeded} remaining=${res.quota_remaining}`,
+            `extract_fail=${res.extract_failed} quota_exc=${res.quota_exceeded} remaining=${res.quota_remaining} ` +
+            `excluded_marked=${res.excluded_marked ?? 0} excluded_restored=${res.excluded_restored ?? 0}`,
         )
 
         // 합산
@@ -163,6 +170,8 @@ export function BulkUpload() {
         merged.quota_exceeded += res.quota_exceeded
         merged.elapsed_ms += res.elapsed_ms
         merged.quota_remaining = res.quota_remaining // 마지막 청크 값이 진실
+        merged.excluded_marked = (merged.excluded_marked ?? 0) + (res.excluded_marked ?? 0)
+        merged.excluded_restored = (merged.excluded_restored ?? 0) + (res.excluded_restored ?? 0)
         merged.rows.push(...res.rows)
 
         // 부분 결과 라이브 업데이트
@@ -455,13 +464,34 @@ function BulkResultPanel({
       </div>
 
       {/* 합계 칩 */}
-      <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 mb-4">
+      <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 mb-3">
         <StatChip label="등록됨" count={response.created} icon={<CheckCircle2 size={12} />} tone="success" />
         <StatChip label="중복" count={response.duplicate} icon={<AlertCircle size={12} />} tone="warning" />
         <StatChip label="형식 오류" count={response.invalid_phone} icon={<XCircle size={12} />} tone="danger" />
         <StatChip label="추출 실패" count={response.extract_failed} icon={<XCircle size={12} />} tone="danger" />
         <StatChip label="한도 초과" count={response.quota_exceeded} icon={<AlertCircle size={12} />} tone="warning" />
       </div>
+
+      {/* 미포함 번호 처리 결과 (재업로드 시) */}
+      {((response.excluded_marked ?? 0) > 0 || (response.excluded_restored ?? 0) > 0) && (
+        <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-caption text-amber-800">
+          <div className="font-semibold mb-1">📋 미포함 번호 처리</div>
+          <ul className="list-disc list-inside space-y-0.5">
+            {(response.excluded_restored ?? 0) > 0 && (
+              <li>
+                다시 포함된 번호 <strong>{response.excluded_restored}건</strong> — 미포함 표시 해제
+              </li>
+            )}
+            {(response.excluded_marked ?? 0) > 0 && (
+              <li>
+                이번 엑셀에서 빠진 번호 <strong>
+                  {Math.max((response.excluded_marked ?? 0) - (response.excluded_restored ?? 0), 0)}건
+                </strong> — "미포함 번호" 로 표시 (등록 목록에서 뱃지로 확인 / 일괄 삭제 가능)
+              </li>
+            )}
+          </ul>
+        </div>
+      )}
 
       {/* 행별 결과 */}
       <div className="rounded-xl bg-bg-subtle/40 max-h-[300px] overflow-y-auto">

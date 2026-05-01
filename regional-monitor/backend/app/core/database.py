@@ -68,6 +68,7 @@ async def init_db() -> None:
     await _ensure_user_account_columns()
     await _ensure_verify_schedule_v2_columns()
     await _ensure_notify_emails_column()
+    await _ensure_excluded_upload_columns()
 
 
 async def _ensure_user_account_columns() -> None:
@@ -268,4 +269,99 @@ async def _ensure_notify_emails_column() -> None:
         else:
             await conn.execute(text(
                 "ALTER TABLE users ADD COLUMN IF NOT EXISTS notify_emails TEXT"
+            ))
+
+
+async def _ensure_excluded_upload_columns() -> None:
+    """registered_places 에 미포함 번호(Excluded number) 추적 컬럼 추가.
+
+    · in_latest_upload (BOOLEAN, default TRUE)
+        - 마지막 엑셀 업로드에 포함돼 있는지 여부.
+    · excluded_at (TIMESTAMP, nullable)
+        - 미포함 상태로 전환된 시각.
+
+    재업로드 시 빠진 번호는 자동 삭제하지 않고 in_latest_upload=FALSE,
+    excluded_at=NOW() 로 마킹 → UI 에서 "미포함 번호" 뱃지 표시 → 수동 삭제.
+    """
+    from sqlalchemy import text
+
+    is_sqlite = settings.DATABASE_URL.startswith("sqlite")
+
+    async with engine.begin() as conn:
+        if is_sqlite:
+            res = await conn.execute(text("PRAGMA table_info(registered_places)"))
+            existing_cols = {row[1] for row in res.fetchall()}
+            if "in_latest_upload" not in existing_cols:
+                await conn.execute(text(
+                    "ALTER TABLE registered_places ADD COLUMN in_latest_upload "
+                    "BOOLEAN NOT NULL DEFAULT 1"
+                ))
+            if "excluded_at" not in existing_cols:
+                await conn.execute(text(
+                    "ALTER TABLE registered_places ADD COLUMN excluded_at TIMESTAMP"
+                ))
+            # 인덱스
+            await conn.execute(text(
+                "CREATE INDEX IF NOT EXISTS ix_user_in_latest "
+                "ON registered_places(user_id, in_latest_upload)"
+            ))
+        else:
+            await conn.execute(text(
+                "ALTER TABLE registered_places ADD COLUMN IF NOT EXISTS in_latest_upload "
+                "BOOLEAN NOT NULL DEFAULT TRUE"
+            ))
+            await conn.execute(text(
+                "ALTER TABLE registered_places ADD COLUMN IF NOT EXISTS excluded_at "
+                "TIMESTAMP"
+            ))
+            await conn.execute(text(
+                "CREATE INDEX IF NOT EXISTS ix_user_in_latest "
+                "ON registered_places(user_id, in_latest_upload)"
+            ))
+
+
+async def _ensure_excluded_upload_columns() -> None:
+    """registered_places 에 미포함 번호 추적용 컬럼 추가.
+
+    · in_latest_upload BOOLEAN  — 최근 업로드 엑셀에 포함됐는지 (기본 True)
+    · excluded_at      TIMESTAMP — 미포함 처리된 시각 (NULL=현재 포함)
+
+    재업로드 시:
+      - 엑셀에 있는 번호 → in_latest_upload=True, excluded_at=NULL 로 복귀
+      - 엑셀에서 빠진 번호 → in_latest_upload=False, excluded_at=now()
+    UI 에서는 미포함 번호에 뱃지/필터/일괄 삭제를 노출.
+    """
+    from sqlalchemy import text
+
+    is_sqlite = settings.DATABASE_URL.startswith("sqlite")
+
+    async with engine.begin() as conn:
+        if is_sqlite:
+            res = await conn.execute(text("PRAGMA table_info(registered_places)"))
+            existing_cols = {row[1] for row in res.fetchall()}
+            if "in_latest_upload" not in existing_cols:
+                await conn.execute(text(
+                    "ALTER TABLE registered_places ADD COLUMN "
+                    "in_latest_upload BOOLEAN NOT NULL DEFAULT 1"
+                ))
+            if "excluded_at" not in existing_cols:
+                await conn.execute(text(
+                    "ALTER TABLE registered_places ADD COLUMN excluded_at TIMESTAMP"
+                ))
+            await conn.execute(text(
+                "CREATE INDEX IF NOT EXISTS ix_user_in_latest "
+                "ON registered_places(user_id, in_latest_upload)"
+            ))
+        else:
+            await conn.execute(text(
+                "ALTER TABLE registered_places ADD COLUMN IF NOT EXISTS "
+                "in_latest_upload BOOLEAN NOT NULL DEFAULT TRUE"
+            ))
+            await conn.execute(text(
+                "ALTER TABLE registered_places ADD COLUMN IF NOT EXISTS "
+                "excluded_at TIMESTAMP"
+            ))
+            await conn.execute(text(
+                "CREATE INDEX IF NOT EXISTS ix_user_in_latest "
+                "ON registered_places(user_id, in_latest_upload)"
             ))
