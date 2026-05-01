@@ -23,6 +23,9 @@ import KeywordDiscover from '@/pages/Keyword/Discover'
 import Competition from '@/pages/Competition'
 import KeywordDna from '@/pages/KeywordDna'
 import ResetPassword from '@/pages/ResetPassword'
+import WhatIs from '@/pages/About/WhatIs'
+import EssentialCategories from '@/pages/About/EssentialCategories'
+import KeywordLogic from '@/pages/About/KeywordLogic'
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -122,6 +125,9 @@ export default function App() {
           <Route element={<AppLayout />}>
             <Route path="/" element={<Home />} />
             <Route path="/intro" element={<Intro />} />
+            <Route path="/about/what-is" element={<WhatIs />} />
+            <Route path="/about/essential-categories" element={<EssentialCategories />} />
+            <Route path="/about/keyword-logic" element={<KeywordLogic />} />
             <Route
               path="/monitor"
               element={

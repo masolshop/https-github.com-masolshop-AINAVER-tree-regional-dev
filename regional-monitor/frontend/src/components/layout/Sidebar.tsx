@@ -30,6 +30,11 @@ import {
   X,
   UserX,
   AlertTriangle,
+  Globe,
+  ChevronDown,
+  Info,
+  Briefcase,
+  Cpu,
 } from 'lucide-react'
 import clsx from 'clsx'
 import { useAuthStore } from '@/store/auth'
@@ -57,14 +62,75 @@ interface MenuItem {
   requireAuth: boolean
 }
 
+interface MenuGroup {
+  key: string
+  label: string
+  icon: React.ComponentType<{ className?: string; size?: number }>
+  children: MenuItem[]
+  /** 그룹 자체의 활성 판별을 위한 경로 prefix */
+  pathPrefix: string
+}
+
 const MENU: MenuItem[] = [
   { to: '/',         label: '타지역닷컴',                    icon: LayoutDashboard, requireAuth: false },
-  { to: '/intro',    label: '타지역솔루션 소개',             icon: BookOpen,        requireAuth: false },
+  { to: '/intro',    label: '타지역 4종솔루션소개',          icon: BookOpen,        requireAuth: false },
   { to: '/monitor',  label: '네이버노출관리\n자동체크솔루션',  icon: Radio,           requireAuth: true,  multiline: true },
   { to: '/keyword',  label: '네이버1페이지 노출\n키워드 발굴솔루션', icon: Sparkles,      requireAuth: true,  multiline: true },
   { to: '/competition', label: '지역별 노출경쟁도\n분석솔루션',   icon: MapPin,         requireAuth: true,  multiline: true },
   { to: '/keyword-dna', label: '타지역키워드\nDNA 파싱솔루션',     icon: Dna,            requireAuth: true,  multiline: true },
 ]
+
+const ABOUT_GROUP: MenuGroup = {
+  key: 'about',
+  label: '타지역서비스',
+  icon: Globe,
+  pathPrefix: '/about',
+  children: [
+    { to: '/about/what-is',              label: '타지역서비스란?',  icon: Info,      requireAuth: false },
+    { to: '/about/essential-categories', label: '타지역 필수업종',  icon: Briefcase, requireAuth: false },
+    { to: '/about/keyword-logic',        label: '타지역 키워드로직', icon: Cpu,       requireAuth: false },
+  ],
+}
+
+function renderMenuItem(
+  item: MenuItem,
+  isAuthenticated: boolean,
+  handleMenuClick: (item: MenuItem, e: React.MouseEvent) => void,
+) {
+  const Icon = item.icon
+  const locked = item.requireAuth && !isAuthenticated
+  return (
+    <NavLink
+      key={item.to}
+      to={item.to}
+      onClick={(e) => handleMenuClick(item, e)}
+      className={({ isActive }) =>
+        clsx(
+          'sidebar-item',
+          isActive && !locked && 'active',
+          locked && 'opacity-60',
+        )
+      }
+    >
+      <Icon size={18} className="shrink-0" />
+      <span
+        className={clsx(
+          'flex-1 text-[clamp(13px,2.6vw,19px)]',
+          item.multiline
+            ? 'whitespace-pre-line leading-tight'
+            : 'whitespace-nowrap leading-none',
+        )}
+      >
+        {item.label}
+      </span>
+      {locked && (
+        <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-ink-watermark text-ink-muted font-semibold">
+          로그인
+        </span>
+      )}
+    </NavLink>
+  )
+}
 
 export function Sidebar({ onItemClick }: SidebarProps = {}) {
   const navigate = useNavigate()
@@ -72,6 +138,11 @@ export function Sidebar({ onItemClick }: SidebarProps = {}) {
   const logoutMut = useLogout()
   const [editOpen, setEditOpen] = useState(false)
   const [withdrawOpen, setWithdrawOpen] = useState(false)
+
+  // "타지역서비스" 그룹: 현재 경로가 /about/* 이면 자동 펼침
+  const isAboutActive = typeof window !== 'undefined'
+    && window.location.pathname.startsWith(ABOUT_GROUP.pathPrefix)
+  const [aboutOpen, setAboutOpen] = useState<boolean>(isAboutActive)
 
   const handleMenuClick = (item: MenuItem, e: React.MouseEvent) => {
     if (item.requireAuth && !isAuthenticated) {
@@ -193,41 +264,55 @@ export function Sidebar({ onItemClick }: SidebarProps = {}) {
 
       {/* 메뉴 */}
       <nav className="flex flex-col gap-1.5">
-        {MENU.map((item) => {
-          const Icon = item.icon
-          const locked = item.requireAuth && !isAuthenticated
-          return (
-            <NavLink
-              key={item.to}
-              to={item.to}
-              onClick={(e) => handleMenuClick(item, e)}
-              className={({ isActive }) =>
-                clsx(
-                  'sidebar-item',
-                  isActive && !locked && 'active',
-                  locked && 'opacity-60',
-                )
-              }
-            >
-              <Icon size={18} className="shrink-0" />
-              <span
-                className={clsx(
-                  'flex-1 text-[clamp(13px,2.6vw,19px)]',
-                  item.multiline
-                    ? 'whitespace-pre-line leading-tight'
-                    : 'whitespace-nowrap leading-none',
-                )}
-              >
-                {item.label}
-              </span>
-              {locked && (
-                <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-ink-watermark text-ink-muted font-semibold">
-                  로그인
-                </span>
-              )}
-            </NavLink>
-          )
-        })}
+        {/* 1) 홈 */}
+        {MENU.slice(0, 1).map((item) => renderMenuItem(item, isAuthenticated, handleMenuClick))}
+
+        {/* 2) 타지역서비스 그룹 (확장형) */}
+        <button
+          type="button"
+          onClick={() => setAboutOpen((v) => !v)}
+          className={clsx(
+            'sidebar-item w-full text-left',
+            isAboutActive && 'active',
+          )}
+        >
+          <ABOUT_GROUP.icon size={18} className="shrink-0" />
+          <span className="flex-1 text-[clamp(13px,2.6vw,19px)] whitespace-nowrap leading-none">
+            {ABOUT_GROUP.label}
+          </span>
+          <ChevronDown
+            size={16}
+            className={clsx(
+              'shrink-0 transition-transform',
+              aboutOpen ? 'rotate-180' : '',
+            )}
+          />
+        </button>
+        {aboutOpen && (
+          <div className="ml-4 pl-3 border-l border-bg-subtle flex flex-col gap-1">
+            {ABOUT_GROUP.children.map((child) => {
+              const ChildIcon = child.icon
+              return (
+                <NavLink
+                  key={child.to}
+                  to={child.to}
+                  onClick={(e) => handleMenuClick(child, e)}
+                  className={({ isActive }) =>
+                    clsx('sidebar-item', isActive && 'active')
+                  }
+                >
+                  <ChildIcon size={15} className="shrink-0" />
+                  <span className="flex-1 text-[clamp(12px,2.4vw,15px)] whitespace-nowrap leading-none">
+                    {child.label}
+                  </span>
+                </NavLink>
+              )
+            })}
+          </div>
+        )}
+
+        {/* 3) 나머지 메뉴 (4종 솔루션 소개 + 4개 솔루션) */}
+        {MENU.slice(1).map((item) => renderMenuItem(item, isAuthenticated, handleMenuClick))}
 
         {/* 슈퍼어드민 전용 메뉴 */}
         {isAuthenticated && user?.is_superadmin && (

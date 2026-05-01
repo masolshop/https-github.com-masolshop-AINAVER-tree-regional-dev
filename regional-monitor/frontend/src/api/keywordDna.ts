@@ -159,6 +159,17 @@ export interface RecommendResult {
   error?: string
 }
 
+export interface CategoryItem {
+  category: string
+  count: number
+}
+
+export interface CategoriesResult {
+  count: number
+  total_weight: number
+  categories: CategoryItem[]
+}
+
 export const KeywordDnaApi = {
   health: () =>
     api.get<{ status: string; service: string; dictionary: any }>(
@@ -166,6 +177,8 @@ export const KeywordDnaApi = {
     ),
   dictionaryStats: () =>
     api.get<DictionaryStats>('/api/v1/keyword-dna/dictionary/stats'),
+  categories: () =>
+    api.get<CategoriesResult>('/api/v1/keyword-dna/categories'),
   recommended: (top = 50) =>
     api.get<{ count: number; items: RecommendedItem[] }>(
       `/api/v1/keyword-dna/recommended?top=${top}`,

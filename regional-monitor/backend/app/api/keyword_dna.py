@@ -22,6 +22,7 @@ from app.services.keyword_dna import (
     build_graph,
     recommend_keywords,
 )
+from app.services.keyword_dna.dictionary import load_categories_list
 
 router = APIRouter(prefix="/keyword-dna", tags=["keyword-dna"])
 
@@ -85,6 +86,22 @@ def recommended(
     return {
         "count": top,
         "items": list_known_keywords(top=top),
+    }
+
+
+@router.get("/categories")
+def categories():
+    """타지역업종리스트 (categories.xlsx) 카테고리·회선수 전체.
+
+    공개 엔드포인트(인증 불필요) — '타지역 필수업종' 페이지에서 사용.
+    """
+    items = [{"category": c, "count": int(w)} for c, w in load_categories_list()]
+    items.sort(key=lambda r: r["count"], reverse=True)
+    total = sum(r["count"] for r in items)
+    return {
+        "count": len(items),
+        "total_weight": total,
+        "categories": items,
     }
 
 
