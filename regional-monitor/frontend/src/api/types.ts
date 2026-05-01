@@ -443,6 +443,7 @@ export type PlanKey = 'free' | 'basic' | 'pro' | 'enterprise'
 export interface SettingsOut {
   email_alerts: boolean
   email_address: string
+  notify_emails: string[]              // 추가 수신자 (영업관리자/고객 담당자)
   kakao_number: string | null
   slack_webhook: string | null
   sheet_url: string | null
@@ -455,6 +456,7 @@ export interface SettingsOut {
 
 export interface SettingsPatch {
   email_alerts?: boolean
+  notify_emails?: string[]
   kakao_number?: string | null
   slack_webhook?: string | null
   sheet_url?: string | null

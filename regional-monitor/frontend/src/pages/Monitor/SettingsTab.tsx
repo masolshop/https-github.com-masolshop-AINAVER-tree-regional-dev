@@ -9,11 +9,16 @@
  *    각 회원의 등록 070 은 슈퍼어드민이 일괄 관리하는 시스템 자동 스케줄로
  *    분산 검증됩니다. 회원별 시각 선택 UI 는 더 이상 노출하지 않습니다.
  *
+ *  알림 이메일 추가 수신자(notify_emails):
+ *    영업관리자/고객 담당자 등도 알림을 함께 받을 수 있도록 최대 5명까지 추가 가능.
+ *    이메일 알림은 가입 이메일(To) + notify_emails(Cc) 로 일괄 발송.
+ *
  *  플랜 게이팅: settings.available_channels 로 채널 활성화 가능 여부 판단
  *    free        → email_alerts
- *    basic+      → + sheet_sync
  *    pro+        → + kakao_number
  *    enterprise  → + slack_webhook
+ *
+ *  2026-05-01: 검증 임계값 카드 / 구글시트 실시간 연동 카드 제거 — 미사용 기능 정리.
  */
 import { useEffect, useState } from 'react'
 import { Card } from '@/components/ui/Card'
@@ -22,47 +27,37 @@ import {
   Mail,
   MessageSquare,
   Webhook,
-  FileSpreadsheet,
   Save,
-  Sliders,
   CheckCircle2,
   Lock,
   AlertTriangle,
   Loader2,
   Calendar,
+  Plus,
+  X,
 } from 'lucide-react'
 import { useSettings, useUpdateSettings } from '@/hooks/useSettings'
 import { ApiError } from '@/api/client'
-import type { SettingsPatch, ChannelKey, PlanKey } from '@/api/types'
+import type { SettingsPatch, ChannelKey } from '@/api/types'
+
+const MAX_NOTIFY_EMAILS = 5
+const EMAIL_RE = /^[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}$/
 
 /* ─────────────── 로컬 폼 상태 (서버 응답을 미러링) ─────────────── */
 
 interface FormState {
   email_alerts: boolean
+  notify_emails: string[]            // 추가 수신자 (영업관리자/고객 담당자 등)
   kakao_number: string
   slack_webhook: string
-  sheet_url: string
-  sheet_sync_enabled: boolean
 }
 
 const EMPTY_FORM: FormState = {
   email_alerts: true,
+  notify_emails: [],
   kakao_number: '',
   slack_webhook: '',
-  sheet_url: '',
-  sheet_sync_enabled: false,
 }
-
-const PLAN_LABEL: Record<PlanKey, string> = {
-  free: 'Free',
-  basic: 'Basic',
-  pro: 'Pro',
-  enterprise: 'Enterprise',
-}
-
-/* 검증 임계값은 서버 글로벌 (.env DONG_THRESHOLD/NAME_THRESHOLD) — 사용자별 저장은 추후 */
-const SERVER_DONG_THRESHOLD = 70
-const SERVER_NAME_THRESHOLD = 40
 
 export default function SettingsTab() {
   const settingsQuery = useSettings()
@@ -78,10 +73,9 @@ export default function SettingsTab() {
     if (!settingsQuery.data || dirty) return
     setForm({
       email_alerts: settingsQuery.data.email_alerts,
+      notify_emails: settingsQuery.data.notify_emails ?? [],
       kakao_number: settingsQuery.data.kakao_number ?? '',
       slack_webhook: settingsQuery.data.slack_webhook ?? '',
-      sheet_url: settingsQuery.data.sheet_url ?? '',
-      sheet_sync_enabled: settingsQuery.data.sheet_sync_enabled,
     })
   }, [settingsQuery.data, dirty])
 
@@ -94,13 +88,25 @@ export default function SettingsTab() {
 
   const handleSave = async () => {
     setError(null)
+    // 추가 수신자 — 빈 문자열 제외 + 형식 검증
+    const cleanedEmails = form.notify_emails
+      .map((e) => e.trim())
+      .filter((e) => e.length > 0)
+    const invalid = cleanedEmails.find((e) => !EMAIL_RE.test(e))
+    if (invalid) {
+      setError(`유효하지 않은 이메일 형식입니다: ${invalid}`)
+      return
+    }
+    if (cleanedEmails.length > MAX_NOTIFY_EMAILS) {
+      setError(`추가 수신자는 최대 ${MAX_NOTIFY_EMAILS}명까지 등록할 수 있습니다`)
+      return
+    }
     // 변경 필드만 패치로 전송 (서버는 빈문자열 → null 정규화)
     const patch: SettingsPatch = {
       email_alerts: form.email_alerts,
+      notify_emails: cleanedEmails,
       kakao_number: form.kakao_number.trim() || null,
       slack_webhook: form.slack_webhook.trim() || null,
-      sheet_url: form.sheet_url.trim() || null,
-      sheet_sync_enabled: form.sheet_sync_enabled,
     }
     try {
       await updateMut.mutateAsync(patch)
@@ -115,12 +121,39 @@ export default function SettingsTab() {
     if (!settingsQuery.data) return
     setForm({
       email_alerts: settingsQuery.data.email_alerts,
+      notify_emails: settingsQuery.data.notify_emails ?? [],
       kakao_number: settingsQuery.data.kakao_number ?? '',
       slack_webhook: settingsQuery.data.slack_webhook ?? '',
-      sheet_url: settingsQuery.data.sheet_url ?? '',
-      sheet_sync_enabled: settingsQuery.data.sheet_sync_enabled,
     })
     setDirty(false)
+    setError(null)
+  }
+
+  /* ── 추가 수신자(notify_emails) 핸들러 ── */
+  const updateNotifyEmail = (idx: number, value: string) => {
+    setForm((prev) => {
+      const next = [...prev.notify_emails]
+      next[idx] = value
+      return { ...prev, notify_emails: next }
+    })
+    setDirty(true)
+    setSavedAt(null)
+    setError(null)
+  }
+  const addNotifyEmail = () => {
+    if (form.notify_emails.length >= MAX_NOTIFY_EMAILS) return
+    setForm((prev) => ({ ...prev, notify_emails: [...prev.notify_emails, ''] }))
+    setDirty(true)
+    setSavedAt(null)
+    setError(null)
+  }
+  const removeNotifyEmail = (idx: number) => {
+    setForm((prev) => ({
+      ...prev,
+      notify_emails: prev.notify_emails.filter((_, i) => i !== idx),
+    }))
+    setDirty(true)
+    setSavedAt(null)
     setError(null)
   }
 
@@ -155,14 +188,14 @@ export default function SettingsTab() {
   }
 
   const data = settingsQuery.data
-  const userPlan = data.plan
   const channels = new Set<ChannelKey>(data.available_channels)
   const can = {
     email: channels.has('email_alerts'),
-    sheet: channels.has('sheet_sync'),
     kakao: channels.has('kakao_number'),
     slack: channels.has('slack_webhook'),
   }
+
+  const canAddMoreEmail = form.notify_emails.length < MAX_NOTIFY_EMAILS
 
   return (
     <div className="space-y-6 pb-20">
@@ -174,11 +207,11 @@ export default function SettingsTab() {
         <SectionHeader
           icon={<Mail size={18} />}
           title="알림 채널"
-          desc="검증 결과 변경(노출 사라짐, 동 변경 등) 발생 시 알림을 받을 채널을 설정합니다."
+          desc="검증 결과 변경(네이버 미노출, 변경 노출 등) 발생 시 알림을 받을 채널을 설정합니다."
         />
 
         <div className="space-y-3">
-          {/* 이메일 — 모든 플랜 */}
+          {/* 이메일 — 모든 플랜 (가입 이메일 + 추가 수신자) */}
           <ChannelRow
             icon={<Mail size={16} />}
             title="이메일"
@@ -187,11 +220,82 @@ export default function SettingsTab() {
             enabled={form.email_alerts}
             onToggle={(v) => update('email_alerts', v)}
           >
-            <div className="text-body-sm text-ink-muted px-3 py-2 rounded-xl bg-bg-subtle/40">
+            {/* 가입 이메일 (To) */}
+            <div className="text-body-sm text-ink-muted px-3 py-2 rounded-xl bg-bg-subtle/40 mb-3">
               <span className="font-medium text-ink">{data.email_address}</span>
               <span className="text-caption ml-2">
-                · 가입 이메일 (변경은 마이페이지에서 예정)
+                · 가입 이메일 (기본 수신자)
               </span>
+            </div>
+
+            {/* 추가 수신자 (Cc) — 영업관리자/고객 담당자 */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="text-body-sm text-ink font-semibold">
+                    추가 수신자
+                    <span className="text-caption font-medium text-ink-muted ml-2">
+                      (영업관리자 · 고객 담당자 등 · 최대 {MAX_NOTIFY_EMAILS}명)
+                    </span>
+                  </div>
+                  <div className="text-caption text-ink-muted">
+                    알림 발송 시 가입 이메일과 함께 참조(Cc)로 전송됩니다.
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={addNotifyEmail}
+                  disabled={!canAddMoreEmail}
+                  className="inline-flex items-center gap-1 px-3 py-1.5 rounded-pill bg-brand-50 text-brand-700 font-semibold text-caption hover:bg-brand-100 disabled:opacity-40 disabled:cursor-not-allowed transition-colors whitespace-nowrap"
+                >
+                  <Plus size={12} /> 이메일 추가
+                </button>
+              </div>
+
+              {form.notify_emails.length === 0 && (
+                <div className="text-caption text-ink-muted px-3 py-3 rounded-xl bg-bg-subtle/30 border border-dashed border-bg-subtle text-center">
+                  추가 수신자가 없습니다. <b className="text-ink">이메일 추가</b> 버튼으로 영업관리자 · 고객 담당자 등을 등록할 수 있습니다.
+                </div>
+              )}
+
+              {form.notify_emails.map((email, idx) => {
+                const trimmed = email.trim()
+                const isInvalid = trimmed.length > 0 && !EMAIL_RE.test(trimmed)
+                return (
+                  <div key={idx} className="flex items-center gap-2">
+                    <input
+                      type="email"
+                      value={email}
+                      onChange={(e) => updateNotifyEmail(idx, e.target.value)}
+                      placeholder={
+                        idx === 0 ? 'manager@company.com (영업관리자)'
+                        : idx === 1 ? 'sales@company.com (고객 담당자)'
+                        : 'name@example.com'
+                      }
+                      className={`flex-1 px-3 py-2 rounded-xl bg-white border text-body-sm text-ink placeholder:text-ink-soft focus:outline-none transition-colors ${
+                        isInvalid
+                          ? 'border-red-300 focus:border-red-400 bg-red-50/30'
+                          : 'border-bg-subtle focus:border-brand-300'
+                      }`}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => removeNotifyEmail(idx)}
+                      className="w-9 h-9 rounded-xl bg-bg-subtle/60 text-ink-muted hover:bg-red-50 hover:text-status-danger flex items-center justify-center shrink-0 transition-colors"
+                      title="삭제"
+                      aria-label="추가 수신자 삭제"
+                    >
+                      <X size={14} />
+                    </button>
+                  </div>
+                )
+              })}
+
+              {!canAddMoreEmail && (
+                <div className="text-caption text-status-warning flex items-center gap-1.5 mt-1">
+                  <AlertTriangle size={12} /> 최대 {MAX_NOTIFY_EMAILS}명까지 등록 가능합니다.
+                </div>
+              )}
             </div>
           </ChannelRow>
 
@@ -238,64 +342,7 @@ export default function SettingsTab() {
         </div>
       </Card>
 
-      {/* ───── 검증 임계값 (서버 글로벌, 표시만) ───── */}
-      <Card variant="white">
-        <SectionHeader
-          icon={<Sliders size={18} />}
-          title="검증 임계값 (서버 기본값)"
-          desc="동·상호 일치 판정의 민감도. 현재 모든 사용자에게 동일하게 적용됩니다."
-          badge="고정값"
-        />
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-          <ReadOnlyValue
-            label="동(洞) 일치 임계값"
-            value={SERVER_DONG_THRESHOLD}
-            hint="등록 동의 키워드 70% 이상 포함되면 일치로 판정"
-          />
-          <ReadOnlyValue
-            label="상호 유사도 임계값"
-            value={SERVER_NAME_THRESHOLD}
-            hint="등록 상호 vs 실제 상호 유사도 0.4 이상이면 일치"
-          />
-        </div>
-      </Card>
-
-      {/* ───── 구글시트 실시간 연동 — Basic+ ───── */}
-      <Card variant="subtle">
-        <SectionHeader
-          icon={<FileSpreadsheet size={18} />}
-          title="구글시트 실시간 연동"
-          desc="등록·검증 결과·이력이 사용자 구글시트로 실시간 동기화됩니다."
-          badge={!can.sheet ? 'Basic 플랜+ 필요' : undefined}
-        />
-        <div className="flex items-center justify-between p-4 rounded-2xl bg-white mb-3">
-          <div className="flex-1 min-w-0">
-            <div className="text-body-sm text-ink font-semibold">실시간 동기화</div>
-            <div className="text-caption text-ink-muted">
-              새 검증 결과가 즉시 시트에 추가됩니다.
-            </div>
-          </div>
-          <Toggle
-            enabled={form.sheet_sync_enabled}
-            onChange={(v) => update('sheet_sync_enabled', v)}
-            disabled={!can.sheet}
-          />
-        </div>
-
-        <input
-          type="url"
-          value={form.sheet_url}
-          onChange={(e) => update('sheet_url', e.target.value)}
-          placeholder="https://docs.google.com/spreadsheets/d/..."
-          disabled={!can.sheet}
-          className="w-full px-3 py-2.5 rounded-2xl bg-white border border-transparent text-body-sm text-ink placeholder:text-ink-soft focus:outline-none focus:border-brand-300 transition-colors disabled:bg-bg-subtle/50 disabled:cursor-not-allowed"
-        />
-        {!can.sheet && (
-          <div className="mt-3 text-caption text-ink-muted flex items-center gap-1.5">
-            <Lock size={12} /> 현재 {PLAN_LABEL[userPlan]} 플랜에서는 사용할 수 없습니다. Basic 플랜 이상에서 활성화됩니다.
-          </div>
-        )}
-      </Card>
+      {/* (제거됨) 검증 임계값 / 구글시트 실시간 연동 카드 — 2026-05-01 미사용 기능 정리 */}
 
       {/* ───── 저장 바 (sticky) ───── */}
       <div className="fixed bottom-6 right-6 z-30 flex items-center gap-3">
@@ -444,28 +491,6 @@ function Toggle({ enabled, onChange, disabled }: ToggleProps) {
         }`}
       />
     </button>
-  )
-}
-
-function ReadOnlyValue({
-  label,
-  value,
-  hint,
-}: {
-  label: string
-  value: number
-  hint: string
-}) {
-  return (
-    <div className="rounded-card p-4 bg-bg-subtle/40">
-      <div className="flex items-center justify-between mb-2">
-        <span className="text-body-sm text-ink font-semibold">{label}</span>
-        <span className="text-h3 text-brand-600 font-extrabold tabular-nums">
-          {value}
-        </span>
-      </div>
-      <div className="text-caption text-ink-muted">{hint}</div>
-    </div>
   )
 }
 

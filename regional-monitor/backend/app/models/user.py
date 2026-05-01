@@ -7,7 +7,7 @@
 """
 from datetime import datetime
 from app.core.time_utils import now_kst, KSTDateTime
-from sqlalchemy import String, Integer, DateTime, Boolean
+from sqlalchemy import String, Integer, DateTime, Boolean, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.database import Base
@@ -95,6 +95,11 @@ class User(Base):
     email_alerts: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     kakao_number: Mapped[str | None] = mapped_column(String(20), nullable=True)
     slack_webhook: Mapped[str | None] = mapped_column(String(500), nullable=True)
+
+    # 추가 이메일 수신자 (영업관리자, 고객담당자 등)
+    # 콤마로 구분된 이메일 목록 — 알림 발송 시 user.email + notify_emails 로 송부.
+    # 예: "manager@company.com, sales@company.com"
+    notify_emails: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     # ── 타임스탬프 ──
     created_at: Mapped[datetime] = mapped_column(

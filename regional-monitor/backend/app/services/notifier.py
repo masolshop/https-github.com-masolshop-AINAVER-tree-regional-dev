@@ -128,21 +128,52 @@ async def notify_user_events(
 # ────────────────────────────────────────────────────────────────────
 
 
+def _collect_recipients(user: User) -> tuple[str, list[str]]:
+    """이메일 수신자 목록을 (To, [Cc...]) 로 반환.
+
+    - To: 가입 이메일 (user.email)
+    - Cc: notify_emails (콤마 구분 문자열) — 영업관리자/고객 담당자 등 추가 수신자
+    중복은 제거되고, To 와 같은 주소가 Cc 에 있으면 제외된다.
+    """
+    import re as _re
+    to_addr = (user.email or "").strip()
+    raw = getattr(user, "notify_emails", None) or ""
+    parts = _re.split(r"[,;\n]+", raw) if raw else []
+    cc: list[str] = []
+    seen: set[str] = {to_addr.lower()} if to_addr else set()
+    for p in parts:
+        e = p.strip()
+        if not e:
+            continue
+        low = e.lower()
+        if low in seen:
+            continue
+        seen.add(low)
+        cc.append(e)
+    return to_addr, cc
+
+
 def _send_email(
     user: User,
     events: list[ChangeEvent],
     place_lookup: dict[int, Any],
     run_summary: dict | None = None,
 ) -> bool:
-    """동기 SMTP 발송. asyncio loop 외부에서 run_in_executor 로 호출됨."""
+    """동기 SMTP 발송. asyncio loop 외부에서 run_in_executor 로 호출됨.
+
+    수신자: 가입 이메일(To) + notify_emails(Cc) — 영업관리자/고객 담당자 등.
+    """
+    to_addr, cc_addrs = _collect_recipients(user)
+
     # 환경 변수 미설정 → 콘솔 폴백 (개발 편의)
     smtp_host = getattr(settings, "SMTP_HOST", "") or ""
     if not smtp_host:
         # 콘솔 폴백
         body = _build_email_body(user, events, place_lookup, plain=True, run_summary=run_summary)
         logger.info(
-            "[EMAIL fallback] to=%s subject=%s\n%s",
-            user.email, _build_subject(events), body,
+            "[EMAIL fallback] to=%s cc=%s subject=%s\n%s",
+            to_addr, ",".join(cc_addrs) if cc_addrs else "-",
+            _build_subject(events), body,
         )
         return True
 
@@ -155,16 +186,21 @@ def _send_email(
     msg = MIMEMultipart("alternative")
     msg["Subject"] = _build_subject(events, run_summary)
     msg["From"] = f"{sender_name} <{sender}>"
-    msg["To"] = user.email
+    msg["To"] = to_addr
+    if cc_addrs:
+        msg["Cc"] = ", ".join(cc_addrs)
     msg.attach(MIMEText(_build_email_body(user, events, place_lookup, plain=True, run_summary=run_summary), "plain", "utf-8"))
     msg.attach(MIMEText(_build_email_body(user, events, place_lookup, plain=False, run_summary=run_summary), "html", "utf-8"))
+
+    # 실제 SMTP envelope 수신자 (RCPT TO) — To + Cc 모두 포함해야 Cc 가 실제 발송된다.
+    rcpt = [a for a in ([to_addr] + cc_addrs) if a]
 
     ctx = ssl.create_default_context()
     if smtp_port == 465:
         with smtplib.SMTP_SSL(smtp_host, smtp_port, context=ctx, timeout=15) as srv:
             if smtp_user:
                 srv.login(smtp_user, smtp_pass)
-            srv.send_message(msg)
+            srv.send_message(msg, from_addr=sender, to_addrs=rcpt)
     else:
         with smtplib.SMTP(smtp_host, smtp_port, timeout=15) as srv:
             srv.ehlo()
@@ -175,7 +211,7 @@ def _send_email(
                 pass                                                        # 이미 평문/내부망
             if smtp_user:
                 srv.login(smtp_user, smtp_pass)
-            srv.send_message(msg)
+            srv.send_message(msg, from_addr=sender, to_addrs=rcpt)
     return True
 
 

@@ -67,6 +67,7 @@ async def init_db() -> None:
     # ── 컬럼 추가 마이그레이션 (idempotent) ──
     await _ensure_user_account_columns()
     await _ensure_verify_schedule_v2_columns()
+    await _ensure_notify_emails_column()
 
 
 async def _ensure_user_account_columns() -> None:
@@ -243,4 +244,28 @@ async def _ensure_verify_schedule_v2_columns() -> None:
             await conn.execute(text(
                 "UPDATE users SET verify_frequency='paused' "
                 "WHERE is_superadmin=true AND verify_frequency<>'paused'"
+            ))
+
+
+async def _ensure_notify_emails_column() -> None:
+    """users 에 notify_emails (TEXT) 컬럼 추가 — 알림 추가 수신자 콤마 목록.
+
+    예: "manager@example.com, sales@example.com"
+    이메일 알림은 user.email (가입 이메일) + notify_emails 모두에게 발송된다.
+    """
+    from sqlalchemy import text
+
+    is_sqlite = settings.DATABASE_URL.startswith("sqlite")
+
+    async with engine.begin() as conn:
+        if is_sqlite:
+            res = await conn.execute(text("PRAGMA table_info(users)"))
+            existing_cols = {row[1] for row in res.fetchall()}
+            if "notify_emails" not in existing_cols:
+                await conn.execute(text(
+                    "ALTER TABLE users ADD COLUMN notify_emails TEXT"
+                ))
+        else:
+            await conn.execute(text(
+                "ALTER TABLE users ADD COLUMN IF NOT EXISTS notify_emails TEXT"
             ))
