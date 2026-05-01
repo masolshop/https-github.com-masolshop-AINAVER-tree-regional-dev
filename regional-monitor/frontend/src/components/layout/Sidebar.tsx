@@ -74,10 +74,10 @@ interface MenuGroup {
 const MENU: MenuItem[] = [
   { to: '/',         label: '타지역닷컴',                    icon: LayoutDashboard, requireAuth: false },
   { to: '/intro',    label: '타지역 4종솔루션소개',          icon: BookOpen,        requireAuth: false },
-  { to: '/monitor',  label: '네이버노출관리\n자동체크솔루션',  icon: Radio,           requireAuth: true,  multiline: true },
+  { to: '/keyword-dna', label: '타지역키워드\nDNA 파싱솔루션',     icon: Dna,            requireAuth: true,  multiline: true },
   { to: '/keyword',  label: '네이버1페이지 노출\n키워드 발굴솔루션', icon: Sparkles,      requireAuth: true,  multiline: true },
   { to: '/competition', label: '지역별 노출경쟁도\n분석솔루션',   icon: MapPin,         requireAuth: true,  multiline: true },
-  { to: '/keyword-dna', label: '타지역키워드\nDNA 파싱솔루션',     icon: Dna,            requireAuth: true,  multiline: true },
+  { to: '/monitor',  label: '네이버노출관리\n자동체크솔루션',  icon: Radio,           requireAuth: true,  multiline: true },
 ]
 
 const ABOUT_GROUP: MenuGroup = {
