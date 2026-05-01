@@ -104,15 +104,15 @@ export default function KeywordDiscover() {
         </p>
       </header>
 
-      {/* 탭 */}
-      <div className="flex flex-wrap items-center gap-1 border-b border-line">
-        <TabBtn active={tab === 'keyword'} onClick={() => setTab('keyword')} icon={<SearchIcon size={14} />}>
+      {/* 탭 — 박스 형태 + 활성 강조 */}
+      <div className="flex flex-wrap items-center gap-2">
+        <TabBtn active={tab === 'keyword'} onClick={() => setTab('keyword')} icon={<SearchIcon size={15} />}>
           키워드 분석
         </TabBtn>
-        <TabBtn active={tab === 'region'} onClick={() => setTab('region')} icon={<MapPin size={14} />}>
-          지역 + 키워드
+        <TabBtn active={tab === 'region'} onClick={() => setTab('region')} icon={<MapPin size={15} />}>
+          검색
         </TabBtn>
-        <TabBtn active={tab === 'bulk'} onClick={() => setTab('bulk')} icon={<Globe size={14} />}>
+        <TabBtn active={tab === 'bulk'} onClick={() => setTab('bulk')} icon={<Globe size={15} />}>
           지역 일괄
         </TabBtn>
       </div>
@@ -145,10 +145,10 @@ function TabBtn({
     <button
       onClick={onClick}
       className={clsx(
-        'inline-flex items-center gap-1.5 px-4 py-2 text-sm font-semibold border-b-2 -mb-px transition-colors',
+        'inline-flex items-center gap-1.5 px-4 py-2.5 text-sm font-semibold rounded-lg border-2 transition-all shadow-sm',
         active
-          ? 'border-brand-600 text-brand-700'
-          : 'border-transparent text-ink-muted hover:text-ink',
+          ? 'border-brand-600 bg-brand-600 text-white shadow-md ring-2 ring-brand-200'
+          : 'border-slate-300 bg-white text-ink-muted hover:border-brand-400 hover:text-brand-700 hover:bg-brand-50',
       )}
     >
       {icon}
@@ -415,6 +415,14 @@ function KeywordTab({
 // ══════════════════════════════════════════════════════
 // Tab 2: 지역 + 키워드 (단건)
 // ══════════════════════════════════════════════════════
+interface RegionMatch {
+  sido: string
+  sigungu: string
+  dong: string
+  // matched on which level: 'sigungu' or 'dong'
+  level: 'sigungu' | 'dong'
+}
+
 function RegionTab({
   isAuthenticated,
   openLoginModal,
@@ -432,6 +440,10 @@ function RegionTab({
   const [text, setText] = useState<string>('선불폰\n흥신소')
   const [display, setDisplay] = useState<number>(10)
   const [useCache, setUseCache] = useState<boolean>(true)
+
+  // 자유 검색
+  const [searchInput, setSearchInput] = useState<string>('')
+  const [showSuggest, setShowSuggest] = useState<boolean>(false)
 
   const [loading, setLoading] = useState<boolean>(false)
   const [resp, setResp] = useState<DiscoverByRegionResponse | null>(null)
@@ -495,6 +507,46 @@ function RegionTab({
     if (!dongs.includes(dong)) setDong(dongs[0])
   }, [dongs])  // eslint-disable-line react-hooks/exhaustive-deps
 
+  // 자유 검색: "서초동" / "서초구" / "강릉시" 등 입력 시 매칭 후보 (최대 30개)
+  const matches = useMemo<RegionMatch[]>(() => {
+    if (!regions) return []
+    const q = searchInput.trim()
+    if (!q) return []
+    const out: RegionMatch[] = []
+    for (const sd of Object.keys(regions.tree)) {
+      const sgMap = regions.tree[sd]
+      for (const sg of Object.keys(sgMap)) {
+        // 시군구 매칭
+        if (sg && sg.includes(q)) {
+          out.push({ sido: sd, sigungu: sg, dong: '', level: 'sigungu' })
+          if (out.length >= 30) return out
+        }
+        // 동/리 매칭
+        for (const d of sgMap[sg]) {
+          if (d.includes(q)) {
+            out.push({ sido: sd, sigungu: sg, dong: d, level: 'dong' })
+            if (out.length >= 30) return out
+          }
+        }
+      }
+    }
+    return out
+  }, [regions, searchInput])
+
+  function applyMatch(m: RegionMatch) {
+    setSido(m.sido)
+    setSigungu(m.sigungu)
+    if (m.level === 'dong') {
+      setDong(m.dong)
+      setMode('both')
+    } else {
+      // 시군구 매칭이면 동은 첫 항목으로 (cascade가 자동 세팅)
+      setMode('sigungu')
+    }
+    setSearchInput('')
+    setShowSuggest(false)
+  }
+
   async function runSearch() {
     setErrMsg('')
     if (!isAuthenticated) {
@@ -542,6 +594,65 @@ function RegionTab({
   return (
     <div className="space-y-5">
       <Card className="p-5">
+        {/* 자유 검색 — "서초동" 입력 시 시·구·동 자동 매칭 */}
+        <div className="mb-4 relative">
+          <label className="text-xs text-ink-muted">
+            <div className="mb-1 font-semibold flex items-center gap-1.5">
+              <SearchIcon size={14} className="text-brand-600" />
+              지역 검색 <span className="text-ink-muted font-normal">(예: 서초동, 강남구, 강릉시 — 입력 즉시 매칭)</span>
+            </div>
+            <input
+              type="text"
+              value={searchInput}
+              onChange={(e) => {
+                setSearchInput(e.target.value)
+                setShowSuggest(true)
+              }}
+              onFocus={() => setShowSuggest(true)}
+              onBlur={() => setTimeout(() => setShowSuggest(false), 200)}
+              placeholder="시군구 또는 동/리명을 입력하세요"
+              className="w-full border-2 border-slate-300 hover:border-brand-400 focus:border-brand-500 focus:ring-2 focus:ring-brand-100 rounded-lg px-3 py-2.5 text-sm focus:outline-none transition-colors"
+              disabled={!regions}
+            />
+          </label>
+          {showSuggest && matches.length > 0 && (
+            <div className="absolute z-20 left-0 right-0 mt-1 max-h-72 overflow-auto rounded-lg border-2 border-brand-200 bg-white shadow-lg">
+              {matches.map((m, i) => (
+                <button
+                  key={`${m.sido}-${m.sigungu}-${m.dong}-${i}`}
+                  type="button"
+                  onMouseDown={(e) => {
+                    e.preventDefault()
+                    applyMatch(m)
+                  }}
+                  className="w-full text-left px-3 py-2 hover:bg-brand-50 flex items-center gap-2 border-b border-line last:border-0 text-sm"
+                >
+                  <span
+                    className={clsx(
+                      'px-1.5 py-0.5 rounded text-[10px] font-bold',
+                      m.level === 'dong'
+                        ? 'bg-emerald-100 text-emerald-800'
+                        : 'bg-blue-100 text-blue-800',
+                    )}
+                  >
+                    {m.level === 'dong' ? '동/리' : '시군구'}
+                  </span>
+                  <span className="text-ink-muted">{m.sido}</span>
+                  <span className="font-semibold text-ink">
+                    {m.sigungu || '(세종)'}
+                  </span>
+                  {m.dong && <span className="text-ink">{m.dong}</span>}
+                </button>
+              ))}
+            </div>
+          )}
+          {showSuggest && searchInput && matches.length === 0 && regions && (
+            <div className="absolute z-20 left-0 right-0 mt-1 rounded-lg border-2 border-line bg-white shadow-lg p-3 text-sm text-ink-muted">
+              일치하는 지역이 없습니다.
+            </div>
+          )}
+        </div>
+
         {/* 지역 선택 */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
           <label className="text-xs text-ink-muted">
@@ -590,6 +701,26 @@ function RegionTab({
             </select>
           </label>
         </div>
+
+        {/* 현재 선택된 지역 — 시·군·구·동 출력 */}
+        {sido && (
+          <div className="mt-3 flex flex-wrap items-center gap-2 text-sm">
+            <span className="text-ink-muted text-xs">선택된 지역:</span>
+            <span className="px-2 py-0.5 rounded-full bg-blue-100 text-blue-800 font-semibold text-xs">
+              {sido}
+            </span>
+            {sigungu && (
+              <span className="px-2 py-0.5 rounded-full bg-blue-100 text-blue-800 font-semibold text-xs">
+                {sigungu}
+              </span>
+            )}
+            {dong && (
+              <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 font-semibold text-xs">
+                {dong}
+              </span>
+            )}
+          </div>
+        )}
 
         {/* 검색 모드 */}
         <div className="mt-4 flex flex-wrap items-center gap-4 text-sm">
