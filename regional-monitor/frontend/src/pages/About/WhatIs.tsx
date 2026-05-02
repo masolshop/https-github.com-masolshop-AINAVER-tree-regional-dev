@@ -49,12 +49,13 @@ export default function WhatIs() {
           </span>
           <h2 className="text-hero-sm text-ink mb-4 leading-tight">
             타지역서비스는<br />
-            고객을 여러 지역에서 만나게 하는<br />
-            <span className="text-brand-600">네이버플레이스 확장 전략</span>입니다.
+            네이버 플레이스에 사장님의 <span className="text-brand-600">영업 깃발</span>을<br />
+            여러 지역에 꽂아 <span className="text-brand-600">고객을 만나는 통로</span>를<br />
+            확장하는 전략입니다.
           </h2>
           <p className="text-xl text-ink-muted leading-relaxed">
-            대부분의 사장님들이 겪는 가장 큰 고민이 있습니다.<br />
-            바로 네이버플레이스 원칙상 <strong className="text-ink">우리 업체가 사무실 주소지 근처에서만 노출된다는 점</strong>입니다.
+            넓은 지역에서 사장님의 플레이스가 <strong className="text-ink">고객에게 발견되게 해야</strong><br />
+            <strong className="text-ink">문의 전화가 늘어납니다.</strong>
           </p>
         </div>
       </Card>
