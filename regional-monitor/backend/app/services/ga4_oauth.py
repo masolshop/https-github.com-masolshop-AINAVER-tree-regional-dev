@@ -187,8 +187,17 @@ def disconnect() -> bool:
 # ──────────────────────────────────────────────────────────────
 
 
-def build_user_credentials():
-    """저장된 OAuth 토큰으로 google Credentials 객체 반환. 없으면 None."""
+def build_user_credentials(force_refresh: bool = False):
+    """저장된 OAuth 토큰으로 google Credentials 객체 반환. 없으면 None.
+
+    Args:
+        force_refresh: True 시 만료 여부와 무관하게 refresh_token 으로 강제 갱신.
+            (401 응답을 받은 호출 측이 한 번 더 시도할 때 사용)
+
+    자동 갱신 정책:
+      - 만료 5분 전부터 사전 갱신(skew 보정 + 호출 중 만료 방지)
+      - 갱신된 access_token 은 즉시 파일에 저장하여 다음 요청에 반영
+    """
     if not has_user_token():
         return None
     try:
@@ -210,14 +219,33 @@ def build_user_credentials():
             scopes=data.get("scopes", GA4_SCOPES),
         )
 
-        # 만료 시 자동 갱신
-        if creds.expired and creds.refresh_token:
+        # 사전 갱신 판단:
+        #   1) force_refresh=True → 무조건 갱신
+        #   2) creds.expired → 이미 만료
+        #   3) 만료 시각이 5분 이내로 다가옴 → skew 보정 + 호출 중 만료 방지
+        should_refresh = False
+        if creds.refresh_token:
+            if force_refresh or creds.expired:
+                should_refresh = True
+            elif creds.expiry is not None:
+                from datetime import datetime, timedelta
+                # google-auth 의 expiry 는 naive UTC datetime
+                now_utc = datetime.utcnow()
+                if creds.expiry - now_utc <= timedelta(minutes=5):
+                    should_refresh = True
+
+        if should_refresh:
             from google.auth.transport.requests import Request
             creds.refresh(Request())
             data["token"] = creds.token
             if creds.expiry:
                 data["expiry"] = creds.expiry.isoformat()
             _save_token(data)
+            logger.info(
+                "GA4 OAuth 토큰 갱신 완료 (force=%s, new_expiry=%s)",
+                force_refresh,
+                creds.expiry.isoformat() if creds.expiry else "(none)",
+            )
 
         return creds
     except Exception as e:

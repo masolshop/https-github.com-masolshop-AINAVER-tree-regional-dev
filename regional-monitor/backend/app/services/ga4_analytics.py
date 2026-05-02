@@ -43,13 +43,17 @@ def is_ga4_configured() -> bool:
         return False
 
 
-def _get_client():
+def _get_client(force_refresh: bool = False):
     """BetaAnalyticsDataClient 인스턴스 반환. 미설정/미설치 시 None.
 
     우선순위:
       1) OAuth 사용자 토큰 (개인 Gmail 인증, 서비스 계정 차단 우회)
       2) 서비스 계정 JSON 환경변수
       3) 서비스 계정 키 파일
+
+    Args:
+        force_refresh: True 시 OAuth 토큰을 무조건 refresh 후 클라이언트 생성.
+            (401 발생 후 재시도용)
     """
     if not settings.GA4_PROPERTY_ID:
         return None
@@ -62,7 +66,7 @@ def _get_client():
     # 1) OAuth 사용자 토큰 우선 시도
     try:
         from app.services import ga4_oauth
-        user_creds = ga4_oauth.build_user_credentials()
+        user_creds = ga4_oauth.build_user_credentials(force_refresh=force_refresh)
         if user_creds is not None:
             return BetaAnalyticsDataClient(credentials=user_creds)
     except Exception as e:
@@ -88,6 +92,40 @@ def _get_client():
         return None
 
 
+def _is_auth_error(exc: Exception) -> bool:
+    """예외가 인증 만료(401) 관련인지 판별."""
+    msg = str(exc).lower()
+    if "unauthenticated" in msg or "401" in msg:
+        return True
+    # google-api-core 의 Unauthenticated 예외 클래스 이름으로 판별
+    name = type(exc).__name__.lower()
+    return "unauthenticated" in name or "unauthorized" in name
+
+
+def _call_with_auto_refresh(fn):
+    """GA4 호출 함수를 401 발생 시 토큰 강제 refresh 후 1회 재시도하는 래퍼.
+
+    `_get_client()` 가 OAuth 토큰을 사용하는 경우, access_token 이 만료되었거나
+    revoke 상태에서 401(Unauthenticated)이 떨어지면 한 번 더 강제 refresh 후
+    동일 호출을 시도한다. 두 번째 시도도 실패하면 그대로 예외를 전파한다.
+
+    fn 시그니처: fn(client) -> Any
+    """
+    client = _get_client(force_refresh=False)
+    if client is None:
+        return None  # caller 가 None 처리
+    try:
+        return fn(client)
+    except Exception as e:
+        if not _is_auth_error(e):
+            raise
+        logger.warning("GA4 호출 401 → 토큰 강제 refresh 후 재시도: %s", type(e).__name__)
+        client2 = _get_client(force_refresh=True)
+        if client2 is None:
+            raise
+        return fn(client2)
+
+
 def _property_path() -> str:
     return f"properties/{settings.GA4_PROPERTY_ID}"
 
@@ -99,8 +137,7 @@ def _property_path() -> str:
 
 def get_summary(start_date: str = "7daysAgo", end_date: str = "today") -> dict[str, Any]:
     """기간별 핵심 KPI(활성 사용자/세션/조회/이탈률/평균 세션 시간) 합계."""
-    client = _get_client()
-    if client is None:
+    if _get_client() is None:
         return {"configured": False, "rows": []}
 
     from google.analytics.data_v1beta.types import (
@@ -121,7 +158,7 @@ def get_summary(start_date: str = "7daysAgo", end_date: str = "today") -> dict[s
             Metric(name="averageSessionDuration"),
         ],
     )
-    resp = client.run_report(req)
+    resp = _call_with_auto_refresh(lambda c: c.run_report(req))
     if not resp.rows:
         return {
             "configured": True,
@@ -143,8 +180,7 @@ def get_summary(start_date: str = "7daysAgo", end_date: str = "today") -> dict[s
 
 def get_timeseries(start_date: str = "28daysAgo", end_date: str = "today") -> list[dict[str, Any]]:
     """일자별 활성 사용자/세션/페이지뷰 시계열."""
-    client = _get_client()
-    if client is None:
+    if _get_client() is None:
         return []
 
     from google.analytics.data_v1beta.types import (
@@ -164,7 +200,7 @@ def get_timeseries(start_date: str = "28daysAgo", end_date: str = "today") -> li
         order_bys=[OrderBy(dimension=OrderBy.DimensionOrderBy(dimension_name="date"))],
         limit=400,
     )
-    resp = client.run_report(req)
+    resp = _call_with_auto_refresh(lambda c: c.run_report(req))
     out: list[dict[str, Any]] = []
     for r in resp.rows:
         date_raw = r.dimension_values[0].value  # YYYYMMDD
@@ -185,8 +221,7 @@ def get_timeseries(start_date: str = "28daysAgo", end_date: str = "today") -> li
 
 def get_top_pages(start_date: str = "7daysAgo", end_date: str = "today", limit: int = 20) -> list[dict[str, Any]]:
     """상위 페이지(경로별 조회수·평균 체류 시간)."""
-    client = _get_client()
-    if client is None:
+    if _get_client() is None:
         return []
 
     from google.analytics.data_v1beta.types import (
@@ -205,7 +240,7 @@ def get_top_pages(start_date: str = "7daysAgo", end_date: str = "today", limit: 
         order_bys=[OrderBy(metric=OrderBy.MetricOrderBy(metric_name="screenPageViews"), desc=True)],
         limit=limit,
     )
-    resp = client.run_report(req)
+    resp = _call_with_auto_refresh(lambda c: c.run_report(req))
     out = []
     for r in resp.rows:
         path = r.dimension_values[0].value
@@ -223,8 +258,7 @@ def get_top_pages(start_date: str = "7daysAgo", end_date: str = "today", limit: 
 
 def get_top_countries(start_date: str = "7daysAgo", end_date: str = "today", limit: int = 15) -> list[dict[str, Any]]:
     """국가별 활성 사용자."""
-    client = _get_client()
-    if client is None:
+    if _get_client() is None:
         return []
 
     from google.analytics.data_v1beta.types import (
@@ -239,7 +273,7 @@ def get_top_countries(start_date: str = "7daysAgo", end_date: str = "today", lim
         order_bys=[OrderBy(metric=OrderBy.MetricOrderBy(metric_name="activeUsers"), desc=True)],
         limit=limit,
     )
-    resp = client.run_report(req)
+    resp = _call_with_auto_refresh(lambda c: c.run_report(req))
     out = []
     for r in resp.rows:
         country = r.dimension_values[0].value
@@ -254,8 +288,7 @@ def get_top_countries(start_date: str = "7daysAgo", end_date: str = "today", lim
 
 def get_devices(start_date: str = "7daysAgo", end_date: str = "today") -> list[dict[str, Any]]:
     """디바이스 카테고리별(데스크탑/모바일/태블릿) 사용자."""
-    client = _get_client()
-    if client is None:
+    if _get_client() is None:
         return []
 
     from google.analytics.data_v1beta.types import (
@@ -269,7 +302,7 @@ def get_devices(start_date: str = "7daysAgo", end_date: str = "today") -> list[d
         metrics=[Metric(name="activeUsers"), Metric(name="sessions")],
         order_bys=[OrderBy(metric=OrderBy.MetricOrderBy(metric_name="activeUsers"), desc=True)],
     )
-    resp = client.run_report(req)
+    resp = _call_with_auto_refresh(lambda c: c.run_report(req))
     out = []
     for r in resp.rows:
         dev = r.dimension_values[0].value
@@ -284,8 +317,7 @@ def get_devices(start_date: str = "7daysAgo", end_date: str = "today") -> list[d
 
 def get_traffic_sources(start_date: str = "7daysAgo", end_date: str = "today", limit: int = 15) -> list[dict[str, Any]]:
     """유입 채널/소스/매체별 활성 사용자."""
-    client = _get_client()
-    if client is None:
+    if _get_client() is None:
         return []
 
     from google.analytics.data_v1beta.types import (
@@ -303,7 +335,7 @@ def get_traffic_sources(start_date: str = "7daysAgo", end_date: str = "today", l
         order_bys=[OrderBy(metric=OrderBy.MetricOrderBy(metric_name="activeUsers"), desc=True)],
         limit=limit,
     )
-    resp = client.run_report(req)
+    resp = _call_with_auto_refresh(lambda c: c.run_report(req))
     out = []
     for r in resp.rows:
         channel = r.dimension_values[0].value
@@ -320,8 +352,7 @@ def get_traffic_sources(start_date: str = "7daysAgo", end_date: str = "today", l
 
 def get_realtime() -> dict[str, Any]:
     """지난 30분 활성 사용자(실시간)."""
-    client = _get_client()
-    if client is None:
+    if _get_client() is None:
         return {"configured": False, "active_users_30min": 0, "by_country": []}
 
     from google.analytics.data_v1beta.types import (
@@ -333,7 +364,7 @@ def get_realtime() -> dict[str, Any]:
         property=_property_path(),
         metrics=[Metric(name="activeUsers")],
     )
-    total_resp = client.run_realtime_report(total_req)
+    total_resp = _call_with_auto_refresh(lambda c: c.run_realtime_report(total_req))
     active = 0
     if total_resp.rows:
         active = int(float(total_resp.rows[0].metric_values[0].value or 0))
@@ -344,7 +375,7 @@ def get_realtime() -> dict[str, Any]:
         dimensions=[Dimension(name="country")],
         metrics=[Metric(name="activeUsers")],
     )
-    country_resp = client.run_realtime_report(country_req)
+    country_resp = _call_with_auto_refresh(lambda c: c.run_realtime_report(country_req))
     by_country = []
     for r in country_resp.rows:
         by_country.append({
