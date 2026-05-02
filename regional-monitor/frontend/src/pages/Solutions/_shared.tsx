@@ -56,7 +56,7 @@ export function SolutionDetailLayout(props: SolutionDetailProps) {
               SOLUTION {props.num}
             </div>
             <h2 className="text-h2 text-ink leading-tight">{props.shortLabel}</h2>
-            <p className="text-lg text-ink-muted mt-2 leading-relaxed">
+            <p className="text-ink-muted mt-2 leading-relaxed" style={{ fontSize: '20px', lineHeight: '1.7' }}>
               {props.tagline}
             </p>
           </div>
@@ -113,8 +113,8 @@ export function SolutionDetailLayout(props: SolutionDetailProps) {
                   <div className="text-base text-ink-muted uppercase tracking-wider font-semibold mb-0.5">
                     {s.step}
                   </div>
-                  <div className="text-2xl font-bold text-ink">{s.title}</div>
-                  <p className="text-xl text-ink-muted leading-relaxed mt-1">
+                  <div className="font-bold text-ink" style={{ fontSize: '24px', lineHeight: '1.4' }}>{s.title}</div>
+                  <p className="text-ink-muted leading-relaxed mt-1" style={{ fontSize: '20px', lineHeight: '1.7' }}>
                     {s.desc}
                   </p>
                 </div>
@@ -134,7 +134,7 @@ export function SolutionDetailLayout(props: SolutionDetailProps) {
             <h3 className="text-h2 text-white mb-2 leading-tight">
               망설이는 사이, 옆 가게는 이미 시작했습니다.
             </h3>
-            <p className="text-xl text-white/90 leading-relaxed">
+            <p className="text-white/90 leading-relaxed" style={{ fontSize: '20px', lineHeight: '1.7' }}>
               <strong className="text-white">등록·관리만 맡기시면 4종 솔루션 전부 무료</strong>로 사용하실 수 있습니다.
               지금 신청하시면 청정 키워드·진입 가능 지역까지 함께 분석해 드립니다.
             </p>
@@ -191,15 +191,16 @@ function BlockCard({ tone, icon, tag, title, headline, bullets }: BlockCardProps
         {icon}
         {tag}
       </div>
-      <h3 className="text-3xl font-bold text-ink mb-3">{title}</h3>
-      <p className="text-2xl text-ink leading-relaxed mb-6 font-medium">
+      <h3 className="font-bold text-ink mb-3" style={{ fontSize: '28px', lineHeight: '1.35' }}>{title}</h3>
+      <p className="text-ink leading-relaxed mb-6 font-medium" style={{ fontSize: '22px', lineHeight: '1.65' }}>
         {headline}
       </p>
       <ul className="space-y-3">
         {bullets.map((b, i) => (
           <li
             key={i}
-            className="flex items-start gap-3 text-xl text-ink-muted leading-relaxed"
+            className="flex items-start gap-3 text-ink-muted leading-relaxed"
+            style={{ fontSize: '19px', lineHeight: '1.7' }}
           >
             <CheckCircle2 size={20} className={`shrink-0 mt-0.5 ${t.text}`} />
             <span>{b}</span>
@@ -226,8 +227,8 @@ function EffectCard({
         {icon}
         {tag}
       </div>
-      <h3 className="text-3xl font-bold text-ink mb-3">{title}</h3>
-      <p className="text-2xl text-ink leading-relaxed mb-5 font-medium">
+      <h3 className="font-bold text-ink mb-3" style={{ fontSize: '28px', lineHeight: '1.35' }}>{title}</h3>
+      <p className="text-ink leading-relaxed mb-5 font-medium" style={{ fontSize: '22px', lineHeight: '1.65' }}>
         {headline}
       </p>
 
@@ -237,8 +238,8 @@ function EffectCard({
             key={m.label}
             className={`rounded-xl border ${t.border} ${t.bg}/40 px-4 py-4 text-center`}
           >
-            <div className={`text-4xl font-bold ${t.text}`}>{m.value}</div>
-            <div className="text-lg text-ink-muted leading-snug mt-1.5">
+            <div className={`font-bold ${t.text}`} style={{ fontSize: '36px', lineHeight: '1.1' }}>{m.value}</div>
+            <div className="text-ink-muted leading-snug mt-1.5" style={{ fontSize: '17px', lineHeight: '1.45' }}>
               {m.label}
             </div>
           </div>
@@ -249,7 +250,8 @@ function EffectCard({
         {bullets.map((b, i) => (
           <li
             key={i}
-            className="flex items-start gap-3 text-xl text-ink-muted leading-relaxed"
+            className="flex items-start gap-3 text-ink-muted leading-relaxed"
+            style={{ fontSize: '19px', lineHeight: '1.7' }}
           >
             <CheckCircle2 size={20} className={`shrink-0 mt-0.5 ${t.text}`} />
             <span>{b}</span>
