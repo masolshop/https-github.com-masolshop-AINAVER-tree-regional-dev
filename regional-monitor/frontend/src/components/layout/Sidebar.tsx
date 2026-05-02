@@ -93,18 +93,12 @@ const ABOUT_GROUP: MenuGroup = {
   ],
 }
 
-const SOLUTIONS_GROUP: MenuGroup = {
-  key: 'intro',
+// '타지역 4종솔루션소개' — /intro 페이지에서 4종 솔루션 카드로 이미 보여주므로 단일 링크로 변경
+const SOLUTIONS_LINK: MenuItem = {
+  to: '/intro',
   label: '타지역 4종솔루션소개',
   icon: BookOpen,
-  pathPrefix: '/intro',
-  children: [
-    { to: '/intro',                   label: '타지역 4종 솔루션이란',   icon: BookOpen, requireAuth: false },
-    { to: '/intro/keyword-dna',       label: '타지역키워드 DNA 파싱',  icon: Dna,      requireAuth: false },
-    { to: '/intro/keyword-discover',  label: '키워드 발굴솔루션',       icon: Sparkles, requireAuth: false },
-    { to: '/intro/competition',       label: '지역 경쟁도 분석솔루션',  icon: MapPin,   requireAuth: false },
-    { to: '/intro/monitor',           label: '노출관리 자동체크솔루션',  icon: Radio,    requireAuth: false },
-  ],
+  requireAuth: false,
 }
 
 function renderMenuItem(
@@ -158,12 +152,6 @@ export function Sidebar({ onItemClick }: SidebarProps = {}) {
   const isAboutActive = typeof window !== 'undefined'
     && window.location.pathname.startsWith(ABOUT_GROUP.pathPrefix)
   const [aboutOpen, setAboutOpen] = useState<boolean>(isAboutActive)
-
-  // "타지역 4종솔루션소개" 그룹: 현재 경로가 /intro/* 또는 /intro 이면 자동 펼침
-  const isSolutionsActive = typeof window !== 'undefined'
-    && (window.location.pathname === '/intro'
-        || window.location.pathname.startsWith(SOLUTIONS_GROUP.pathPrefix + '/'))
-  const [solutionsOpen, setSolutionsOpen] = useState<boolean>(isSolutionsActive)
 
   const handleMenuClick = (item: MenuItem, e: React.MouseEvent) => {
     if (item.requireAuth && !isAuthenticated) {
@@ -332,51 +320,8 @@ export function Sidebar({ onItemClick }: SidebarProps = {}) {
           </div>
         )}
 
-        {/* 3) 타지역 4종솔루션소개 그룹 (확장형) */}
-        <div className="flex items-stretch gap-0.5">
-          <button
-            type="button"
-            onClick={() => setSolutionsOpen((v) => !v)}
-            className={clsx(
-              'sidebar-item flex-1',
-              isSolutionsActive && 'active',
-            )}
-          >
-            <SOLUTIONS_GROUP.icon size={18} className="shrink-0" />
-            <span className="flex-1 text-left text-[clamp(13px,2.6vw,19px)] whitespace-nowrap leading-none">
-              {SOLUTIONS_GROUP.label}
-            </span>
-            <ChevronDown
-              size={16}
-              className={clsx(
-                'shrink-0 transition-transform',
-                solutionsOpen ? 'rotate-180' : '',
-              )}
-            />
-          </button>
-        </div>
-        {solutionsOpen && (
-          <div className="ml-4 pl-3 border-l border-bg-subtle flex flex-col gap-1">
-            {SOLUTIONS_GROUP.children.map((child) => {
-              const ChildIcon = child.icon
-              return (
-                <NavLink
-                  key={child.to}
-                  to={child.to}
-                  onClick={(e) => handleMenuClick(child, e)}
-                  className={({ isActive }) =>
-                    clsx('sidebar-item', isActive && 'active')
-                  }
-                >
-                  <ChildIcon size={15} className="shrink-0" />
-                  <span className="flex-1 text-[clamp(12px,2.4vw,15px)] whitespace-nowrap leading-none">
-                    {child.label}
-                  </span>
-                </NavLink>
-              )
-            })}
-          </div>
-        )}
+        {/* 3) 타지역 4종솔루션소개 — 단일 링크 (/intro 페이지에서 4종 카드로 안내) */}
+        {renderMenuItem(SOLUTIONS_LINK, isAuthenticated, handleMenuClick)}
 
         {/* 4) 4개 솔루션 본 메뉴 */}
         {MENU.slice(1).map((item) => renderMenuItem(item, isAuthenticated, handleMenuClick))}
