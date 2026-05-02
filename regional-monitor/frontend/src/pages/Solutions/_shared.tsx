@@ -55,8 +55,8 @@ export function SolutionDetailLayout(props: SolutionDetailProps) {
             <div className="text-body text-ink-muted font-mono mb-1">
               SOLUTION {props.num}
             </div>
-            <h2 className="text-h2 text-ink leading-tight">{props.shortLabel}</h2>
-            <p className="text-ink-muted mt-2 leading-relaxed" style={{ fontSize: '20px', lineHeight: '1.7' }}>
+            <h2 className="text-ink leading-tight font-bold" style={{ fontSize: '30px', lineHeight: '1.3' }}>{props.shortLabel}</h2>
+            <p className="text-ink-muted mt-3 leading-relaxed" style={{ fontSize: '22px', lineHeight: '1.75' }}>
               {props.tagline}
             </p>
           </div>
@@ -97,10 +97,10 @@ export function SolutionDetailLayout(props: SolutionDetailProps) {
       {/* 사용 가이드 */}
       <section>
         <div className="mb-5">
-          <div className="text-lg text-ink-muted uppercase tracking-wider font-semibold mb-1">
+          <div className="text-ink-muted uppercase tracking-wider font-semibold mb-2" style={{ fontSize: '16px' }}>
             how to use
           </div>
-          <h2 className="text-h2 text-ink">사용 흐름</h2>
+          <h2 className="text-ink font-bold" style={{ fontSize: '30px', lineHeight: '1.3' }}>사용 흐름</h2>
         </div>
         <Card variant="white">
           <ol className="space-y-5">
@@ -113,8 +113,8 @@ export function SolutionDetailLayout(props: SolutionDetailProps) {
                   <div className="text-base text-ink-muted uppercase tracking-wider font-semibold mb-0.5">
                     {s.step}
                   </div>
-                  <div className="font-bold text-ink" style={{ fontSize: '24px', lineHeight: '1.4' }}>{s.title}</div>
-                  <p className="text-ink-muted leading-relaxed mt-1" style={{ fontSize: '20px', lineHeight: '1.7' }}>
+                  <div className="font-bold text-ink" style={{ fontSize: '26px', lineHeight: '1.4' }}>{s.title}</div>
+                  <p className="text-ink-muted leading-relaxed mt-2" style={{ fontSize: '21px', lineHeight: '1.75' }}>
                     {s.desc}
                   </p>
                 </div>
@@ -131,10 +131,10 @@ export function SolutionDetailLayout(props: SolutionDetailProps) {
             <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-pill bg-white/20 text-white text-body font-bold mb-3 backdrop-blur-sm">
               🎁 타지역닷컴 위탁 시 100% 무료
             </span>
-            <h3 className="text-h2 text-white mb-2 leading-tight">
+            <h3 className="text-white mb-3 leading-tight font-bold" style={{ fontSize: '28px', lineHeight: '1.3' }}>
               망설이는 사이, 옆 가게는 이미 시작했습니다.
             </h3>
-            <p className="text-white/90 leading-relaxed" style={{ fontSize: '20px', lineHeight: '1.7' }}>
+            <p className="text-white/90 leading-relaxed" style={{ fontSize: '22px', lineHeight: '1.7' }}>
               <strong className="text-white">등록·관리만 맡기시면 4종 솔루션 전부 무료</strong>로 사용하실 수 있습니다.
               지금 신청하시면 청정 키워드·진입 가능 지역까지 함께 분석해 드립니다.
             </p>
@@ -191,16 +191,16 @@ function BlockCard({ tone, icon, tag, title, headline, bullets }: BlockCardProps
         {icon}
         {tag}
       </div>
-      <h3 className="font-bold text-ink mb-3" style={{ fontSize: '28px', lineHeight: '1.35' }}>{title}</h3>
-      <p className="text-ink leading-relaxed mb-6 font-medium" style={{ fontSize: '22px', lineHeight: '1.65' }}>
+      <h3 className="font-bold text-ink mb-4" style={{ fontSize: '32px', lineHeight: '1.3' }}>{title}</h3>
+      <p className="text-ink leading-relaxed mb-6 font-medium" style={{ fontSize: '24px', lineHeight: '1.65' }}>
         {headline}
       </p>
-      <ul className="space-y-3">
+      <ul className="space-y-4">
         {bullets.map((b, i) => (
           <li
             key={i}
             className="flex items-start gap-3 text-ink-muted leading-relaxed"
-            style={{ fontSize: '19px', lineHeight: '1.7' }}
+            style={{ fontSize: '21px', lineHeight: '1.75' }}
           >
             <CheckCircle2 size={20} className={`shrink-0 mt-0.5 ${t.text}`} />
             <span>{b}</span>
@@ -227,8 +227,8 @@ function EffectCard({
         {icon}
         {tag}
       </div>
-      <h3 className="font-bold text-ink mb-3" style={{ fontSize: '28px', lineHeight: '1.35' }}>{title}</h3>
-      <p className="text-ink leading-relaxed mb-5 font-medium" style={{ fontSize: '22px', lineHeight: '1.65' }}>
+      <h3 className="font-bold text-ink mb-4" style={{ fontSize: '32px', lineHeight: '1.3' }}>{title}</h3>
+      <p className="text-ink leading-relaxed mb-5 font-medium" style={{ fontSize: '24px', lineHeight: '1.65' }}>
         {headline}
       </p>
 
@@ -236,22 +236,22 @@ function EffectCard({
         {metrics.map((m) => (
           <div
             key={m.label}
-            className={`rounded-xl border ${t.border} ${t.bg}/40 px-4 py-4 text-center`}
+            className={`rounded-xl border ${t.border} ${t.bg}/40 px-4 py-5 text-center`}
           >
-            <div className={`font-bold ${t.text}`} style={{ fontSize: '36px', lineHeight: '1.1' }}>{m.value}</div>
-            <div className="text-ink-muted leading-snug mt-1.5" style={{ fontSize: '17px', lineHeight: '1.45' }}>
+            <div className={`font-bold ${t.text}`} style={{ fontSize: '40px', lineHeight: '1.1' }}>{m.value}</div>
+            <div className="text-ink-muted leading-snug mt-2" style={{ fontSize: '19px', lineHeight: '1.45' }}>
               {m.label}
             </div>
           </div>
         ))}
       </div>
 
-      <ul className="space-y-3">
+      <ul className="space-y-4">
         {bullets.map((b, i) => (
           <li
             key={i}
             className="flex items-start gap-3 text-ink-muted leading-relaxed"
-            style={{ fontSize: '19px', lineHeight: '1.7' }}
+            style={{ fontSize: '21px', lineHeight: '1.75' }}
           >
             <CheckCircle2 size={20} className={`shrink-0 mt-0.5 ${t.text}`} />
             <span>{b}</span>
