@@ -162,46 +162,70 @@
 
 /* ============================================================
    4대 솔루션 도구 페이지 본문 가독성 향상 (글자 크기 한 단계 ↑)
-   대상 페이지(루트에 data-page="solution-tool" 마커 부착):
+   적용 방식: <body>에 'solution-tool-page' 클래스를 토글
+              → useBodyClass 훅이 페이지 마운트/언마운트 시 자동 부착
+   대상 페이지:
      · /keyword-dna   (KeywordDna/index.tsx)
      · /keyword       (Keyword/Discover.tsx)
      · /competition   (Competition.tsx)
-     · /monitor       (Monitor/index.tsx + 하위 탭)
+     · /monitor       (Monitor/index.tsx + 하위 탭 전체)
    토큰(원본 → 강제 px):
-     text-xs       12 → 14
-     text-sm       14 → 16
-     text-base     16 → 18
-     text-caption  12 → 14
-     text-body-sm  13 → 15
-     text-body     14 → 16
-     text-lg       18 → 20
-     text-xl       20 → 22
-     text-h3       18 → 20
+     text-xs       12 → 15
+     text-sm       14 → 17
+     text-base     16 → 19
+     text-caption  12 → 15
+     text-body-sm  13 → 16
+     text-body     14 → 17
+     text-lg       18 → 21
+     text-xl       20 → 23
+     text-h3       18 → 21
    ============================================================ */
-[data-page="solution-tool"] .text-xs        { font-size: 14px !important; line-height: 1.55 !important; }
-[data-page="solution-tool"] .text-sm        { font-size: 16px !important; line-height: 1.6  !important; }
-[data-page="solution-tool"] .text-base      { font-size: 18px !important; line-height: 1.65 !important; }
-[data-page="solution-tool"] .text-caption   { font-size: 14px !important; line-height: 1.55 !important; }
-[data-page="solution-tool"] .text-body-sm   { font-size: 15px !important; line-height: 1.6  !important; }
-[data-page="solution-tool"] .text-body      { font-size: 16px !important; line-height: 1.65 !important; }
-[data-page="solution-tool"] .text-lg        { font-size: 20px !important; line-height: 1.55 !important; }
-[data-page="solution-tool"] .text-xl        { font-size: 22px !important; line-height: 1.5  !important; }
-[data-page="solution-tool"] .text-h3        { font-size: 20px !important; line-height: 1.45 !important; }
+body.solution-tool-page .text-xs        { font-size: 15px !important; line-height: 1.55 !important; }
+body.solution-tool-page .text-sm        { font-size: 17px !important; line-height: 1.6  !important; }
+body.solution-tool-page .text-base      { font-size: 19px !important; line-height: 1.65 !important; }
+body.solution-tool-page .text-caption   { font-size: 15px !important; line-height: 1.55 !important; }
+body.solution-tool-page .text-body-sm   { font-size: 16px !important; line-height: 1.6  !important; }
+body.solution-tool-page .text-body      { font-size: 17px !important; line-height: 1.65 !important; }
+body.solution-tool-page .text-lg        { font-size: 21px !important; line-height: 1.55 !important; }
+body.solution-tool-page .text-xl        { font-size: 23px !important; line-height: 1.5  !important; }
+body.solution-tool-page .text-h3        { font-size: 21px !important; line-height: 1.45 !important; }
 
-/* 인라인 px 폰트 (예: text-[11px], text-[13px])도 함께 보정 */
-[data-page="solution-tool"] .text-\[11px\] { font-size: 13px !important; line-height: 1.55 !important; }
-[data-page="solution-tool"] .text-\[12px\] { font-size: 14px !important; line-height: 1.55 !important; }
-[data-page="solution-tool"] .text-\[13px\] { font-size: 15px !important; line-height: 1.6  !important; }
+/* 인라인 px 폰트 (text-[11px] / text-[12px] / text-[13px])도 함께 보정 */
+body.solution-tool-page .text-\[11px\] { font-size: 14px !important; line-height: 1.55 !important; }
+body.solution-tool-page .text-\[12px\] { font-size: 15px !important; line-height: 1.55 !important; }
+body.solution-tool-page .text-\[13px\] { font-size: 16px !important; line-height: 1.6  !important; }
 
-/* 모바일에서는 한 단계만 살짝 줄이기 (가독성 유지) */
+/* 옵션 등 폼 컨트롤도 함께 강제 (Tailwind preflight가 input/select를 14px로 잡는 케이스 방지) */
+body.solution-tool-page select,
+body.solution-tool-page option,
+body.solution-tool-page input,
+body.solution-tool-page textarea,
+body.solution-tool-page button,
+body.solution-tool-page label  { font-size: inherit; }
+
+/* 이전 버전 호환: data-page 셀렉터도 유지 */
+[data-page="solution-tool"] .text-xs       { font-size: 15px !important; }
+[data-page="solution-tool"] .text-sm       { font-size: 17px !important; }
+[data-page="solution-tool"] .text-base     { font-size: 19px !important; }
+[data-page="solution-tool"] .text-caption  { font-size: 15px !important; }
+[data-page="solution-tool"] .text-body-sm  { font-size: 16px !important; }
+[data-page="solution-tool"] .text-body     { font-size: 17px !important; }
+[data-page="solution-tool"] .text-lg       { font-size: 21px !important; }
+[data-page="solution-tool"] .text-xl       { font-size: 23px !important; }
+[data-page="solution-tool"] .text-h3       { font-size: 21px !important; }
+
+/* 모바일에서는 한 단계만 살짝 줄이기 (레이아웃 안정 + 가독성 유지) */
 @media (max-width: 640px) {
-  [data-page="solution-tool"] .text-xs        { font-size: 13px !important; }
-  [data-page="solution-tool"] .text-sm        { font-size: 15px !important; }
-  [data-page="solution-tool"] .text-base      { font-size: 17px !important; }
-  [data-page="solution-tool"] .text-caption   { font-size: 13px !important; }
-  [data-page="solution-tool"] .text-body-sm   { font-size: 14px !important; }
-  [data-page="solution-tool"] .text-body      { font-size: 15px !important; }
-  [data-page="solution-tool"] .text-lg        { font-size: 18px !important; }
-  [data-page="solution-tool"] .text-xl        { font-size: 20px !important; }
-  [data-page="solution-tool"] .text-h3        { font-size: 18px !important; }
+  body.solution-tool-page .text-xs       { font-size: 14px !important; }
+  body.solution-tool-page .text-sm       { font-size: 16px !important; }
+  body.solution-tool-page .text-base     { font-size: 18px !important; }
+  body.solution-tool-page .text-caption  { font-size: 14px !important; }
+  body.solution-tool-page .text-body-sm  { font-size: 15px !important; }
+  body.solution-tool-page .text-body     { font-size: 16px !important; }
+  body.solution-tool-page .text-lg       { font-size: 19px !important; }
+  body.solution-tool-page .text-xl       { font-size: 21px !important; }
+  body.solution-tool-page .text-h3       { font-size: 19px !important; }
+  body.solution-tool-page .text-\[11px\] { font-size: 13px !important; }
+  body.solution-tool-page .text-\[12px\] { font-size: 14px !important; }
+  body.solution-tool-page .text-\[13px\] { font-size: 15px !important; }
 }

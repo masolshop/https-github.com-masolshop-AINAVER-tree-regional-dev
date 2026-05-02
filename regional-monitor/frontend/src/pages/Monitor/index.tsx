@@ -14,6 +14,7 @@ import RegisterTab from './RegisterTab'
 import LiveCheckTab from './LiveCheckTab'
 import SettingsTab from './SettingsTab'
 import { HistoryBody } from '../History'
+import { useBodyClass } from '@/hooks/useBodyClass'
 import clsx from 'clsx'
 
 type TabKey = 'register' | 'live' | 'history' | 'settings'
@@ -48,6 +49,7 @@ const TABS: { key: TabKey; label: string; icon: React.ReactNode; desc: string }[
 export default function Monitor() {
   const [params, setParams] = useSearchParams()
   const tab = (params.get('tab') as TabKey) || 'register'
+  useBodyClass('solution-tool-page')
 
   const setTab = (key: TabKey) => {
     setParams({ tab: key })

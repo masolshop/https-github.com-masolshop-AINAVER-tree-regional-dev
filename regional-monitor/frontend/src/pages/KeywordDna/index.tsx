@@ -13,6 +13,7 @@ import { Dna, GitCompare, Network, Lightbulb } from 'lucide-react'
 import { TopBar } from '@/components/layout/TopBar'
 import { KeywordDnaApi, type DictionaryStats } from '@/api/keywordDna'
 import { useAuthStore } from '@/store/auth'
+import { useBodyClass } from '@/hooks/useBodyClass'
 import { fmtNum } from './shared'
 
 import DnaTab from './DnaTab'
@@ -57,6 +58,7 @@ export default function KeywordDnaPage() {
     setParams(next, { replace: true })
   }
 
+  useBodyClass('solution-tool-page')
   return (
     <div className="space-y-5" data-page="solution-tool">
       <TopBar

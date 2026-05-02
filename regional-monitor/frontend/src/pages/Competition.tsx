@@ -27,6 +27,7 @@ import {
   X,
 } from 'lucide-react'
 import { Card } from '@/components/ui/Card'
+import { useBodyClass } from '@/hooks/useBodyClass'
 import { keywordApi } from '@/api/keyword'
 import { competitionApi } from '@/api/competition'
 import type { RegionsResponse } from '@/api/keyword'
@@ -117,6 +118,7 @@ type ScanMode = 'fast' | 'precise'
 export default function Competition() {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated)
   const openLoginModal = useAuthStore((s) => s.openLoginModal)
+  useBodyClass('solution-tool-page')
 
   const [regions, setRegions] = useState<RegionsResponse | null>(null)
   const [scanMode, setScanMode] = useState<ScanMode>('fast')

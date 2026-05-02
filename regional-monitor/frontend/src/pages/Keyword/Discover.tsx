@@ -29,6 +29,7 @@ import {
   X,
 } from 'lucide-react'
 import { Card } from '@/components/ui/Card'
+import { useBodyClass } from '@/hooks/useBodyClass'
 import { keywordApi } from '@/api/keyword'
 import type {
   KeywordDiscoverResult,
@@ -88,6 +89,7 @@ export default function KeywordDiscover() {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated)
   const openLoginModal = useAuthStore((s) => s.openLoginModal)
   const [tab, setTab] = useState<TabKey>('keyword')
+  useBodyClass('solution-tool-page')
 
   return (
     <div className="max-w-6xl mx-auto px-4 lg:px-6 py-6 space-y-5" data-page="solution-tool">
