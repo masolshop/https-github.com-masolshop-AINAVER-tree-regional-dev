@@ -7,6 +7,7 @@ import { useEffect, useState } from 'react'
 import { TopBar } from '@/components/layout/TopBar'
 import { Card } from '@/components/ui/Card'
 import PageSeo, { buildBreadcrumbJsonLd } from '@/components/seo/PageSeo'
+import { RelatedLinks, ALL_RELATED_LINKS } from '@/components/seo/RelatedLinks'
 import {
   Briefcase,
   TrendingUp,
@@ -119,9 +120,9 @@ export default function EssentialCategories() {
           <span className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-pill bg-brand-50 text-brand-700 text-body-sm font-bold mb-3">
             <Briefcase size={14} /> 타지역서비스 최적 업종
           </span>
-          <h2 className="text-hero-sm text-ink mb-4 leading-tight">
+          <h1 className="text-hero-sm text-ink mb-4 leading-tight">
             타지역서비스 <span className="text-brand-600">최적 업종</span>은?
-          </h2>
+          </h1>
           <p className="text-2xl text-ink leading-snug font-bold mb-2">
             "사무실로 고객이 오는 업종"보다<br />
             <span className="text-brand-700">"고객이 있는 곳으로 찾아가는 업종"</span>이 더 강합니다.
@@ -597,6 +598,9 @@ export default function EssentialCategories() {
           />
         </div>
       </section>
+
+      {/* ───────────────── 관련 페이지 (SEO 내부 링크) ───────────────── */}
+      <RelatedLinks currentPath="/about/essential-categories" items={ALL_RELATED_LINKS} />
     </div>
   )
 }

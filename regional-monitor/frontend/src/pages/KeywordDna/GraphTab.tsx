@@ -365,6 +365,8 @@ export default function GraphTab() {
               width="100%"
               height={H}
               style={{ maxHeight: H }}
+              role="img"
+              aria-label="키워드 DNA 네트워크 그래프 - 키워드 간 연관도 시각화"
             >
               {/* 엣지 */}
               {result.edges.map((e, i) => {

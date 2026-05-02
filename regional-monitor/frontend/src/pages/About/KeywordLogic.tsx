@@ -7,6 +7,7 @@ import { TopBar } from '@/components/layout/TopBar'
 import { Card } from '@/components/ui/Card'
 import { Link } from 'react-router-dom'
 import PageSeo, { buildBreadcrumbJsonLd } from '@/components/seo/PageSeo'
+import { RelatedLinks, ALL_RELATED_LINKS } from '@/components/seo/RelatedLinks'
 import {
   Search,
   Layers,
@@ -68,10 +69,10 @@ export default function KeywordLogic() {
           <span className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-pill bg-brand-50 text-brand-700 text-body-sm font-bold mb-3">
             <Cpu size={14} /> 타지역서비스 키워드 로직이란?
           </span>
-          <h2 className="text-hero-sm text-ink mb-4 leading-tight">
+          <h1 className="text-hero-sm text-ink mb-4 leading-tight">
             타지역플레이스는 <span className="text-rose-700">콘텐츠 싸움이 아닙니다.</span><br />
             <span className="text-brand-600">30자 상호 키워드 조합 싸움</span>입니다.
-          </h2>
+          </h1>
           <p className="text-2xl text-ink-muted leading-relaxed">
             많은 사장님들이 네이버플레이스를 등록하면 블로그처럼 글을 쓰고, 사진을 올리고, 후기를 쌓으면
             자연스럽게 노출될 것이라고 생각합니다.<br />
@@ -996,6 +997,9 @@ export default function KeywordLogic() {
           />
         </div>
       </section>
+
+      {/* ───────────────── 관련 페이지 (SEO 내부 링크) ───────────────── */}
+      <RelatedLinks currentPath="/about/keyword-logic" items={ALL_RELATED_LINKS} />
     </div>
   )
 }

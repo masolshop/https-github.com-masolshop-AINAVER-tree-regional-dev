@@ -180,7 +180,7 @@ export function Sidebar({ onItemClick }: SidebarProps = {}) {
         <div className="flex flex-col items-center gap-2 text-center">
           <img
             src="/logo.png"
-            alt="타지역닷컴"
+            alt="타지역닷컴 로고 - 타지역서비스 네이버 노출 자동체크 솔루션"
             className="h-[52px] w-auto select-none"
             draggable={false}
           />
@@ -204,7 +204,7 @@ export function Sidebar({ onItemClick }: SidebarProps = {}) {
           <div className="space-y-3">
             <div className="flex items-center gap-3">
               {user.picture ? (
-                <img src={user.picture} alt="" className="w-10 h-10 rounded-full ring-2 ring-white/30" />
+                <img src={user.picture} alt={`${user.name} 프로필 사진`} className="w-10 h-10 rounded-full ring-2 ring-white/30" />
               ) : (
                 <div className="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center">
                   <UserIcon size={20} />

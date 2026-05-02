@@ -563,7 +563,7 @@ function TimeseriesChart({ rows, loading, range, onRangeChange }: TimeseriesProp
             데이터가 없습니다.
           </div>
         ) : (
-          <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-auto" preserveAspectRatio="none">
+          <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-auto" preserveAspectRatio="none" role="img" aria-label="관리자 분석 차트">
             {/* y축 그리드 */}
             {[0, 0.25, 0.5, 0.75, 1].map((p, i) => {
               const y = PAD.top + innerH * (1 - p)

@@ -6,6 +6,7 @@ import { TopBar } from '@/components/layout/TopBar'
 import { Card } from '@/components/ui/Card'
 import { Link } from 'react-router-dom'
 import PageSeo, { buildBreadcrumbJsonLd } from '@/components/seo/PageSeo'
+import { RelatedLinks, ALL_RELATED_LINKS } from '@/components/seo/RelatedLinks'
 import {
   Sparkles,
   MapPin,
@@ -67,12 +68,12 @@ export default function WhatIs() {
           <span className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-pill bg-brand-50 text-brand-700 text-body-sm font-semibold mb-3">
             <Sparkles size={14} /> 네이버플레이스 지역 확장 전략
           </span>
-          <h2 className="text-hero-sm text-ink mb-4 leading-tight">
+          <h1 className="text-hero-sm text-ink mb-4 leading-tight">
             타지역서비스는<br />
             네이버 플레이스에 사장님의 <span className="text-brand-600">영업 깃발</span>을<br />
             여러 지역에 꽂아 <span className="text-brand-600">고객을 만나는 통로</span>를<br />
             확장하는 전략입니다.
-          </h2>
+          </h1>
           <p className="text-xl text-ink-muted leading-relaxed">
             넓은 지역에서 사장님의 플레이스가 <strong className="text-ink">고객에게 발견되게 해야</strong><br />
             <strong className="text-ink">문의 전화가 늘어납니다.</strong>
@@ -697,6 +698,9 @@ export default function WhatIs() {
           />
         </div>
       </section>
+
+      {/* ───────────────── 관련 페이지 (SEO 내부 링크) ───────────────── */}
+      <RelatedLinks currentPath="/about/what-is" items={ALL_RELATED_LINKS} />
     </div>
   )
 }
@@ -726,7 +730,7 @@ function FlagDiagram() {
   ]
   return (
     <div className="relative aspect-square max-w-[320px] mx-auto">
-      <svg viewBox="0 0 200 200" className="w-full h-full">
+      <svg viewBox="0 0 200 200" className="w-full h-full" role="img" aria-label="서울 중심 수도권 주요 지역 분포도 - 타지역서비스 노출 영역 시각화"><title>서울 중심 수도권 타지역서비스 노출 지도</title>
         <defs>
           <linearGradient id="mapBg" x1="0" y1="0" x2="1" y2="1">
             <stop offset="0%" stopColor="#eef2ff" />

@@ -6,10 +6,12 @@
  * - ProtectedRoute: isAuthenticated=false 면 로그인 모달 + / 로 리다이렉트
  * - AdminRoute   : 슈퍼어드민(is_superadmin)만 통과
  *
- * 라우트 코드 스플리팅(2026-05):
- *   · 홈/소개/About/Intro 페이지는 즉시 로드 (첫 화면 빠른 표시)
- *   · 보호된 도구 페이지(Monitor, Keyword, Competition, KeywordDna, Admin)는 lazy()
- *     → 비로그인 방문자가 어드민/모니터 코드까지 받지 않도록 청크 분리
+ * 라우트 코드 스플리팅(2026-05 v2):
+ *   · 홈(Home) + ResetPassword + Intro만 즉시 로드 (첫 화면 LCP 최적화)
+ *   · About 4개 페이지(WhatIs/EssentialCategories/KeywordLogic/ExposureManagement)는 lazy
+ *   · Solutions 인트로 4개(KeywordDna/KeywordDiscover/Competition/Monitor Intro)는 lazy
+ *   · 보호된 도구 페이지(Monitor, Keyword, Competition, KeywordDna, Admin)는 lazy
+ *     → 메인 번들 582KB → 300KB 이하 목표 (LCP 개선)
  */
 import { lazy, Suspense, useEffect } from 'react'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
@@ -22,18 +24,22 @@ import { configureAuth } from '@/api/client'
 import { useMe } from '@/hooks/useAuth'
 import { useGaPageView } from '@/hooks/useGaPageView'
 
-// ── 즉시 로드 (첫 화면) ────────────────────────────────
+// ── 즉시 로드 (첫 화면 LCP 최적화) ────────────────────
 import Home from '@/pages/Home'
-import Intro from '@/pages/Intro'
 import ResetPassword from '@/pages/ResetPassword'
-import WhatIs from '@/pages/About/WhatIs'
-import EssentialCategories from '@/pages/About/EssentialCategories'
-import KeywordLogic from '@/pages/About/KeywordLogic'
-import ExposureManagement from '@/pages/About/ExposureManagement'
-import KeywordDnaIntro from '@/pages/Solutions/KeywordDnaIntro'
-import KeywordDiscoverIntro from '@/pages/Solutions/KeywordDiscoverIntro'
-import CompetitionIntro from '@/pages/Solutions/CompetitionIntro'
-import MonitorIntro from '@/pages/Solutions/MonitorIntro'
+
+// ── 소개/Intro 페이지 (lazy) ─────────────────────────
+const Intro = lazy(() => import('@/pages/Intro'))
+const KeywordDnaIntro = lazy(() => import('@/pages/Solutions/KeywordDnaIntro'))
+const KeywordDiscoverIntro = lazy(() => import('@/pages/Solutions/KeywordDiscoverIntro'))
+const CompetitionIntro = lazy(() => import('@/pages/Solutions/CompetitionIntro'))
+const MonitorIntro = lazy(() => import('@/pages/Solutions/MonitorIntro'))
+
+// ── About 페이지 (lazy) ─────────────────────────────
+const WhatIs = lazy(() => import('@/pages/About/WhatIs'))
+const EssentialCategories = lazy(() => import('@/pages/About/EssentialCategories'))
+const KeywordLogic = lazy(() => import('@/pages/About/KeywordLogic'))
+const ExposureManagement = lazy(() => import('@/pages/About/ExposureManagement'))
 
 // ── 로그인/권한 필요 페이지 (lazy) ──────────────────────
 const Monitor = lazy(() => import('@/pages/Monitor'))

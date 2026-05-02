@@ -59,7 +59,7 @@ export function AppLayout() {
           <Link to="/" className="flex items-center gap-2" aria-label="타지역닷컴 홈">
             <img
               src="/logo.png"
-              alt="타지역닷컴"
+              alt="타지역닷컴 로고 - 타지역서비스 네이버 노출 자동체크 솔루션"
               className="h-8 w-auto select-none"
               draggable={false}
             />

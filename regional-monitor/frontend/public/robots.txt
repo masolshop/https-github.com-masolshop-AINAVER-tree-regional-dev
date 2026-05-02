@@ -90,6 +90,7 @@ Disallow: /
 User-agent: CCBot
 Disallow: /
 
-# ── 사이트맵 ──
+# ── 사이트맵 / RSS ──
 Sitemap: https://taziyuk.com/sitemap.xml
+Sitemap: https://taziyuk.com/rss.xml
 Host: https://taziyuk.com

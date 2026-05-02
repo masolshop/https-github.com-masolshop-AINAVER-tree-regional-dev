@@ -7,6 +7,7 @@ import { TopBar } from '@/components/layout/TopBar'
 import { Card } from '@/components/ui/Card'
 import { Link } from 'react-router-dom'
 import PageSeo, { buildBreadcrumbJsonLd } from '@/components/seo/PageSeo'
+import { RelatedLinks, ALL_RELATED_LINKS } from '@/components/seo/RelatedLinks'
 import {
   Radio,
   Eye,
@@ -81,10 +82,10 @@ export default function ExposureManagement() {
           <span className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-pill bg-rose-50 text-rose-700 text-body-sm font-bold mb-3">
             <Radio size={14} /> 네이버노출관리 자동체크솔루션
           </span>
-          <h2 className="text-hero-sm text-ink mb-4 leading-tight">
+          <h1 className="text-hero-sm text-ink mb-4 leading-tight">
             타지역서비스의 핵심은 <span className="text-rose-700">등록이 아니라</span><br />
             <span className="text-brand-700">"지금 네이버에 보이고 있는가"</span>입니다.
-          </h2>
+          </h1>
           <p className="text-2xl text-ink-muted leading-relaxed">
             가장 무서운 순간은 어느 날 갑자기<br />
             <strong className="text-rose-700">네이버 노출 플레이스가 사라져 전화가 뚝 끊기는 순간</strong>입니다.
@@ -906,6 +907,9 @@ export default function ExposureManagement() {
           </Card>
         </div>
       </section>
+
+      {/* ───────────────── 관련 페이지 (SEO 내부 링크) ───────────────── */}
+      <RelatedLinks currentPath="/about/exposure-management" items={ALL_RELATED_LINKS} />
     </div>
   )
 }
