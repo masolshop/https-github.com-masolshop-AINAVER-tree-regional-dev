@@ -25,7 +25,11 @@ import {
   AlertTriangle,
   Zap,
   Megaphone,
+  Sparkles,
+  Target,
+  ShieldCheck,
 } from 'lucide-react'
+import { Link } from 'react-router-dom'
 import { KeywordDnaApi } from '@/api/keywordDna'
 
 interface CategoryRow {
@@ -534,6 +538,46 @@ export default function EssentialCategories() {
         </div>
       </Card>
       </section>
+
+      {/* ───── 마지막 CTA 3개 박스 ───── */}
+      <section>
+        <div className="mb-5 text-center">
+          <span className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-pill bg-emerald-50 text-emerald-700 text-body-sm font-bold mb-2">
+            🎁 타지역닷컴 위탁 시 100% 무료
+          </span>
+          <h2 className="text-h2 text-ink">지금 바로 무료로 시작하세요</h2>
+          <p className="text-lg text-ink-muted mt-2 leading-relaxed">
+            등록·관리만 맡기시면 4종 솔루션 전부 무료. 사장님이 잃을 게 없습니다.
+          </p>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <CtaBox
+            num="01"
+            title="네이버1페이지 플레이스 영역 노출"
+            highlight="골든키워드 발굴 무료 문의하기"
+            to="/intro/keyword-discover"
+            tone="brand"
+            icon={<Sparkles size={22} />}
+          />
+          <CtaBox
+            num="02"
+            title="지역별 키워드"
+            highlight="경쟁도 무료 분석 신청하기"
+            to="/intro/competition"
+            tone="teal"
+            icon={<Target size={22} />}
+          />
+          <CtaBox
+            num="03"
+            title="등록한 타지역서비스"
+            highlight="노출 자동체크 무료 플랜 신청하기"
+            to="/intro/monitor"
+            tone="rose"
+            icon={<ShieldCheck size={22} />}
+          />
+        </div>
+      </section>
     </div>
   )
 }
@@ -566,5 +610,41 @@ function FlowArrow() {
       <ArrowRight size={22} className="hidden md:block" />
       <ArrowRight size={22} className="md:hidden rotate-90" />
     </div>
+  )
+}
+
+interface CtaBoxProps {
+  num: string
+  title: string
+  highlight: string
+  to: string
+  tone: 'brand' | 'teal' | 'rose'
+  icon: React.ReactNode
+}
+
+function CtaBox({ num, title, highlight, to, tone, icon }: CtaBoxProps) {
+  const tc = {
+    brand: { accent: 'from-brand-500 to-indigo-500', ring: 'ring-brand-200', text: 'text-brand-700', btn: 'bg-brand-600 hover:bg-brand-700' },
+    teal: { accent: 'from-teal-500 to-cyan-500', ring: 'ring-teal-200', text: 'text-teal-700', btn: 'bg-teal-600 hover:bg-teal-700' },
+    rose: { accent: 'from-rose-500 to-orange-500', ring: 'ring-rose-200', text: 'text-rose-700', btn: 'bg-rose-600 hover:bg-rose-700' },
+  }[tone]
+  return (
+    <Card variant="white" className={`relative overflow-hidden ring-1 ${tc.ring} flex flex-col`}>
+      <span className="absolute top-3 right-3 inline-flex items-center gap-1 px-2.5 py-1 rounded-pill bg-emerald-50 text-emerald-700 text-[11px] font-bold">
+        🎁 FREE
+      </span>
+      <div className={`w-12 h-12 rounded-2xl bg-gradient-to-br ${tc.accent} text-white flex items-center justify-center mb-3 shadow-card`}>
+        {icon}
+      </div>
+      <div className={`text-body-sm font-mono ${tc.text} mb-1`}>CTA {num}</div>
+      <h3 className="text-h3 text-ink leading-tight mb-1">{title}</h3>
+      <p className={`text-lg font-bold ${tc.text} mb-4 leading-tight`}>{highlight}</p>
+      <Link
+        to={to}
+        className={`mt-auto inline-flex items-center justify-center gap-1.5 px-4 py-3 rounded-pill text-white font-bold text-base ${tc.btn} transition-colors`}
+      >
+        무료 신청하기 <ArrowRight size={16} />
+      </Link>
+    </Card>
   )
 }
