@@ -44,15 +44,15 @@ export default function WhatIs() {
           WHAT <br /> IS IT?
         </div>
         <div className="pt-28 max-w-3xl">
-          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-pill bg-brand-50 text-brand-700 text-caption font-semibold mb-3">
-            <Sparkles size={12} /> 네이버플레이스 지역 확장 전략
+          <span className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-pill bg-brand-50 text-brand-700 text-body-sm font-semibold mb-3">
+            <Sparkles size={14} /> 네이버플레이스 지역 확장 전략
           </span>
           <h2 className="text-hero-sm text-ink mb-4 leading-tight">
             타지역서비스는<br />
             고객을 여러 지역에서 만나게 하는<br />
             <span className="text-brand-600">네이버플레이스 확장 전략</span>입니다.
           </h2>
-          <p className="text-body text-ink-muted leading-relaxed">
+          <p className="text-xl text-ink-muted leading-relaxed">
             대부분의 사장님들이 겪는 가장 큰 고민이 있습니다.<br />
             바로 네이버플레이스 원칙상 <strong className="text-ink">우리 업체가 사무실 주소지 근처에서만 노출된다는 점</strong>입니다.
           </p>
@@ -62,9 +62,9 @@ export default function WhatIs() {
       {/* ───────────────── 2) 문제 인식 ───────────────── */}
       <section>
         <div className="mb-5">
-          <div className="text-caption text-ink-muted uppercase tracking-wider font-semibold mb-1">problem</div>
+          <div className="text-body-sm text-ink-muted uppercase tracking-wider font-semibold mb-1">problem</div>
           <h2 className="text-h2 text-ink">하지만 현실은 어떨까요?</h2>
-          <p className="text-body-sm text-ink-muted mt-1">
+          <p className="text-lg text-ink-muted mt-2 leading-relaxed">
             출장수리, 설치, 공사, 렌탈, 배달, 방문상담 업종은 사무실 근처에서만 영업하지 않습니다.
           </p>
         </div>
@@ -74,20 +74,20 @@ export default function WhatIs() {
           {/* 좌: 실제 영업 가능 지역 */}
           <Card variant="white" className="border border-emerald-200">
             <div className="flex items-center gap-2 mb-3">
-              <span className="px-2.5 py-1 rounded-pill bg-emerald-50 text-emerald-700 text-caption font-bold">
+              <span className="px-3 py-1.5 rounded-pill bg-emerald-50 text-emerald-700 text-body-sm font-bold">
                 ✅ 실제 영업 가능 지역
               </span>
             </div>
             <h3 className="text-h3 text-ink mb-4">사장님은 어디든 갈 수 있습니다</h3>
             <div className="grid grid-cols-2 gap-2.5">
               {['강남도 갈 수 있고', '송파도 갈 수 있고', '수원도 갈 수 있고', '인천도 갈 수 있습니다'].map((t) => (
-                <div key={t} className="flex items-center gap-2 px-3 py-2.5 rounded-card bg-emerald-50/60 border border-emerald-100">
-                  <MapPin size={14} className="text-emerald-600 shrink-0" />
-                  <span className="text-caption text-ink">{t}</span>
+                <div key={t} className="flex items-center gap-2 px-3 py-3 rounded-card bg-emerald-50/60 border border-emerald-100">
+                  <MapPin size={16} className="text-emerald-600 shrink-0" />
+                  <span className="text-lg text-ink font-medium">{t}</span>
                 </div>
               ))}
             </div>
-            <p className="text-caption text-ink-muted leading-relaxed mt-4">
+            <p className="text-lg text-ink-muted leading-relaxed mt-4">
               실제 영업 가능 지역은 <strong className="text-ink">매우 넓습니다.</strong>
             </p>
           </Card>
@@ -95,7 +95,7 @@ export default function WhatIs() {
           {/* 우: 네이버 노출 한계 */}
           <Card variant="white" className="border border-rose-200">
             <div className="flex items-center gap-2 mb-3">
-              <span className="px-2.5 py-1 rounded-pill bg-rose-50 text-rose-700 text-caption font-bold">
+              <span className="px-3 py-1.5 rounded-pill bg-rose-50 text-rose-700 text-body-sm font-bold">
                 🚫 네이버 지도 노출 현실
               </span>
             </div>
@@ -110,10 +110,10 @@ export default function WhatIs() {
                 <div className="w-12 h-12 rounded-full bg-rose-500 text-white flex items-center justify-center shadow-card">
                   <MapPin size={22} />
                 </div>
-                <div className="text-caption font-bold text-rose-700 mt-2">사무실 주소 한 곳</div>
+                <div className="text-base font-bold text-rose-700 mt-2">사무실 주소 한 곳</div>
               </div>
             </div>
-            <p className="text-caption text-ink-muted leading-relaxed mt-4">
+            <p className="text-lg text-ink-muted leading-relaxed mt-4">
               실제 영업 가능 지역은 넓은데, 네이버 지도에는 <strong className="text-rose-700">주소지 한 곳에서만 노출</strong>된다면?
             </p>
           </Card>
@@ -124,12 +124,12 @@ export default function WhatIs() {
           <div className="flex items-start gap-3">
             <AlertTriangle size={26} className="text-amber-600 shrink-0 mt-1" />
             <div>
-              <h3 className="text-h3 text-ink mb-2">사장님은 지금도 잠재고객의 상당수를 조용히 놓치고 있을 수 있습니다.</h3>
-              <p className="text-body text-ink leading-relaxed">
+              <h3 className="text-2xl text-ink font-bold mb-3 leading-snug">사장님은 지금도 잠재고객의 상당수를 조용히 놓치고 있을 수 있습니다.</h3>
+              <p className="text-xl text-ink leading-relaxed">
                 <strong className="text-rose-700">고객이 없는 것이 아닙니다.</strong><br />
                 <strong className="text-rose-700">고객이 사장님을 못 찾고 있는 것입니다.</strong>
               </p>
-              <p className="text-body-sm text-ink-muted leading-relaxed mt-3">
+              <p className="text-lg text-ink-muted leading-relaxed mt-3">
                 이 구조적 문제를 해결하는 방법, 그것이 바로 <strong className="text-brand-700">타지역서비스</strong>입니다.
               </p>
             </div>
@@ -140,9 +140,9 @@ export default function WhatIs() {
       {/* ───────────────── 3) 고객 검색 행동 ───────────────── */}
       <section>
         <div className="mb-5">
-          <div className="text-caption text-ink-muted uppercase tracking-wider font-semibold mb-1">customer behavior</div>
+          <div className="text-body-sm text-ink-muted uppercase tracking-wider font-semibold mb-1">customer behavior</div>
           <h2 className="text-h2 text-ink">고객은 사장님 주소를 검색하지 않습니다</h2>
-          <p className="text-body-sm text-ink-muted mt-1">고객은 이렇게 검색합니다.</p>
+          <p className="text-lg text-ink-muted mt-2 leading-relaxed">고객은 이렇게 검색합니다.</p>
         </div>
 
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 mb-5">
@@ -157,8 +157,8 @@ export default function WhatIs() {
           ].map((q) => (
             <Card key={q} variant="white" className="border border-bg-subtle hover:border-brand-300 transition-colors">
               <div className="flex items-center gap-2">
-                <Search size={16} className="text-brand-500 shrink-0" />
-                <span className="text-caption text-ink font-medium">{q}</span>
+                <Search size={18} className="text-brand-500 shrink-0" />
+                <span className="text-lg text-ink font-semibold">{q}</span>
               </div>
             </Card>
           ))}
@@ -174,19 +174,19 @@ export default function WhatIs() {
           <div className="flex items-start gap-3">
             <Eye size={26} className="text-brand-600 shrink-0 mt-1" />
             <div>
-              <div className="text-caption text-brand-700 font-bold uppercase tracking-wider mb-1">고객이 보는 것은 단 하나</div>
-              <h3 className="text-h3 text-ink mb-3">"지금 내가 찾는 지역에 이 업체가 보이는가?"</h3>
+              <div className="text-base text-brand-700 font-bold uppercase tracking-wider mb-2">고객이 보는 것은 단 하나</div>
+              <h3 className="text-2xl text-ink font-bold mb-4 leading-snug">"지금 내가 찾는 지역에 이 업체가 보이는가?"</h3>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                <div className="flex items-center gap-2 px-4 py-3 rounded-card bg-emerald-50 border border-emerald-200">
-                  <CheckCircle2 size={18} className="text-emerald-600 shrink-0" />
-                  <span className="text-body text-ink">보이면 → <strong className="text-emerald-700">전화합니다</strong></span>
+                <div className="flex items-center gap-2 px-4 py-3.5 rounded-card bg-emerald-50 border border-emerald-200">
+                  <CheckCircle2 size={20} className="text-emerald-600 shrink-0" />
+                  <span className="text-lg text-ink">보이면 → <strong className="text-emerald-700">전화합니다</strong></span>
                 </div>
-                <div className="flex items-center gap-2 px-4 py-3 rounded-card bg-rose-50 border border-rose-200">
-                  <XCircle size={18} className="text-rose-600 shrink-0" />
-                  <span className="text-body text-ink">안 보이면 → <strong className="text-rose-700">경쟁사에 전화합니다</strong></span>
+                <div className="flex items-center gap-2 px-4 py-3.5 rounded-card bg-rose-50 border border-rose-200">
+                  <XCircle size={20} className="text-rose-600 shrink-0" />
+                  <span className="text-lg text-ink">안 보이면 → <strong className="text-rose-700">경쟁사에 전화합니다</strong></span>
                 </div>
               </div>
-              <p className="text-body-sm text-ink-muted leading-relaxed mt-4">
+              <p className="text-lg text-ink-muted leading-relaxed mt-4">
                 네이버 지도에서 보이지 않는다는 것은 단순히 노출이 안 되는 문제가 아닙니다.<br />
                 <strong className="text-rose-700">그 지역 고객의 선택지에서 우리 업체가 사라지는 것</strong>입니다.
               </p>
@@ -198,7 +198,7 @@ export default function WhatIs() {
       {/* ───────────────── 4) 타지역서비스란? — 정의 + 깃발 도식 ───────────────── */}
       <section>
         <div className="mb-5">
-          <div className="text-caption text-ink-muted uppercase tracking-wider font-semibold mb-1">definition</div>
+          <div className="text-body-sm text-ink-muted uppercase tracking-wider font-semibold mb-1">definition</div>
           <h2 className="text-h2 text-ink">타지역서비스란?</h2>
         </div>
 
@@ -206,18 +206,18 @@ export default function WhatIs() {
           <div className="grid grid-cols-1 lg:grid-cols-5 gap-6 items-center">
             {/* 좌: 정의 텍스트 */}
             <div className="lg:col-span-3">
-              <p className="text-body text-ink leading-relaxed mb-4">
+              <p className="text-xl text-ink leading-relaxed mb-4">
                 타지역서비스는 <strong className="text-brand-700">본사나 사무실은 한 곳만 운영하더라도</strong><br />
                 가상번호 또는 지역별 전화번호를 활용해<br />
                 원하는 지역의 네이버플레이스에 내 업체를 등록하고 노출시키는<br />
                 <strong className="text-brand-700">지역 확장형 플레이스 마케팅 전략</strong>입니다.
               </p>
-              <p className="text-body-sm text-ink-muted leading-relaxed mb-4">
+              <p className="text-lg text-ink-muted leading-relaxed mb-4">
                 기존 네이버플레이스 구조에서는 사업장 주소지를 기준으로 노출이 제한되는 경우가 많습니다.
                 문제는 출장, 방문, 배달, 설치, 공사, 상담 업종처럼 <strong className="text-ink">실제 영업 범위가 넓은 사업자</strong>도
                 주소지 주변 고객에게만 노출되는 한계를 겪는다는 것입니다.
               </p>
-              <p className="text-body-sm text-ink-muted leading-relaxed">
+              <p className="text-lg text-ink-muted leading-relaxed">
                 타지역서비스는 이 물리적 한계를 넘어섭니다.<br />
                 <strong className="text-ink">실제 매장을 새로 임대하지 않아도, 직원을 지역마다 상주시킬 필요가 없어도,</strong>
                 사장님이 원하는 지역에 온라인 영업 거점을 만들어 고객 접점을 늘릴 수 있습니다.
@@ -234,8 +234,8 @@ export default function WhatIs() {
         {/* 한 줄 요약 */}
         <Card variant="white" className="mt-5 bg-brand-600 text-white">
           <div className="flex items-center gap-3">
-            <Lightbulb size={28} className="shrink-0" />
-            <p className="text-h3 leading-tight">
+            <Lightbulb size={32} className="shrink-0" />
+            <p className="text-2xl leading-snug font-medium">
               쉽게 말해, 타지역서비스는 <strong>네이버 지도 위에 사장님의 영업 깃발을 여러 지역에 꽂는 전략</strong>입니다.
             </p>
           </div>
@@ -245,7 +245,7 @@ export default function WhatIs() {
       {/* ───────────────── 5) 왜 지금 필요한가? 3가지 ───────────────── */}
       <section>
         <div className="mb-5">
-          <div className="text-caption text-ink-muted uppercase tracking-wider font-semibold mb-1">why now</div>
+          <div className="text-body-sm text-ink-muted uppercase tracking-wider font-semibold mb-1">why now</div>
           <h2 className="text-h2 text-ink">왜 지금 타지역서비스가 필요한가?</h2>
         </div>
 
@@ -297,7 +297,7 @@ export default function WhatIs() {
       {/* ───────────────── 6) 핵심 효과 5가지 ───────────────── */}
       <section>
         <div className="mb-5">
-          <div className="text-caption text-ink-muted uppercase tracking-wider font-semibold mb-1">5 effects</div>
+          <div className="text-body-sm text-ink-muted uppercase tracking-wider font-semibold mb-1">5 effects</div>
           <h2 className="text-h2 text-ink">타지역서비스의 핵심 효과 5가지</h2>
         </div>
 
@@ -353,28 +353,28 @@ export default function WhatIs() {
       <section>
         <Card variant="white" className="bg-gradient-to-br from-indigo-50 to-brand-50 border border-indigo-200">
           <div className="text-center max-w-3xl mx-auto py-4">
-            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-pill bg-white text-indigo-700 text-caption font-bold mb-4 shadow-sm">
-              <Star size={12} /> THE TRUTH
+            <span className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-pill bg-white text-indigo-700 text-body-sm font-bold mb-4 shadow-sm">
+              <Star size={14} /> THE TRUTH
             </span>
             <h2 className="text-h2 text-ink mb-4">타지역서비스는 단순한 꼼수가 아닙니다</h2>
-            <p className="text-body text-ink-muted leading-relaxed mb-5">
+            <p className="text-xl text-ink-muted leading-relaxed mb-5">
               타지역서비스를 단순히 "여러 지역에 업체를 등록하는 방법" 정도로 생각하면 안 됩니다.<br />
               진짜 핵심은 <strong className="text-ink">고객의 검색 행동을 이해하는 것</strong>입니다.
             </p>
 
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5">
               {['필요할 때 검색합니다', '가까운 곳을 찾습니다', '바로 전화 가능한 업체를 찾습니다', '지도에 보이는 업체를 믿습니다'].map((t) => (
-                <div key={t} className="px-3 py-3 rounded-card bg-white border border-indigo-100 shadow-sm">
-                  <CheckCircle2 size={16} className="text-indigo-500 mx-auto mb-1.5" />
-                  <span className="text-caption text-ink">{t}</span>
+                <div key={t} className="px-3 py-4 rounded-card bg-white border border-indigo-100 shadow-sm">
+                  <CheckCircle2 size={22} className="text-indigo-500 mx-auto mb-2" />
+                  <span className="text-base text-ink font-medium">{t}</span>
                 </div>
               ))}
             </div>
 
-            <p className="text-body text-ink leading-relaxed">
+            <p className="text-xl text-ink leading-relaxed">
               <strong className="text-indigo-700">사장님은 고객이 검색하는 그 지역에 있어야 합니다.</strong><br />
               물리적으로 매장이 없어도, 실제로 서비스를 제공할 수 있다면 온라인상에서 고객에게 보여야 합니다.<br />
-              <span className="text-h3 text-ink font-bold mt-3 inline-block">이것이 타지역서비스의 본질입니다.</span>
+              <span className="text-3xl text-ink font-bold mt-3 inline-block">이것이 타지역서비스의 본질입니다.</span>
             </p>
           </div>
         </Card>
@@ -383,9 +383,9 @@ export default function WhatIs() {
       {/* ───────────────── 8) 사장님이 놓치는 것 ───────────────── */}
       <section>
         <div className="mb-5">
-          <div className="text-caption text-ink-muted uppercase tracking-wider font-semibold mb-1">missing</div>
+          <div className="text-body-sm text-ink-muted uppercase tracking-wider font-semibold mb-1">missing</div>
           <h2 className="text-h2 text-ink">사장님이 지금 놓치고 있는 것</h2>
-          <p className="text-body-sm text-ink-muted mt-1">
+          <p className="text-lg text-ink-muted mt-2 leading-relaxed">
             사장님이 놓치고 있는 것은 고객이 아닐 수 있습니다.<br />
             사장님이 놓치고 있는 것은 <strong className="text-rose-700">고객에게 발견될 기회</strong>입니다.
           </p>
@@ -393,22 +393,22 @@ export default function WhatIs() {
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-5">
           {[
-            { icon: <EyeOff size={18} />, t: '우리 업체가 보이지 않으면 고객은 우리 실력을 알 수 없습니다' },
-            { icon: <EyeOff size={18} />, t: '우리 업체가 보이지 않으면 고객은 가격을 물어볼 수 없습니다' },
-            { icon: <EyeOff size={18} />, t: '우리 업체가 보이지 않으면 고객은 상담할 수도 없습니다' },
-            { icon: <EyeOff size={18} />, t: '우리 업체가 보이지 않으면 그 고객은 경쟁사에게 갑니다' },
+            { icon: <EyeOff size={20} />, t: '우리 업체가 보이지 않으면 고객은 우리 실력을 알 수 없습니다' },
+            { icon: <EyeOff size={20} />, t: '우리 업체가 보이지 않으면 고객은 가격을 물어볼 수 없습니다' },
+            { icon: <EyeOff size={20} />, t: '우리 업체가 보이지 않으면 고객은 상담할 수도 없습니다' },
+            { icon: <EyeOff size={20} />, t: '우리 업체가 보이지 않으면 그 고객은 경쟁사에게 갑니다' },
           ].map((b) => (
             <Card key={b.t} variant="white" className="border border-rose-100 bg-rose-50/30">
               <div className="flex items-start gap-3">
                 <span className="text-rose-500 mt-0.5">{b.icon}</span>
-                <span className="text-body-sm text-ink leading-relaxed">{b.t}</span>
+                <span className="text-lg text-ink leading-relaxed">{b.t}</span>
               </div>
             </Card>
           ))}
         </div>
 
         <Card variant="white" className="bg-emerald-50 border border-emerald-200">
-          <p className="text-body text-ink leading-relaxed text-center">
+          <p className="text-xl text-ink leading-relaxed text-center">
             결국 타지역서비스는 <strong className="text-rose-700">고객을 억지로 끌어오는 광고가 아니라</strong><br />
             <strong className="text-emerald-700">이미 검색하고 있는 고객 앞에 우리 업체를 보여주는 전략</strong>입니다.
           </p>
@@ -418,7 +418,7 @@ export default function WhatIs() {
       {/* ───────────────── 9) 비교표 ───────────────── */}
       <section>
         <div className="mb-5">
-          <div className="text-caption text-ink-muted uppercase tracking-wider font-semibold mb-1">comparison</div>
+          <div className="text-body-sm text-ink-muted uppercase tracking-wider font-semibold mb-1">comparison</div>
           <h2 className="text-h2 text-ink">기존 플레이스 마케팅과 타지역서비스 비교</h2>
         </div>
 
@@ -426,9 +426,9 @@ export default function WhatIs() {
           <table className="w-full min-w-[640px]">
             <thead>
               <tr className="bg-bg-subtle">
-                <th className="px-4 py-3 text-left text-caption font-bold text-ink-muted uppercase tracking-wider w-[20%]">구분</th>
-                <th className="px-4 py-3 text-left text-caption font-bold text-rose-700 uppercase tracking-wider w-[40%]">기존 플레이스 마케팅</th>
-                <th className="px-4 py-3 text-left text-caption font-bold text-emerald-700 uppercase tracking-wider w-[40%]">타지역서비스</th>
+                <th className="px-4 py-3.5 text-left text-base font-bold text-ink-muted uppercase tracking-wider w-[20%]">구분</th>
+                <th className="px-4 py-3.5 text-left text-base font-bold text-rose-700 uppercase tracking-wider w-[40%]">기존 플레이스 마케팅</th>
+                <th className="px-4 py-3.5 text-left text-base font-bold text-emerald-700 uppercase tracking-wider w-[40%]">타지역서비스</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-bg-subtle">
@@ -442,16 +442,16 @@ export default function WhatIs() {
                 ['적합 업종', '매장 방문형', '출장·방문·수리·상담형'],
               ].map(([label, a, b]) => (
                 <tr key={label} className="hover:bg-bg-subtle/40">
-                  <td className="px-4 py-3 text-body-sm font-bold text-ink">{label}</td>
-                  <td className="px-4 py-3 text-body-sm text-ink-muted">
-                    <div className="flex items-center gap-1.5">
-                      <XCircle size={14} className="text-rose-400 shrink-0" />
+                  <td className="px-4 py-3.5 text-lg font-bold text-ink">{label}</td>
+                  <td className="px-4 py-3.5 text-lg text-ink-muted">
+                    <div className="flex items-center gap-2">
+                      <XCircle size={18} className="text-rose-400 shrink-0" />
                       {a}
                     </div>
                   </td>
-                  <td className="px-4 py-3 text-body-sm text-ink">
-                    <div className="flex items-center gap-1.5">
-                      <CheckCircle2 size={14} className="text-emerald-500 shrink-0" />
+                  <td className="px-4 py-3.5 text-lg text-ink">
+                    <div className="flex items-center gap-2">
+                      <CheckCircle2 size={18} className="text-emerald-500 shrink-0" />
                       <strong>{b}</strong>
                     </div>
                   </td>
@@ -465,7 +465,7 @@ export default function WhatIs() {
       {/* ───────────────── 10) 이런 사장님께 꼭 필요합니다 ───────────────── */}
       <section>
         <div className="mb-5">
-          <div className="text-caption text-ink-muted uppercase tracking-wider font-semibold mb-1">for whom</div>
+          <div className="text-body-sm text-ink-muted uppercase tracking-wider font-semibold mb-1">for whom</div>
           <h2 className="text-h2 text-ink">이런 사장님께 꼭 필요합니다</h2>
         </div>
 
@@ -482,20 +482,20 @@ export default function WhatIs() {
           ].map((t, i) => (
             <Card key={t} variant="white" className="border border-bg-subtle hover:border-brand-300 transition-colors">
               <div className="flex items-start gap-3">
-                <span className="shrink-0 w-7 h-7 rounded-full bg-brand-100 text-brand-700 font-bold flex items-center justify-center text-caption">
+                <span className="shrink-0 w-9 h-9 rounded-full bg-brand-100 text-brand-700 font-bold flex items-center justify-center text-base">
                   {i + 1}
                 </span>
-                <span className="text-body-sm text-ink leading-relaxed">{t}</span>
+                <span className="text-lg text-ink leading-relaxed">{t}</span>
               </div>
             </Card>
           ))}
         </div>
 
         <Card variant="white" className="mt-5 bg-brand-50 border border-brand-200 text-center">
-          <p className="text-body text-ink leading-relaxed">
+          <p className="text-xl text-ink leading-relaxed">
             이런 분들에게 타지역서비스는 <strong className="text-brand-700">선택이 아니라</strong>
             <br className="md:hidden" />
-            <span className="text-h3 text-brand-700 font-bold"> 매출 확장을 위한 현실적인 전략입니다.</span>
+            <span className="text-3xl text-brand-700 font-bold"> 매출 확장을 위한 현실적인 전략입니다.</span>
           </p>
         </Card>
       </section>
@@ -503,24 +503,24 @@ export default function WhatIs() {
       {/* ───────────────── 11) 임팩트 5단 메시지 ───────────────── */}
       <section>
         <div className="mb-5">
-          <div className="text-caption text-ink-muted uppercase tracking-wider font-semibold mb-1">impact</div>
+          <div className="text-body-sm text-ink-muted uppercase tracking-wider font-semibold mb-1">impact</div>
           <h2 className="text-h2 text-ink">사장님, 고객이 없는 게 아닙니다.</h2>
           <p className="text-h3 text-rose-700 mt-1 font-bold">고객이 사장님을 못 찾고 있는 것입니다.</p>
         </div>
 
         <Card variant="white" className="mb-5">
-          <p className="text-body text-ink leading-relaxed mb-3">
+          <p className="text-xl text-ink leading-relaxed mb-4">
             오늘도 고객은 네이버에서 검색하고 있습니다.
           </p>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mb-4">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
             {['수리할 업체', '설치할 업체', '상담할 업체', '출장 가능한 업체'].map((t) => (
-              <div key={t} className="px-3 py-2 rounded-card bg-bg-subtle text-center">
-                <Search size={14} className="text-brand-500 mx-auto mb-1" />
-                <span className="text-caption text-ink">{t}</span>
+              <div key={t} className="px-3 py-3 rounded-card bg-bg-subtle text-center">
+                <Search size={20} className="text-brand-500 mx-auto mb-1" />
+                <span className="text-lg text-ink font-medium">{t}</span>
               </div>
             ))}
           </div>
-          <p className="text-body text-ink-muted leading-relaxed">
+          <p className="text-xl text-ink-muted leading-relaxed">
             그런데 그 검색 결과에 우리 업체가 없다면? <strong className="text-rose-700">그 고객은 우리 고객이 될 수 없습니다.</strong>
           </p>
         </Card>
@@ -532,20 +532,20 @@ export default function WhatIs() {
             '아무리 친절해도',
             '아무리 가격이 좋아도',
           ].map((t) => (
-            <Card key={t} variant="white" className="border border-rose-100 bg-rose-50/30 text-center">
-              <span className="text-body font-bold text-ink">{t}</span>
+            <Card key={t} variant="white" className="border border-rose-100 bg-rose-50/30 text-center py-4">
+              <span className="text-xl font-bold text-ink">{t}</span>
             </Card>
           ))}
         </div>
-        <p className="text-body text-ink leading-relaxed text-center mb-6">
+        <p className="text-xl text-ink leading-relaxed text-center mb-6">
           고객 눈앞에 보이지 않으면 <strong className="text-rose-700">기회조차 생기지 않습니다.</strong>
         </p>
 
         {/* 효과 체인 */}
         <Card variant="white" className="bg-gradient-to-r from-emerald-50 via-brand-50 to-amber-50">
           <div className="text-center mb-3">
-            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-pill bg-emerald-100 text-emerald-700 text-caption font-bold">
-              <Zap size={12} /> 보이면 일어나는 일
+            <span className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-pill bg-emerald-100 text-emerald-700 text-body-sm font-bold">
+              <Zap size={14} /> 보이면 일어나는 일
             </span>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-7 items-center gap-2">
@@ -557,7 +557,7 @@ export default function WhatIs() {
             <ArrowConnector />
             <ChainStep label="매출 기회" sub="계약 / 수주" tone="rose" />
           </div>
-          <p className="text-caption text-ink-muted leading-relaxed text-center mt-4">
+          <p className="text-lg text-ink-muted leading-relaxed text-center mt-4">
             반대로 보이지 않으면 <strong className="text-ink">아무 일도 일어나지 않습니다.</strong>
           </p>
         </Card>
@@ -566,7 +566,7 @@ export default function WhatIs() {
       {/* ───────────────── 12) 5가지 명언 카드 ───────────────── */}
       <section>
         <div className="mb-5">
-          <div className="text-caption text-ink-muted uppercase tracking-wider font-semibold mb-1">5 messages</div>
+          <div className="text-body-sm text-ink-muted uppercase tracking-wider font-semibold mb-1">5 messages</div>
           <h2 className="text-h2 text-ink">기억해 주세요</h2>
         </div>
 
@@ -613,7 +613,7 @@ export default function WhatIs() {
               지금 필요한 것은 더 많은 광고비가 아닙니다.<br />
               <span className="text-white/90">고객이 검색하는 지역에 보이는 구조입니다.</span>
             </h2>
-            <p className="text-body text-white/90 leading-relaxed mb-6">
+            <p className="text-xl text-white/90 leading-relaxed mb-6">
               타지역서비스는 사장님이 실제로 영업할 수 있는 지역에<br />
               우리 업체를 노출시켜 전화문의 기회를 넓히는 플레이스 마케팅 전략입니다.
             </p>
@@ -623,13 +623,13 @@ export default function WhatIs() {
                 ['전화 받는 업체가', '상담을 만듭니다'],
                 ['상담하는 업체가', '매출을 가져갑니다'],
               ].map(([a, b]) => (
-                <div key={a} className="rounded-card bg-white/10 backdrop-blur-sm px-4 py-4 border border-white/20">
-                  <div className="text-caption text-white/80">{a}</div>
-                  <div className="text-h3 text-white font-bold">{b}</div>
+                <div key={a} className="rounded-card bg-white/10 backdrop-blur-sm px-4 py-5 border border-white/20">
+                  <div className="text-base text-white/80 mb-1">{a}</div>
+                  <div className="text-2xl text-white font-bold">{b}</div>
                 </div>
               ))}
             </div>
-            <p className="text-body-sm text-white/90 leading-relaxed">
+            <p className="text-lg text-white/90 leading-relaxed">
               한 곳의 사업장으로 여러 지역 고객을 만나고 싶다면,<br />
               <strong className="text-white">지금 바로 타지역서비스를 검토해보세요.</strong>
             </p>
@@ -640,11 +640,11 @@ export default function WhatIs() {
       {/* ───────────────── 14) CTA 박스 3개 ───────────────── */}
       <section>
         <div className="mb-5 text-center">
-          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-pill bg-emerald-50 text-emerald-700 text-caption font-bold mb-2">
+          <span className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-pill bg-emerald-50 text-emerald-700 text-body-sm font-bold mb-2">
             🎁 타지역닷컴 위탁 시 100% 무료
           </span>
           <h2 className="text-h2 text-ink">지금 바로 무료로 시작하세요</h2>
-          <p className="text-body-sm text-ink-muted mt-1">
+          <p className="text-lg text-ink-muted mt-2 leading-relaxed">
             등록·관리만 맡기시면 4종 솔루션 전부 무료. 사장님이 잃을 게 없습니다.
           </p>
         </div>
@@ -686,8 +686,8 @@ function BulletCard({ title }: { tone: 'muted'; title: string }) {
   return (
     <Card variant="white" className="border border-bg-subtle">
       <div className="flex items-center gap-2">
-        <XCircle size={16} className="text-ink-muted shrink-0" />
-        <span className="text-body-sm text-ink-muted">{title}</span>
+        <XCircle size={18} className="text-ink-muted shrink-0" />
+        <span className="text-base text-ink-muted">{title}</span>
       </div>
     </Card>
   )
@@ -737,7 +737,7 @@ function FlagDiagram() {
           </g>
         ))}
       </svg>
-      <div className="text-center text-caption text-ink-muted mt-2">
+      <div className="text-center text-base text-ink-muted mt-2 font-medium">
         본사 1곳 → 영업 깃발 N개 지역
       </div>
     </div>
@@ -767,14 +767,14 @@ function ReasonCard({ num, tone, title, lead, bullets, customBlock, icon }: Reas
           {icon}
         </div>
         <div className="flex-1 min-w-0">
-          <div className={`text-caption font-mono font-bold ${tc.text} mb-1`}>REASON {num}</div>
+          <div className={`text-body-sm font-mono font-bold ${tc.text} mb-1`}>REASON {num}</div>
           <h3 className="text-h3 text-ink mb-3">{title}</h3>
-          <p className={`text-body-sm text-ink leading-relaxed mb-4 px-3 py-2 rounded-card ${tc.bg}`}>{lead}</p>
+          <p className={`text-lg text-ink leading-relaxed mb-4 px-3.5 py-2.5 rounded-card ${tc.bg}`}>{lead}</p>
           {customBlock}
-          <ul className="space-y-2 mt-4">
+          <ul className="space-y-2.5 mt-4">
             {bullets.map((b) => (
-              <li key={b} className="flex items-start gap-2 text-body-sm text-ink-muted leading-relaxed">
-                <CheckCircle2 size={16} className={`shrink-0 mt-0.5 ${tc.text}`} />
+              <li key={b} className="flex items-start gap-2 text-base text-ink-muted leading-relaxed">
+                <CheckCircle2 size={18} className={`shrink-0 mt-0.5 ${tc.text}`} />
                 <span>{b}</span>
               </li>
             ))}
@@ -798,17 +798,17 @@ function IntentTable() {
       <table className="w-full">
         <thead>
           <tr className="bg-amber-50">
-            <th className="px-3 py-2 text-left text-caption font-bold text-amber-700">고객 검색어</th>
-            <th className="px-3 py-2 text-left text-caption font-bold text-amber-700">고객 의도</th>
+            <th className="px-3 py-2.5 text-left text-base font-bold text-amber-700">고객 검색어</th>
+            <th className="px-3 py-2.5 text-left text-base font-bold text-amber-700">고객 의도</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-amber-100 bg-white">
           {rows.map(([q, intent]) => (
             <tr key={q}>
-              <td className="px-3 py-2 text-caption text-ink font-medium">
-                <Search size={12} className="inline text-amber-500 mr-1" />{q}
+              <td className="px-3 py-2.5 text-base text-ink font-medium">
+                <Search size={14} className="inline text-amber-500 mr-1" />{q}
               </td>
-              <td className="px-3 py-2 text-caption text-ink-muted">→ {intent}</td>
+              <td className="px-3 py-2.5 text-base text-ink-muted">→ {intent}</td>
             </tr>
           ))}
         </tbody>
@@ -830,20 +830,20 @@ function IndustryTable() {
       <table className="w-full">
         <thead>
           <tr className="bg-rose-50">
-            <th className="px-3 py-2 text-left text-caption font-bold text-rose-700">업종 유형</th>
-            <th className="px-3 py-2 text-left text-caption font-bold text-rose-700">예시</th>
+            <th className="px-3 py-2.5 text-left text-base font-bold text-rose-700">업종 유형</th>
+            <th className="px-3 py-2.5 text-left text-base font-bold text-rose-700">예시</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-rose-100 bg-white">
           {rows.map(([t, ex]) => (
             <tr key={t}>
-              <td className="px-3 py-2 text-caption text-ink font-bold">{t}</td>
-              <td className="px-3 py-2 text-caption text-ink-muted">{ex}</td>
+              <td className="px-3 py-2.5 text-base text-ink font-bold">{t}</td>
+              <td className="px-3 py-2.5 text-base text-ink-muted">{ex}</td>
             </tr>
           ))}
         </tbody>
       </table>
-      <div className="px-3 py-2.5 bg-rose-50/60 text-caption text-ink leading-relaxed">
+      <div className="px-3.5 py-3 bg-rose-50/60 text-base text-ink leading-relaxed">
         <strong className="text-rose-700">공통점은 하나입니다 — </strong>
         고객이 있는 곳으로 갈 수 있는 업종이라는 점입니다.
       </div>
@@ -881,15 +881,15 @@ function EffectRow({ num, tone, icon, title, body, example, highlight, customBlo
         </div>
         <div className="flex-1 min-w-0">
           <h3 className="text-h3 text-ink mb-2">{title}</h3>
-          <p className="text-body-sm text-ink leading-relaxed mb-2">{body}</p>
+          <p className="text-lg text-ink leading-relaxed mb-2">{body}</p>
           {example && (
-            <div className={`px-3 py-2 rounded-card ${tc.bg} text-caption text-ink leading-relaxed mb-2`}>
+            <div className={`px-3.5 py-2.5 rounded-card ${tc.bg} text-base text-ink leading-relaxed mb-2`}>
               {example}
             </div>
           )}
           {customBlock}
           {highlight && (
-            <p className={`text-body-sm font-bold ${tc.text} leading-relaxed mt-2`}>
+            <p className={`text-lg font-bold ${tc.text} leading-relaxed mt-2`}>
               👉 {highlight}
             </p>
           )}
@@ -907,9 +907,9 @@ function ChainStep({ label, sub, tone }: { label: string; sub: string; tone: 'br
     rose: 'bg-rose-50 text-rose-700 border-rose-200',
   }[tone]
   return (
-    <div className={`rounded-card border ${tc} px-3 py-3 text-center`}>
-      <div className="text-body font-bold">{label}</div>
-      <div className="text-caption opacity-80 mt-0.5">{sub}</div>
+    <div className={`rounded-card border ${tc} px-3 py-3.5 text-center`}>
+      <div className="text-lg font-bold">{label}</div>
+      <div className="text-base opacity-80 mt-0.5">{sub}</div>
     </div>
   )
 }
@@ -943,8 +943,8 @@ function QuoteCard({ num, text, sub, tone }: QuoteCardProps) {
       <div className="flex items-start gap-4">
         <div className={`text-[42px] leading-none font-light ${tc.text} shrink-0 select-none`}>{num}</div>
         <div className="flex-1 min-w-0">
-          <p className="text-body font-bold text-ink leading-relaxed mb-1.5">"{text}"</p>
-          <p className="text-body-sm text-ink-muted leading-relaxed">{sub}</p>
+          <p className="text-xl font-bold text-ink leading-relaxed mb-2">"{text}"</p>
+          <p className="text-base text-ink-muted leading-relaxed">{sub}</p>
         </div>
       </div>
     </Card>
@@ -968,20 +968,20 @@ function CtaBox({ num, title, highlight, to, tone, icon }: CtaBoxProps) {
   }[tone]
   return (
     <Card variant="white" className={`relative overflow-hidden ring-1 ${tc.ring} flex flex-col`}>
-      <span className="absolute top-3 right-3 inline-flex items-center gap-1 px-2 py-0.5 rounded-pill bg-emerald-50 text-emerald-700 text-[10px] font-bold">
+      <span className="absolute top-3 right-3 inline-flex items-center gap-1 px-2.5 py-1 rounded-pill bg-emerald-50 text-emerald-700 text-[11px] font-bold">
         🎁 FREE
       </span>
       <div className={`w-12 h-12 rounded-2xl bg-gradient-to-br ${tc.accent} text-white flex items-center justify-center mb-3 shadow-card`}>
         {icon}
       </div>
-      <div className={`text-caption font-mono ${tc.text} mb-1`}>CTA {num}</div>
+      <div className={`text-body-sm font-mono ${tc.text} mb-1`}>CTA {num}</div>
       <h3 className="text-h3 text-ink leading-tight mb-1">{title}</h3>
-      <p className={`text-body font-bold ${tc.text} mb-4 leading-tight`}>{highlight}</p>
+      <p className={`text-lg font-bold ${tc.text} mb-4 leading-tight`}>{highlight}</p>
       <Link
         to={to}
-        className={`mt-auto inline-flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-pill text-white font-bold text-caption ${tc.btn} transition-colors`}
+        className={`mt-auto inline-flex items-center justify-center gap-1.5 px-4 py-3 rounded-pill text-white font-bold text-base ${tc.btn} transition-colors`}
       >
-        무료 신청하기 <ArrowRight size={14} />
+        무료 신청하기 <ArrowRight size={16} />
       </Link>
     </Card>
   )
