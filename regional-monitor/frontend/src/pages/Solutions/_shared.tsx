@@ -14,6 +14,7 @@ import {
 } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import PageSeo, { buildServiceJsonLd } from '@/components/seo/PageSeo'
+import { RelatedLinks, ALL_RELATED_LINKS } from '@/components/seo/RelatedLinks'
 
 export interface SolutionDetailProps {
   num: string
@@ -170,12 +171,9 @@ export function SolutionDetailLayout(props: SolutionDetailProps) {
         </div>
       </Card>
 
-      {/* 다른 솔루션 보러 가기 */}
+      {/* 4종 솔루션 통합 소개로 돌아가기 */}
       <Card variant="white">
-        <div className="text-body text-ink-muted uppercase tracking-wider font-semibold mb-2">
-          related
-        </div>
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap items-center gap-3">
           <Link
             to="/intro"
             className="inline-flex items-center gap-1 px-3 py-1.5 rounded-pill bg-bg-subtle text-ink hover:bg-brand-50 hover:text-brand-700 text-body font-medium transition-colors"
@@ -184,6 +182,11 @@ export function SolutionDetailLayout(props: SolutionDetailProps) {
           </Link>
         </div>
       </Card>
+
+      {/* 관련 페이지 (SEO 내부 링크 - 양방향 100% 완성) */}
+      {props.seoPath && (
+        <RelatedLinks currentPath={props.seoPath} items={ALL_RELATED_LINKS} />
+      )}
     </div>
   )
 }

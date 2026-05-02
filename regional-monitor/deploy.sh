@@ -30,7 +30,22 @@ sudo systemctl restart regionwatch-backend.service
 sleep 2
 sudo systemctl status regionwatch-backend.service --no-pager | head -5
 
-echo -e "${BLUE}=== [5/5] Reload nginx ===${NC}"
+echo -e "${BLUE}=== [5/5] Sync nginx config & reload ===${NC}"
+# nginx 설정 파일을 레포의 deploy/nginx-regionwatch.conf 와 동기화
+NGINX_SRC="$REPO_DIR/regional-monitor/deploy/nginx-regionwatch.conf"
+NGINX_DST="/etc/nginx/sites-available/regionwatch"
+if [ -f "$NGINX_SRC" ]; then
+  if ! sudo diff -q "$NGINX_SRC" "$NGINX_DST" >/dev/null 2>&1; then
+    echo "  → nginx config changed, updating $NGINX_DST"
+    sudo cp "$NGINX_SRC" "$NGINX_DST"
+    # 심볼릭 링크 보장
+    [ -L /etc/nginx/sites-enabled/regionwatch ] || sudo ln -sf "$NGINX_DST" /etc/nginx/sites-enabled/regionwatch
+    # 기본 default 비활성화 (있을 경우)
+    [ -f /etc/nginx/sites-enabled/default ] && sudo rm -f /etc/nginx/sites-enabled/default
+  else
+    echo "  → nginx config unchanged"
+  fi
+fi
 sudo nginx -t && sudo systemctl reload nginx
 
 echo -e "${GREEN}=== Health check ===${NC}"
