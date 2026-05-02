@@ -332,15 +332,13 @@ export function Sidebar({ onItemClick }: SidebarProps = {}) {
           </div>
         )}
 
-        {/* 3) 타지역 4종솔루션소개 그룹 (확장형) */}
+        {/* 3) 타지역 4종솔루션소개 그룹 (확장형, 토글 전용 — 페이지 연결 X) */}
         <div className="flex items-stretch gap-0.5">
           <button
             type="button"
             onClick={() => setSolutionsOpen((v) => !v)}
-            className={clsx(
-              'sidebar-item flex-1',
-              isSolutionsActive && 'active',
-            )}
+            aria-expanded={solutionsOpen}
+            className="sidebar-item flex-1"
           >
             <SOLUTIONS_GROUP.icon size={18} className="shrink-0" />
             <span className="flex-1 text-left text-[clamp(13px,2.6vw,19px)] whitespace-nowrap leading-none">
