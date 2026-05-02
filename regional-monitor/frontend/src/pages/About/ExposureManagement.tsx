@@ -62,36 +62,15 @@ export default function ExposureManagement() {
             <Radio size={14} /> 네이버노출관리 자동체크솔루션
           </span>
           <h2 className="text-hero-sm text-ink mb-4 leading-tight">
-            등록만 해놓고 <span className="text-rose-700">손 놓고 있으면</span><br />
-            <span className="text-brand-600">노출은 어느 순간 사라집니다.</span>
+            타지역서비스의 핵심은 <span className="text-rose-700">등록이 아니라</span><br />
+            <span className="text-brand-700">"지금 네이버에 보이고 있는가"</span>입니다.
           </h2>
           <p className="text-2xl text-ink-muted leading-relaxed">
-            네이버 1페이지 노출은 <strong className="text-ink">변동성이 매우 큽니다.</strong><br />
-            오늘 1페이지였던 키워드가 내일은 3페이지로 밀려있을 수 있습니다.<br />
-            <strong className="text-rose-700">매일 직접 검색해 확인하기 어려운 사장님</strong>을 위한 솔루션입니다.
+            가장 무서운 순간은 어느 날 갑자기<br />
+            <strong className="text-rose-700">네이버 노출 플레이스가 사라져 전화가 뚝 끊기는 순간</strong>입니다.
           </p>
         </div>
       </Card>
-
-      {/* ═══════════════════ 신규: 타지역서비스 네이버 노출의 현실 ═══════════════════ */}
-
-      {/* A) 핵심 메시지 카드 ─────────────────────── */}
-      <section>
-        <Card variant="white" className="bg-gradient-to-br from-rose-50 via-amber-50/40 to-rose-50 border border-rose-200">
-          <div className="max-w-3xl mx-auto py-3 text-center">
-            <span className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-pill bg-white text-rose-700 text-body-sm font-bold shadow-sm mb-3">
-              📡 타지역서비스 네이버 노출의 현실
-            </span>
-            <h2 className="text-h1 text-ink leading-tight mb-3">
-              타지역서비스의 핵심은 <span className="text-rose-700">등록이 아니라</span><br />
-              <span className="text-brand-700">"지금 네이버에 보이고 있는가"</span>입니다.
-            </h2>
-            <p className="text-xl text-ink-muted leading-relaxed">
-              가장 무서운 순간은 어느 날 갑자기 <strong className="text-rose-700">전화가 뚝 끊기는 순간</strong>입니다.
-            </p>
-          </div>
-        </Card>
-      </section>
 
       {/* B) 어느 날 전화가 끊기는 흐름 ─────────────── */}
       <section>
