@@ -65,7 +65,7 @@ export default function ExposureManagement() {
             등록만 해놓고 <span className="text-rose-700">손 놓고 있으면</span><br />
             <span className="text-brand-600">노출은 어느 순간 사라집니다.</span>
           </h2>
-          <p className="text-xl text-ink-muted leading-relaxed">
+          <p className="text-2xl text-ink-muted leading-relaxed">
             네이버 1페이지 노출은 <strong className="text-ink">변동성이 매우 큽니다.</strong><br />
             오늘 1페이지였던 키워드가 내일은 3페이지로 밀려있을 수 있습니다.<br />
             <strong className="text-rose-700">매일 직접 검색해 확인하기 어려운 사장님</strong>을 위한 솔루션입니다.
@@ -86,7 +86,7 @@ export default function ExposureManagement() {
               타지역서비스의 핵심은 <span className="text-rose-700">등록이 아니라</span><br />
               <span className="text-brand-700">"지금 네이버에 보이고 있는가"</span>입니다.
             </h2>
-            <p className="text-lg text-ink-muted leading-relaxed">
+            <p className="text-xl text-ink-muted leading-relaxed">
               가장 무서운 순간은 어느 날 갑자기 <strong className="text-rose-700">전화가 뚝 끊기는 순간</strong>입니다.
             </p>
           </div>
@@ -98,7 +98,7 @@ export default function ExposureManagement() {
         <div className="mb-5">
           <div className="text-body-sm text-ink-muted uppercase tracking-wider font-semibold mb-1">scenario</div>
           <h2 className="text-h2 text-ink">어느 날 갑자기, 전화가 끊깁니다</h2>
-          <p className="text-lg text-ink-muted mt-2 leading-relaxed">
+          <p className="text-xl text-ink-muted mt-2 leading-relaxed">
             어제까지는 분명 문의가 왔습니다. 그런데 이상하게 전화가 줄어듭니다.
           </p>
         </div>
@@ -123,7 +123,7 @@ export default function ExposureManagement() {
               className="flex items-start gap-2 px-3.5 py-3 rounded-card bg-white border border-amber-200"
             >
               <HelpCircle size={18} className="text-amber-500 shrink-0 mt-0.5" />
-              <span className="text-base text-ink-muted leading-snug">{q}</span>
+              <span className="text-lg text-ink-muted leading-snug">{q}</span>
             </div>
           ))}
         </div>
@@ -144,7 +144,7 @@ export default function ExposureManagement() {
         <div className="mb-5">
           <div className="text-body-sm text-ink-muted uppercase tracking-wider font-semibold mb-1">hidden loss</div>
           <h2 className="text-h2 text-ink">사라져 있던 기간, 누가 보상해줄까요?</h2>
-          <p className="text-lg text-ink-muted mt-2 leading-relaxed">
+          <p className="text-xl text-ink-muted mt-2 leading-relaxed">
             회선비·관리비는 계속 나갔는데, 정작 네이버에는 보이지 않았습니다.<br />
             <strong className="text-ink">이 손실은 눈에 보이지 않지만 실제로 매출에서 빠져나간 돈입니다.</strong>
           </p>
@@ -167,7 +167,7 @@ export default function ExposureManagement() {
               <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-rose-500 to-orange-500 text-white flex items-center justify-center mb-2 shadow-card">
                 {it.icon}
               </div>
-              <p className="text-base text-ink font-bold leading-snug">{it.label}</p>
+              <p className="text-lg text-ink font-bold leading-snug">{it.label}</p>
             </Card>
           ))}
         </div>
@@ -178,7 +178,7 @@ export default function ExposureManagement() {
         <div className="mb-5">
           <div className="text-body-sm text-ink-muted uppercase tracking-wider font-semibold mb-1">unpredictable</div>
           <h2 className="text-h2 text-ink">변덕스러운 네이버, 예측 불가능한 노출</h2>
-          <p className="text-lg text-ink-muted mt-2 leading-relaxed">
+          <p className="text-xl text-ink-muted mt-2 leading-relaxed">
             누구도 100% 정답을 말할 수 없습니다. 네이버 시스템·검색 로직·플레이스 기준은 계속 바뀝니다.
           </p>
         </div>
@@ -192,12 +192,12 @@ export default function ExposureManagement() {
             <Card key={it.left} variant="white" className="border border-bg-subtle">
               <div className="flex items-center gap-2 px-3 py-2 rounded-card bg-emerald-50 border border-emerald-100 mb-2">
                 <CheckCircle2 size={16} className="text-emerald-600 shrink-0" />
-                <span className="text-base text-emerald-700 font-semibold">{it.left}</span>
+                <span className="text-lg text-emerald-700 font-semibold">{it.left}</span>
               </div>
               <ArrowDown size={18} className="text-ink-soft mx-auto mb-2" />
               <div className="flex items-center gap-2 px-3 py-2 rounded-card bg-rose-50 border border-rose-100">
                 <XCircle size={16} className="text-rose-500 shrink-0" />
-                <span className="text-base text-rose-700 font-semibold">{it.right}</span>
+                <span className="text-lg text-rose-700 font-semibold">{it.right}</span>
               </div>
             </Card>
           ))}
@@ -209,7 +209,7 @@ export default function ExposureManagement() {
             <h3 className="text-h2 text-ink leading-tight mb-2">
               네이버는 <span className="text-rose-700">노출을 보장하지 않습니다.</span>
             </h3>
-            <p className="text-lg text-ink-muted leading-relaxed">
+            <p className="text-xl text-ink-muted leading-relaxed">
               네이버는 검색 결과를 제공하는 플랫폼이지,<br />
               타지역서비스 회선의 노출을 책임지는 기관이 아닙니다.
             </p>
@@ -222,7 +222,7 @@ export default function ExposureManagement() {
         <div className="mb-5">
           <div className="text-body-sm text-ink-muted uppercase tracking-wider font-semibold mb-1">structural gap</div>
           <h2 className="text-h2 text-ink">타지역서비스에는 "노출 책임자"가 없습니다</h2>
-          <p className="text-lg text-ink-muted mt-2 leading-relaxed">
+          <p className="text-xl text-ink-muted mt-2 leading-relaxed">
             5개 주체가 얽혀 있지만, 어느 누구도 노출 유지를 보장하지 않습니다.
           </p>
         </div>
@@ -239,8 +239,8 @@ export default function ExposureManagement() {
               <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-brand-500 to-indigo-500 text-white flex items-center justify-center mb-2 shadow-card">
                 {it.icon}
               </div>
-              <h3 className="text-lg font-bold text-ink mb-1.5 leading-tight">{it.role}</h3>
-              <p className="text-base text-ink-muted leading-snug mb-2">{it.work}</p>
+              <h3 className="text-xl font-bold text-ink mb-1.5 leading-tight">{it.role}</h3>
+              <p className="text-lg text-ink-muted leading-snug mb-2">{it.work}</p>
               <div className="px-2.5 py-1.5 rounded-md bg-rose-50 border border-rose-100 text-body-sm text-rose-700 font-semibold">
                 {it.limit}
               </div>
@@ -263,7 +263,7 @@ export default function ExposureManagement() {
         <div className="mb-5">
           <div className="text-body-sm text-ink-muted uppercase tracking-wider font-semibold mb-1">causes</div>
           <h2 className="text-h2 text-ink">네이버 미노출은 누구의 잘못만으로 보기 어렵습니다</h2>
-          <p className="text-lg text-ink-muted mt-2 leading-relaxed">
+          <p className="text-xl text-ink-muted mt-2 leading-relaxed">
             아무리 관리해도 시스템 변화·로직 변경으로 갑자기 발생할 수 있는 문제 11가지.
           </p>
         </div>
@@ -290,7 +290,7 @@ export default function ExposureManagement() {
               <span className="text-body-sm font-mono text-ink-muted w-5 shrink-0">
                 {String(i + 1).padStart(2, '0')}
               </span>
-              <span className="text-base text-ink leading-snug">{c}</span>
+              <span className="text-lg text-ink leading-snug">{c}</span>
             </div>
           ))}
         </div>
@@ -318,7 +318,7 @@ export default function ExposureManagement() {
               <Card key={it.day} variant="white" className="border border-rose-100 text-center">
                 <Hourglass size={24} className="text-rose-500 mx-auto mb-2" />
                 <div className="text-h3 text-rose-700 font-bold mb-1">{it.day} 사라지면</div>
-                <p className="text-base text-ink-muted leading-snug">{it.loss}</p>
+                <p className="text-lg text-ink-muted leading-snug">{it.loss}</p>
               </Card>
             ))}
           </div>
@@ -359,7 +359,7 @@ export default function ExposureManagement() {
                     <Calendar size={13} /> {row.period}
                   </span>
                 </div>
-                <div className="col-span-2 text-base text-ink leading-relaxed">{row.loss}</div>
+                <div className="col-span-2 text-lg text-ink leading-relaxed">{row.loss}</div>
               </div>
             )
           })}
@@ -367,7 +367,7 @@ export default function ExposureManagement() {
 
         <Card variant="white" className="mt-4 bg-rose-600 text-white">
           <div className="max-w-3xl mx-auto py-2 text-center">
-            <p className="text-xl md:text-2xl text-white font-bold leading-snug">
+            <p className="text-2xl md:text-2xl text-white font-bold leading-snug">
               미노출은 단순한 오류가 아닙니다 —<br />
               <span className="text-amber-200">전화문의 중단 · 광고비 손실 · 매출 기회 상실</span>입니다.
             </p>
@@ -380,7 +380,7 @@ export default function ExposureManagement() {
         <div className="mb-5">
           <div className="text-body-sm text-ink-muted uppercase tracking-wider font-semibold mb-1">early action</div>
           <h2 className="text-h2 text-ink">조기 발견 → 조기 재노출 작업이 가능합니다</h2>
-          <p className="text-lg text-ink-muted mt-2 leading-relaxed">
+          <p className="text-xl text-ink-muted mt-2 leading-relaxed">
             빨리 알아야 빨리 조치할 수 있습니다. 미노출 발견 시 가능한 7가지 대응.
           </p>
         </div>
@@ -400,7 +400,7 @@ export default function ExposureManagement() {
                 <span className="w-8 h-8 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center text-body-sm font-bold shrink-0">
                   {i + 1}
                 </span>
-                <span className="text-base text-ink font-semibold leading-snug">{t}</span>
+                <span className="text-lg text-ink font-semibold leading-snug">{t}</span>
               </div>
             </Card>
           ))}
@@ -412,7 +412,7 @@ export default function ExposureManagement() {
         <div className="mb-5">
           <div className="text-body-sm text-ink-muted uppercase tracking-wider font-semibold mb-1">human vs system</div>
           <h2 className="text-h2 text-ink">사람이 매일 모든 회선을 확인할 수는 없습니다</h2>
-          <p className="text-lg text-ink-muted mt-2 leading-relaxed">
+          <p className="text-xl text-ink-muted mt-2 leading-relaxed">
             10개·50개·100개·1,000개로 늘어나면, 직접 검색은 현실적으로 불가능합니다.
           </p>
         </div>
@@ -433,7 +433,7 @@ export default function ExposureManagement() {
               ].map((t) => (
                 <li key={t} className="flex items-start gap-2.5">
                   <XCircle size={18} className="text-rose-400 shrink-0 mt-1" />
-                  <span className="text-base text-ink-muted leading-relaxed">{t}</span>
+                  <span className="text-lg text-ink-muted leading-relaxed">{t}</span>
                 </li>
               ))}
             </ul>
@@ -454,7 +454,7 @@ export default function ExposureManagement() {
               ].map((t) => (
                 <li key={t} className="flex items-start gap-2.5">
                   <CheckCircle2 size={18} className="text-emerald-600 shrink-0 mt-1" />
-                  <span className="text-base text-ink leading-relaxed font-medium">{t}</span>
+                  <span className="text-lg text-ink leading-relaxed font-medium">{t}</span>
                 </li>
               ))}
             </ul>
@@ -467,7 +467,7 @@ export default function ExposureManagement() {
         <div className="mb-5">
           <div className="text-body-sm text-ink-muted uppercase tracking-wider font-semibold mb-1">5 reasons</div>
           <h2 className="text-h2 text-ink">자동 체크가 필요한 5가지 이유</h2>
-          <p className="text-lg text-ink-muted mt-2 leading-relaxed">
+          <p className="text-xl text-ink-muted mt-2 leading-relaxed">
             "사람은 놓칠 수 있지만, 시스템은 매일 확인할 수 있습니다."
           </p>
         </div>
@@ -527,8 +527,8 @@ export default function ExposureManagement() {
                 >
                   {it.icon}
                 </div>
-                <h3 className={`text-lg font-bold text-ink mb-2 leading-tight ${tc.text}`}>{it.title}</h3>
-                <p className="text-base text-ink-muted leading-relaxed">{it.desc}</p>
+                <h3 className={`text-xl font-bold text-ink mb-2 leading-tight ${tc.text}`}>{it.title}</h3>
+                <p className="text-lg text-ink-muted leading-relaxed">{it.desc}</p>
               </Card>
             )
           })}
@@ -551,10 +551,10 @@ export default function ExposureManagement() {
               <Building2 size={22} />
             </div>
             <h3 className="text-h3 text-ink mb-2 leading-tight">"몇 개를 등록했느냐"</h3>
-            <p className="text-base text-ink-muted leading-relaxed line-through">
+            <p className="text-lg text-ink-muted leading-relaxed line-through">
               많이 등록하는 것이 경쟁력
             </p>
-            <p className="text-base text-rose-700 font-semibold leading-relaxed mt-2">
+            <p className="text-lg text-rose-700 font-semibold leading-relaxed mt-2">
               ✕ 안 보이면 천 개도 의미 없습니다
             </p>
           </Card>
@@ -567,10 +567,10 @@ export default function ExposureManagement() {
               <Eye size={22} />
             </div>
             <h3 className="text-h3 text-ink mb-2 leading-tight">"몇 개가 지금 보이느냐"</h3>
-            <p className="text-base text-ink leading-relaxed font-semibold">
+            <p className="text-lg text-ink leading-relaxed font-semibold">
               노출 유지 관리가 핵심
             </p>
-            <p className="text-base text-emerald-700 font-bold leading-relaxed mt-2">
+            <p className="text-lg text-emerald-700 font-bold leading-relaxed mt-2">
               ✓ 보여야 매출이 됩니다
             </p>
           </Card>
@@ -587,7 +587,7 @@ export default function ExposureManagement() {
               <span className="text-amber-100">고객이 사라진 것이 아니라</span><br />
               <span className="text-amber-100">네이버에서 우리 업체가 사라졌을 수 있습니다.</span>
             </p>
-            <p className="text-xl text-white/95 leading-relaxed mb-5">
+            <p className="text-2xl text-white/95 leading-relaxed mb-5">
               미노출을 막을 수 없다면,<br />
               <strong className="text-amber-100">최소한 늦게 발견해서는 안 됩니다.</strong>
             </p>
@@ -603,7 +603,7 @@ export default function ExposureManagement() {
                   className="flex items-center justify-center gap-2 px-4 py-3.5 rounded-card bg-white/15 backdrop-blur-sm border border-white/30"
                 >
                   <CheckCircle2 size={20} className="text-amber-200 shrink-0" />
-                  <span className="text-base text-white font-bold">{t}</span>
+                  <span className="text-lg text-white font-bold">{t}</span>
                 </div>
               ))}
             </div>
@@ -625,7 +625,7 @@ export default function ExposureManagement() {
             the reality
           </div>
           <h2 className="text-h2 text-ink">왜 노출 관리가 필요할까요?</h2>
-          <p className="text-lg text-ink-muted mt-2 leading-relaxed">
+          <p className="text-xl text-ink-muted mt-2 leading-relaxed">
             네이버 플레이스 노출은 살아있는 시스템입니다. 한 번 등록했다고 끝나지 않습니다.
           </p>
         </div>
@@ -652,8 +652,8 @@ export default function ExposureManagement() {
               <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-rose-500 to-orange-500 text-white flex items-center justify-center mb-3 shadow-card">
                 {it.icon}
               </div>
-              <h3 className="text-lg font-bold text-ink mb-2 leading-tight">{it.title}</h3>
-              <p className="text-base text-ink-muted leading-relaxed">{it.desc}</p>
+              <h3 className="text-xl font-bold text-ink mb-2 leading-tight">{it.title}</h3>
+              <p className="text-lg text-ink-muted leading-relaxed">{it.desc}</p>
             </Card>
           ))}
         </div>
@@ -684,7 +684,7 @@ export default function ExposureManagement() {
               ].map((t) => (
                 <li key={t} className="flex items-start gap-2.5">
                   <XCircle size={18} className="text-rose-400 shrink-0 mt-1" />
-                  <span className="text-base text-ink-muted leading-relaxed">{t}</span>
+                  <span className="text-lg text-ink-muted leading-relaxed">{t}</span>
                 </li>
               ))}
             </ul>
@@ -705,7 +705,7 @@ export default function ExposureManagement() {
               ].map((t) => (
                 <li key={t} className="flex items-start gap-2.5">
                   <CheckCircle2 size={18} className="text-emerald-600 shrink-0 mt-1" />
-                  <span className="text-base text-ink leading-relaxed font-medium">{t}</span>
+                  <span className="text-lg text-ink leading-relaxed font-medium">{t}</span>
                 </li>
               ))}
             </ul>
@@ -720,7 +720,7 @@ export default function ExposureManagement() {
             core features
           </div>
           <h2 className="text-h2 text-ink">자동체크솔루션 4대 핵심 기능</h2>
-          <p className="text-lg text-ink-muted mt-2 leading-relaxed">
+          <p className="text-xl text-ink-muted mt-2 leading-relaxed">
             등록한 타지역서비스의 노출 상태를 자동으로 추적하고 관리합니다.
           </p>
         </div>
@@ -797,7 +797,7 @@ export default function ExposureManagement() {
               유지되는 노출이<br />
               <span className="text-amber-200">진짜 매출이 됩니다.</span>
             </h2>
-            <p className="text-xl text-white/95 leading-relaxed mb-6">
+            <p className="text-2xl text-white/95 leading-relaxed mb-6">
               한 번 1페이지에 떴다고 끝이 아닙니다.<br />
               <strong className="text-white">계속 보여야 계속 전화가 옵니다.</strong>
             </p>
@@ -824,7 +824,7 @@ export default function ExposureManagement() {
               모르는 사이에 노출이 사라지면<br />
               <span className="text-amber-100">광고비만 새 나갑니다.</span>
             </p>
-            <p className="text-xl text-white/95 leading-relaxed mb-5">
+            <p className="text-2xl text-white/95 leading-relaxed mb-5">
               사장님 대신 매일 24시간 노출을 지켜드립니다.
             </p>
 
@@ -839,7 +839,7 @@ export default function ExposureManagement() {
                   className="flex items-center justify-center gap-2 px-4 py-3.5 rounded-card bg-white/15 backdrop-blur-sm border border-white/30"
                 >
                   <CheckCircle2 size={20} className="text-white shrink-0" />
-                  <span className="text-base text-white font-bold">{t}</span>
+                  <span className="text-lg text-white font-bold">{t}</span>
                 </div>
               ))}
             </div>
@@ -861,7 +861,7 @@ export default function ExposureManagement() {
             지금 등록한 키워드,<br />
             <span className="text-rose-700">자동으로 지켜드립니다</span>
           </h2>
-          <p className="text-lg text-ink-muted mt-3 leading-relaxed">
+          <p className="text-xl text-ink-muted mt-3 leading-relaxed">
             등록·관리만 맡기시면 자동체크솔루션을 무료로 사용할 수 있습니다.<br />
             <strong className="text-ink">노출이 살아있는 동안에만 매출이 발생합니다.</strong>
           </p>
@@ -882,7 +882,7 @@ export default function ExposureManagement() {
             <h3 className="text-h2 text-ink leading-tight mb-2">
               네이버노출 자동체크 솔루션
             </h3>
-            <p className="text-xl font-bold text-rose-700 mb-4 leading-tight">
+            <p className="text-2xl font-bold text-rose-700 mb-4 leading-tight">
               무료플랜 신청하기
             </p>
             <ul className="space-y-2 mb-5">
@@ -894,13 +894,13 @@ export default function ExposureManagement() {
               ].map((t) => (
                 <li key={t} className="flex items-start gap-2">
                   <CheckCircle2 size={18} className="text-emerald-600 shrink-0 mt-1" />
-                  <span className="text-base text-ink leading-relaxed">{t}</span>
+                  <span className="text-lg text-ink leading-relaxed">{t}</span>
                 </li>
               ))}
             </ul>
             <Link
               to="/intro/monitor"
-              className="w-full inline-flex items-center justify-center gap-2 px-4 py-4 rounded-pill text-white font-bold text-lg bg-rose-600 hover:bg-rose-700 transition-colors shadow-card"
+              className="w-full inline-flex items-center justify-center gap-2 px-4 py-4 rounded-pill text-white font-bold text-xl bg-rose-600 hover:bg-rose-700 transition-colors shadow-card"
             >
               무료플랜 신청하기 <ArrowRight size={18} />
             </Link>
@@ -944,7 +944,7 @@ function ScenarioStep({
       >
         {icon}
       </div>
-      <p className="text-base text-ink font-semibold leading-snug">{label}</p>
+      <p className="text-lg text-ink font-semibold leading-snug">{label}</p>
     </Card>
   )
 }
@@ -967,12 +967,12 @@ function FeatureCard({ num, tone, icon, title, desc, bullets }: FeatureCardProps
         {icon}
       </div>
       <h3 className="text-h3 text-ink leading-tight mb-2">{title}</h3>
-      <p className="text-base text-ink-muted leading-relaxed mb-3">{desc}</p>
+      <p className="text-lg text-ink-muted leading-relaxed mb-3">{desc}</p>
       <ul className="space-y-1.5">
         {bullets.map((b) => (
           <li key={b} className="flex items-center gap-2">
             <span className={`w-1.5 h-1.5 rounded-full ${tc.dot}`} />
-            <span className={`text-base font-semibold ${tc.text}`}>{b}</span>
+            <span className={`text-lg font-semibold ${tc.text}`}>{b}</span>
           </li>
         ))}
       </ul>
@@ -1004,7 +1004,7 @@ function FlowCard({
         {icon}
       </div>
       <div className="text-body-sm font-mono text-ink-muted mb-1">STEP {num}</div>
-      <p className="text-base text-ink font-semibold leading-snug">{label}</p>
+      <p className="text-lg text-ink font-semibold leading-snug">{label}</p>
     </Card>
   )
 }
@@ -1036,7 +1036,7 @@ function FlowStep({
   return (
     <div className={`flex-1 flex flex-col items-center gap-1.5 px-4 py-4 rounded-card border ${tc}`}>
       {icon}
-      <span className="text-base font-bold text-center">{label}</span>
+      <span className="text-lg font-bold text-center">{label}</span>
     </div>
   )
 }

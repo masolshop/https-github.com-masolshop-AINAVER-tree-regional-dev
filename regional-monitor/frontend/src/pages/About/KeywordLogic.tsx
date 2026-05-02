@@ -52,7 +52,7 @@ export default function KeywordLogic() {
             타지역플레이스는 <span className="text-rose-700">콘텐츠 싸움이 아닙니다.</span><br />
             <span className="text-brand-600">30자 상호 키워드 조합 싸움</span>입니다.
           </h2>
-          <p className="text-xl text-ink-muted leading-relaxed">
+          <p className="text-2xl text-ink-muted leading-relaxed">
             많은 사장님들이 네이버플레이스를 등록하면 블로그처럼 글을 쓰고, 사진을 올리고, 후기를 쌓으면
             자연스럽게 노출될 것이라고 생각합니다.<br />
             <strong className="text-ink">하지만 타지역플레이스는 다릅니다.</strong>
@@ -65,7 +65,7 @@ export default function KeywordLogic() {
         <div className="mb-5">
           <div className="text-body-sm text-ink-muted uppercase tracking-wider font-semibold mb-1">structure difference</div>
           <h2 className="text-h2 text-ink">메인플레이스 vs 타지역플레이스</h2>
-          <p className="text-lg text-ink-muted mt-2 leading-relaxed">
+          <p className="text-xl text-ink-muted mt-2 leading-relaxed">
             노출의 핵심은 따로 있습니다. 바로 <strong className="text-ink">상호명 30자 안에 어떤 키워드를 어떻게 조합하느냐</strong>입니다.
           </p>
         </div>
@@ -87,7 +87,7 @@ export default function KeywordLogic() {
               ].map((b) => (
                 <div key={b.t} className="flex items-center gap-2.5 px-4 py-3 rounded-card bg-bg-subtle/50">
                   <span className="text-ink-muted">{b.icon}</span>
-                  <span className="text-base text-ink-muted">{b.t}</span>
+                  <span className="text-lg text-ink-muted">{b.t}</span>
                 </div>
               ))}
             </div>
@@ -112,7 +112,7 @@ export default function KeywordLogic() {
               ].map((b) => (
                 <div key={b.t} className="flex items-center gap-2.5 px-4 py-3 rounded-card bg-white border border-brand-200">
                   <span className="text-brand-600">{b.icon}</span>
-                  <span className="text-base text-ink font-medium">{b.t}</span>
+                  <span className="text-lg text-ink font-medium">{b.t}</span>
                 </div>
               ))}
             </div>
@@ -145,19 +145,19 @@ export default function KeywordLogic() {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-5">
           <Card variant="white" className="border border-bg-subtle">
             <div className="text-body-sm text-ink-muted uppercase tracking-wider font-semibold mb-2">오프라인</div>
-            <p className="text-xl text-ink leading-snug font-bold">
+            <p className="text-2xl text-ink leading-snug font-bold">
               상호 = <span className="text-ink">브랜드</span>
             </p>
-            <p className="text-base text-ink-muted leading-relaxed mt-2">
+            <p className="text-lg text-ink-muted leading-relaxed mt-2">
               사람들이 보고 기억하는 간판
             </p>
           </Card>
           <Card variant="white" className="border-2 border-brand-300 bg-brand-50/40">
             <div className="text-body-sm text-brand-700 uppercase tracking-wider font-bold mb-2">네이버 플레이스</div>
-            <p className="text-xl text-ink leading-snug font-bold">
+            <p className="text-2xl text-ink leading-snug font-bold">
               상호 = <span className="text-brand-700">검색 신호</span>
             </p>
-            <p className="text-base text-ink-muted leading-relaxed mt-2">
+            <p className="text-lg text-ink-muted leading-relaxed mt-2">
               네이버 봇이 형태소로 읽고 검색어와 매칭
             </p>
           </Card>
@@ -165,19 +165,19 @@ export default function KeywordLogic() {
 
         {/* 검색어 매칭 도식 */}
         <Card variant="white">
-          <p className="text-lg text-ink leading-relaxed mb-4">
+          <p className="text-xl text-ink leading-relaxed mb-4">
             예를 들어 고객이 이런 검색어를 입력한다면, <strong className="text-brand-700">상호 안 키워드</strong>에 따라 노출 가능성이 완전히 달라집니다.
           </p>
           <div className="grid grid-cols-2 md:grid-cols-5 gap-2.5">
             {['컴퓨터수리', '노트북수리', '데이터복구', '누수탐지', '하수구막힘'].map((q) => (
               <div key={q} className="flex items-center justify-center gap-1.5 px-3 py-3 rounded-card bg-amber-50 border border-amber-200">
                 <Search size={16} className="text-amber-600 shrink-0" />
-                <span className="text-base text-ink font-semibold">{q}</span>
+                <span className="text-lg text-ink font-semibold">{q}</span>
               </div>
             ))}
           </div>
           <Card variant="white" className="mt-4 bg-rose-50/50 border border-rose-200">
-            <p className="text-lg text-ink leading-relaxed">
+            <p className="text-xl text-ink leading-relaxed">
               타지역플레이스는 <strong className="text-rose-700">그냥 많이 등록한다고 되는 것이 아닙니다.</strong><br />
               <strong className="text-brand-700">어떤 키워드를 넣어 등록하느냐</strong>가 승부입니다.
             </p>
@@ -190,7 +190,7 @@ export default function KeywordLogic() {
         <div className="mb-5">
           <div className="text-body-sm text-ink-muted uppercase tracking-wider font-semibold mb-1">naver logic</div>
           <h2 className="text-h2 text-ink">최근 네이버 1페이지 플레이스 로직의 핵심</h2>
-          <p className="text-lg text-ink-muted mt-2 leading-relaxed">
+          <p className="text-xl text-ink-muted mt-2 leading-relaxed">
             제가 발견한 최근 네이버 플레이스 노출 로직의 핵심은 이것입니다.
           </p>
         </div>
@@ -203,11 +203,11 @@ export default function KeywordLogic() {
               </div>
               <span className="text-h3 text-ink font-bold">메인키워드 1개</span>
             </div>
-            <p className="text-lg text-ink leading-relaxed">
+            <p className="text-xl text-ink leading-relaxed">
               어떤 키워드는 <strong className="text-brand-700">대표 키워드 단 1개</strong>를 강하게 잡으면
               네이버 1페이지에 노출됩니다.
             </p>
-            <div className="mt-3 px-3 py-2 rounded-card bg-white border border-brand-200 text-base text-brand-700 font-mono font-bold text-center">
+            <div className="mt-3 px-3 py-2 rounded-card bg-white border border-brand-200 text-lg text-brand-700 font-mono font-bold text-center">
               상호 = "단일 메인키워드"
             </div>
           </Card>
@@ -219,11 +219,11 @@ export default function KeywordLogic() {
               </div>
               <span className="text-h3 text-ink font-bold">30자 키워드 조합</span>
             </div>
-            <p className="text-lg text-ink leading-relaxed">
+            <p className="text-xl text-ink leading-relaxed">
               어떤 키워드는 <strong className="text-amber-700">30자 안에 여러 키워드를 형태소 조합</strong>해야
               네이버 1페이지에 노출됩니다.
             </p>
-            <div className="mt-3 px-3 py-2 rounded-card bg-white border border-amber-200 text-base text-amber-700 font-mono font-bold text-center">
+            <div className="mt-3 px-3 py-2 rounded-card bg-white border border-amber-200 text-lg text-amber-700 font-mono font-bold text-center">
               상호 = "메인+보조+장소+태그"
             </div>
           </Card>
@@ -235,8 +235,8 @@ export default function KeywordLogic() {
             <div className="flex items-start gap-3">
               <XCircle size={28} className="text-rose-500 shrink-0 mt-0.5" />
               <div>
-                <p className="text-lg font-bold text-ink mb-1">이 차이를 모르면</p>
-                <p className="text-base text-ink-muted leading-relaxed">
+                <p className="text-xl font-bold text-ink mb-1">이 차이를 모르면</p>
+                <p className="text-lg text-ink-muted leading-relaxed">
                   타지역서비스를 아무리 많이 등록해도<br />
                   <strong className="text-rose-700">엉뚱한 키워드로만 노출</strong>되거나<br />
                   <strong className="text-rose-700">정작 돈 되는 키워드에서는 보이지 않습니다.</strong>
@@ -248,8 +248,8 @@ export default function KeywordLogic() {
             <div className="flex items-start gap-3">
               <CheckCircle2 size={28} className="text-emerald-500 shrink-0 mt-0.5" />
               <div>
-                <p className="text-lg font-bold text-ink mb-1">이 로직을 이해하면</p>
-                <p className="text-base text-ink-muted leading-relaxed">
+                <p className="text-xl font-bold text-ink mb-1">이 로직을 이해하면</p>
+                <p className="text-lg text-ink-muted leading-relaxed">
                   고객이 실제 검색하는 키워드,<br />
                   플레이스 섹션에 들어갈 수 있는 키워드,<br />
                   <strong className="text-emerald-700">30자 상호 조합에 넣어 노출되는 키워드</strong>를 찾아<br />
@@ -272,8 +272,8 @@ export default function KeywordLogic() {
           <table className="w-full min-w-[640px]">
             <thead>
               <tr className="bg-bg-subtle">
-                <th className="px-4 py-3.5 text-left text-base font-bold text-rose-700 uppercase tracking-wider w-[40%]">잘못된 방식</th>
-                <th className="px-4 py-3.5 text-left text-base font-bold text-ink-muted uppercase tracking-wider w-[60%]">실제 문제</th>
+                <th className="px-4 py-3.5 text-left text-lg font-bold text-rose-700 uppercase tracking-wider w-[40%]">잘못된 방식</th>
+                <th className="px-4 py-3.5 text-left text-lg font-bold text-ink-muted uppercase tracking-wider w-[60%]">실제 문제</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-bg-subtle">
@@ -285,13 +285,13 @@ export default function KeywordLogic() {
                 ['경쟁사 상호만 따라함', '내 업종에 맞는 로직을 놓침'],
               ].map(([wrong, problem]) => (
                 <tr key={wrong} className="hover:bg-bg-subtle/40">
-                  <td className="px-4 py-3.5 text-lg font-bold text-ink">
+                  <td className="px-4 py-3.5 text-xl font-bold text-ink">
                     <div className="flex items-center gap-2">
                       <XCircle size={18} className="text-rose-400 shrink-0" />
                       {wrong}
                     </div>
                   </td>
-                  <td className="px-4 py-3.5 text-lg text-ink-muted">→ {problem}</td>
+                  <td className="px-4 py-3.5 text-xl text-ink-muted">→ {problem}</td>
                 </tr>
               ))}
             </tbody>
@@ -299,7 +299,7 @@ export default function KeywordLogic() {
         </Card>
 
         <Card variant="white" className="mt-5 bg-gradient-to-r from-brand-50 to-indigo-50 border border-brand-200 text-center">
-          <p className="text-lg text-ink-muted leading-relaxed mb-2">결국 중요한 것은</p>
+          <p className="text-xl text-ink-muted leading-relaxed mb-2">결국 중요한 것은</p>
           <p className="text-2xl text-brand-700 font-bold leading-snug">
             "몇 개를 등록했느냐"가 아니라<br />
             "어떤 키워드로 등록했느냐"입니다.
@@ -323,24 +323,24 @@ export default function KeywordLogic() {
         </div>
 
         <Card variant="white" className="bg-gradient-to-br from-brand-50/30 to-white border border-brand-100">
-          <p className="text-lg text-ink leading-relaxed mb-4">
+          <p className="text-xl text-ink leading-relaxed mb-4">
             저는 타지역서비스를 운영하면서 최근 네이버 플레이스 1페이지 섹션에 노출되는 키워드 로직을 분석했습니다.<br />
             그리고 그 결과를 바탕으로 <strong className="text-brand-700">네이버 1페이지 노출 키워드 발굴 솔루션</strong>을 만들었습니다.
           </p>
-          <p className="text-lg text-ink-muted leading-relaxed">
+          <p className="text-xl text-ink-muted leading-relaxed">
             이 솔루션은 단순히 검색량 많은 키워드를 찾는 도구가 아닙니다.
           </p>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-5">
             <div className="px-4 py-4 rounded-card bg-rose-50/60 border border-rose-200">
               <div className="text-body-sm text-rose-700 font-bold uppercase tracking-wider mb-2">CASE A</div>
-              <p className="text-base text-ink leading-relaxed">
+              <p className="text-lg text-ink leading-relaxed">
                 <strong className="text-rose-700">검색량은 있는데 플레이스 섹션이 뜨지 않는</strong> 키워드
               </p>
             </div>
             <div className="px-4 py-4 rounded-card bg-emerald-50/60 border border-emerald-200">
               <div className="text-body-sm text-emerald-700 font-bold uppercase tracking-wider mb-2">CASE B</div>
-              <p className="text-base text-ink leading-relaxed">
+              <p className="text-lg text-ink leading-relaxed">
                 <strong className="text-emerald-700">검색량은 작아도 전화문의로 바로 연결되는</strong> 키워드
               </p>
             </div>
@@ -349,20 +349,20 @@ export default function KeywordLogic() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-3">
             <div className="px-4 py-4 rounded-card bg-brand-50/60 border border-brand-200">
               <div className="text-body-sm text-brand-700 font-bold uppercase tracking-wider mb-2">CASE C</div>
-              <p className="text-base text-ink leading-relaxed">
+              <p className="text-lg text-ink leading-relaxed">
                 <strong className="text-brand-700">메인플레이스처럼 단일 대표키워드</strong>로 접근해야 하는 키워드
               </p>
             </div>
             <div className="px-4 py-4 rounded-card bg-amber-50/60 border border-amber-200">
               <div className="text-body-sm text-amber-700 font-bold uppercase tracking-wider mb-2">CASE D</div>
-              <p className="text-base text-ink leading-relaxed">
+              <p className="text-lg text-ink leading-relaxed">
                 <strong className="text-amber-700">타지역플레이스 30자 상호 조합</strong>으로 접근해야 하는 키워드
               </p>
             </div>
           </div>
 
           <Card variant="white" className="mt-5 bg-brand-600 text-white text-center">
-            <p className="text-xl font-bold leading-snug">
+            <p className="text-2xl font-bold leading-snug">
               이 차이를 찾아내는 것이<br />
               <span className="text-amber-200">네이버 1페이지 노출 키워드 발굴 솔루션</span>의 핵심입니다.
             </p>
@@ -384,16 +384,16 @@ export default function KeywordLogic() {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-5">
           <Card variant="white" className="border border-rose-200 bg-rose-50/30">
             <div className="text-body-sm text-rose-700 uppercase tracking-wider font-bold mb-2">잘못된 키워드</div>
-            <p className="text-xl text-ink font-bold mb-2">1,000원짜리 회선이라도</p>
-            <p className="text-base text-ink-muted leading-relaxed">
+            <p className="text-2xl text-ink font-bold mb-2">1,000원짜리 회선이라도</p>
+            <p className="text-lg text-ink-muted leading-relaxed">
               잘못된 키워드로 등록하면<br />
               <strong className="text-rose-700">노출도 약하고, 문의도 없습니다.</strong>
             </p>
           </Card>
           <Card variant="white" className="border-2 border-emerald-300 bg-emerald-50/30">
             <div className="text-body-sm text-emerald-700 uppercase tracking-wider font-bold mb-2">정확한 키워드</div>
-            <p className="text-xl text-ink font-bold mb-2">정확한 키워드를 찾으면</p>
-            <p className="text-base text-ink-muted leading-relaxed">
+            <p className="text-2xl text-ink font-bold mb-2">정확한 키워드를 찾으면</p>
+            <p className="text-lg text-ink-muted leading-relaxed">
               그 1,000원짜리 회선 하나가<br />
               <strong className="text-emerald-700">네이버 1페이지 노출되는 매출 통로</strong>가 됩니다.
             </p>
@@ -405,15 +405,15 @@ export default function KeywordLogic() {
           <div className="text-center py-4">
             <div className="text-body-sm text-white/80 uppercase tracking-wider font-bold mb-3">핵심 공식</div>
             <div className="flex flex-col md:flex-row items-center justify-center gap-3 mb-4">
-              <span className="px-5 py-3 rounded-card bg-white/15 backdrop-blur-sm border border-white/20 text-xl font-bold">
+              <span className="px-5 py-3 rounded-card bg-white/15 backdrop-blur-sm border border-white/20 text-2xl font-bold">
                 저비용 대량등록
               </span>
               <span className="text-3xl text-amber-200 font-bold">×</span>
-              <span className="px-5 py-3 rounded-card bg-white/15 backdrop-blur-sm border border-white/20 text-xl font-bold">
+              <span className="px-5 py-3 rounded-card bg-white/15 backdrop-blur-sm border border-white/20 text-2xl font-bold">
                 1페이지 키워드 로직 분석
               </span>
             </div>
-            <p className="text-lg text-white/90 leading-relaxed">
+            <p className="text-xl text-white/90 leading-relaxed">
               이 둘이 결합될 때 타지역서비스는<br />
               <span className="text-2xl text-amber-200 font-bold">단순 등록이 아니라 매출을 만드는 플레이스 전략</span>이 됩니다.
             </p>
@@ -436,12 +436,12 @@ export default function KeywordLogic() {
               <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-amber-500 to-orange-500 text-white flex items-center justify-center shadow-card">
                 <Award size={22} />
               </div>
-              <span className="text-xl text-amber-700 font-bold">A급 키워드</span>
+              <span className="text-2xl text-amber-700 font-bold">A급 키워드</span>
             </div>
-            <p className="text-lg text-ink font-bold leading-tight mb-2">
+            <p className="text-xl text-ink font-bold leading-tight mb-2">
               네이버 1페이지 플레이스 노출 키워드
             </p>
-            <p className="text-base text-ink-muted leading-relaxed">
+            <p className="text-lg text-ink-muted leading-relaxed">
               검색했을 때 1페이지 상단 플레이스 섹션에 직접 노출되는 키워드
             </p>
           </Card>
@@ -451,26 +451,26 @@ export default function KeywordLogic() {
               <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-ink-soft to-ink-muted text-white flex items-center justify-center shadow-card">
                 <Eye size={22} />
               </div>
-              <span className="text-xl text-ink-muted font-bold">B급 키워드</span>
+              <span className="text-2xl text-ink-muted font-bold">B급 키워드</span>
             </div>
-            <p className="text-lg text-ink font-bold leading-tight mb-2">
+            <p className="text-xl text-ink font-bold leading-tight mb-2">
               구석에 숨어있는 네이버지도 섹션 키워드
             </p>
-            <p className="text-base text-ink-muted leading-relaxed">
+            <p className="text-lg text-ink-muted leading-relaxed">
               지도 섹션 깊이 들어가야 보이는 키워드 — 노출 효과 제한적
             </p>
           </Card>
         </div>
 
         <Card variant="white" className="mt-5 bg-emerald-50 border border-emerald-200 text-center">
-          <p className="text-lg text-ink leading-relaxed mb-2">
+          <p className="text-xl text-ink leading-relaxed mb-2">
             키워드 발굴은 <span className="text-ink-muted line-through">"좋아 보이는 단어를 넣는 작업"</span>이 아닙니다.
           </p>
-          <p className="text-xl text-emerald-700 font-bold leading-snug">
+          <p className="text-2xl text-emerald-700 font-bold leading-snug">
             네이버가 어떤 단어를 어떤 섹션에 노출시키는지<br />
             분석하는 작업입니다.
           </p>
-          <p className="text-base text-ink-muted leading-relaxed mt-3">
+          <p className="text-lg text-ink-muted leading-relaxed mt-3">
             👉 사장님 키워드가 네이버 1페이지 노출 키워드인지? 네이버지도 키워드인지?<br />
             <strong className="text-emerald-700">무료 분석 요청하세요.</strong>
           </p>
@@ -494,16 +494,16 @@ export default function KeywordLogic() {
               <div className="flex-1 min-w-0">
                 <div className="text-body-sm font-mono font-bold text-brand-700 mb-1">STRATEGY A</div>
                 <h3 className="text-h3 text-ink mb-3">메인키워드 1개가 답인 경우</h3>
-                <p className="text-lg text-ink leading-relaxed mb-3 px-3.5 py-2.5 rounded-card bg-brand-50">
+                <p className="text-xl text-ink leading-relaxed mb-3 px-3.5 py-2.5 rounded-card bg-brand-50">
                   어떤 키워드는 상호에 여러 단어를 섞는 것보다<br />
                   <strong className="text-brand-700">메인키워드 하나를 강하게 잡는 것</strong>이 더 유리합니다.
                 </p>
-                <p className="text-base text-ink-muted leading-relaxed">
+                <p className="text-lg text-ink-muted leading-relaxed">
                   특정 업종에서는 네이버가 대표 키워드를 중심으로 플레이스 섹션을 구성합니다.
                   이때 상호에 불필요한 키워드를 많이 넣으면 오히려 핵심성이 약해질 수 있습니다.
                 </p>
                 <Card variant="white" className="mt-3 bg-brand-50/40 border border-brand-200">
-                  <p className="text-lg text-brand-700 font-bold text-center">
+                  <p className="text-xl text-brand-700 font-bold text-center">
                     👉 단순하고 강하게. 대표키워드 1개로 네이버 봇에게 명확하게.
                   </p>
                 </Card>
@@ -520,7 +520,7 @@ export default function KeywordLogic() {
               <div className="flex-1 min-w-0">
                 <div className="text-body-sm font-mono font-bold text-amber-700 mb-1">STRATEGY B</div>
                 <h3 className="text-h3 text-ink mb-3">30자 키워드 조합이 답인 경우</h3>
-                <p className="text-lg text-ink leading-relaxed mb-3 px-3.5 py-2.5 rounded-card bg-amber-50">
+                <p className="text-xl text-ink leading-relaxed mb-3 px-3.5 py-2.5 rounded-card bg-amber-50">
                   어떤 업종은 메인키워드 하나만으로는 노출 범위가 좁습니다.<br />
                   이때는 <strong className="text-amber-700">상호 30자 안에 형태소 단위로 조합</strong>해야 합니다.
                 </p>
@@ -535,13 +535,13 @@ export default function KeywordLogic() {
                     { label: '긴급성', tone: 'bg-indigo-50 text-indigo-700 border-indigo-200' },
                   ].map((k) => (
                     <div key={k.label} className={`px-3 py-2.5 rounded-card border text-center ${k.tone}`}>
-                      <span className="text-base font-bold">{k.label}</span>
+                      <span className="text-lg font-bold">{k.label}</span>
                     </div>
                   ))}
                 </div>
 
                 <Card variant="white" className="mt-3 bg-amber-50/40 border border-amber-200">
-                  <p className="text-base text-ink leading-relaxed text-center">
+                  <p className="text-lg text-ink leading-relaxed text-center">
                     하나의 상호 안에서 여러 검색어에 걸릴 가능성을 만듭니다.<br />
                     단, <strong className="text-amber-700">네이버 1페이지에 실제 반응하는 키워드만</strong> 넣어야 합니다.
                   </p>
@@ -565,7 +565,7 @@ export default function KeywordLogic() {
         </div>
 
         <Card variant="white" className="bg-gradient-to-br from-indigo-50/30 to-white border border-indigo-100">
-          <p className="text-lg text-ink leading-relaxed mb-4">
+          <p className="text-xl text-ink leading-relaxed mb-4">
             키워드 DNA란 하나의 키워드가 가진 다음 5가지 속성을 분석하는 과정입니다.
           </p>
           <div className="grid grid-cols-1 md:grid-cols-5 gap-2">
@@ -578,7 +578,7 @@ export default function KeywordLogic() {
             ].map((d) => (
               <div key={d.label} className="px-3 py-3.5 rounded-card bg-white border border-indigo-200 text-center">
                 <div className="text-indigo-600 mb-1.5 flex justify-center">{d.icon}</div>
-                <span className="text-base font-bold text-ink leading-tight">{d.label}</span>
+                <span className="text-lg font-bold text-ink leading-tight">{d.label}</span>
               </div>
             ))}
           </div>
@@ -588,25 +588,25 @@ export default function KeywordLogic() {
             <Card variant="white" className="border border-bg-subtle">
               <div className="text-body-sm text-ink-muted uppercase tracking-wider font-bold mb-2">같은 수리 업종이라도</div>
               <div className="flex items-center gap-2 mb-2">
-                <span className="px-3 py-1.5 rounded-pill bg-brand-50 text-brand-700 text-base font-bold">컴퓨터수리</span>
+                <span className="px-3 py-1.5 rounded-pill bg-brand-50 text-brand-700 text-lg font-bold">컴퓨터수리</span>
                 <span className="text-ink-muted">≠</span>
-                <span className="px-3 py-1.5 rounded-pill bg-amber-50 text-amber-700 text-base font-bold">노트북수리</span>
+                <span className="px-3 py-1.5 rounded-pill bg-amber-50 text-amber-700 text-lg font-bold">노트북수리</span>
               </div>
-              <p className="text-base text-ink-muted leading-relaxed">두 키워드는 다르게 봐야 합니다.</p>
+              <p className="text-lg text-ink-muted leading-relaxed">두 키워드는 다르게 봐야 합니다.</p>
             </Card>
             <Card variant="white" className="border border-bg-subtle">
               <div className="text-body-sm text-ink-muted uppercase tracking-wider font-bold mb-2">긴급성 비교</div>
               <div className="flex items-center gap-2 mb-2">
-                <span className="px-3 py-1.5 rounded-pill bg-rose-50 text-rose-700 text-base font-bold">누수탐지</span>
+                <span className="px-3 py-1.5 rounded-pill bg-rose-50 text-rose-700 text-lg font-bold">누수탐지</span>
                 <span className="text-ink-muted">≠</span>
-                <span className="px-3 py-1.5 rounded-pill bg-orange-50 text-orange-700 text-base font-bold">하수구막힘</span>
+                <span className="px-3 py-1.5 rounded-pill bg-orange-50 text-orange-700 text-lg font-bold">하수구막힘</span>
               </div>
-              <p className="text-base text-ink-muted leading-relaxed">검색 의도, 긴급성, 전환율, 섹션 구조가 다릅니다.</p>
+              <p className="text-lg text-ink-muted leading-relaxed">검색 의도, 긴급성, 전환율, 섹션 구조가 다릅니다.</p>
             </Card>
           </div>
 
           <Card variant="white" className="mt-4 bg-indigo-600 text-white text-center">
-            <p className="text-xl font-bold leading-snug">
+            <p className="text-2xl font-bold leading-snug">
               키워드 발굴은 <span className="text-amber-200">검색량만 보면 안 됩니다.</span><br />
               <strong>네이버 1페이지에 올라갈 수 있는 구조인지</strong>를 봐야 합니다.
             </p>
@@ -635,10 +635,10 @@ export default function KeywordLogic() {
             desc="각 키워드를 검색했을 때 네이버 1페이지에 플레이스 섹션이 뜨는지 확인합니다."
             customBlock={
               <div className="grid grid-cols-1 md:grid-cols-2 gap-2 mt-3">
-                <div className="px-3.5 py-2.5 rounded-card bg-rose-50/60 border border-rose-200 text-base text-ink leading-relaxed">
+                <div className="px-3.5 py-2.5 rounded-card bg-rose-50/60 border border-rose-200 text-lg text-ink leading-relaxed">
                   <strong className="text-rose-700">섹션 없음</strong> → 타지역플레이스 등록만으론 효율 ↓
                 </div>
-                <div className="px-3.5 py-2.5 rounded-card bg-emerald-50/60 border border-emerald-200 text-base text-ink leading-relaxed">
+                <div className="px-3.5 py-2.5 rounded-card bg-emerald-50/60 border border-emerald-200 text-lg text-ink leading-relaxed">
                   <strong className="text-emerald-700">섹션 있음</strong> → 타지역서비스와 결합 가능 ✓
                 </div>
               </div>
@@ -654,8 +654,8 @@ export default function KeywordLogic() {
                 <table className="w-full min-w-[480px]">
                   <thead>
                     <tr className="bg-emerald-50">
-                      <th className="px-3 py-2.5 text-left text-base font-bold text-emerald-700 w-[40%]">분류</th>
-                      <th className="px-3 py-2.5 text-left text-base font-bold text-emerald-700">의미</th>
+                      <th className="px-3 py-2.5 text-left text-lg font-bold text-emerald-700 w-[40%]">분류</th>
+                      <th className="px-3 py-2.5 text-left text-lg font-bold text-emerald-700">의미</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-emerald-100 bg-white">
@@ -667,8 +667,8 @@ export default function KeywordLogic() {
                       ['저효율 제외 키워드', '검색량은 있어도 문의 전환이 낮은 키워드'],
                     ].map(([type, mean]) => (
                       <tr key={type}>
-                        <td className="px-3 py-2.5 text-base text-ink font-bold">{type}</td>
-                        <td className="px-3 py-2.5 text-base text-ink-muted">{mean}</td>
+                        <td className="px-3 py-2.5 text-lg text-ink font-bold">{type}</td>
+                        <td className="px-3 py-2.5 text-lg text-ink-muted">{mean}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -691,13 +691,13 @@ export default function KeywordLogic() {
                   { rank: '5순위', kw: '지역 확장형 키워드', tone: 'bg-brand-100 text-brand-800 border-brand-300' },
                 ].map((p) => (
                   <div key={p.rank} className={`flex items-center gap-3 px-4 py-3 rounded-card border ${p.tone}`}>
-                    <span className="text-base font-mono font-bold w-12 shrink-0">{p.rank}</span>
+                    <span className="text-lg font-mono font-bold w-12 shrink-0">{p.rank}</span>
                     <ArrowRight size={18} className="shrink-0 opacity-60" />
-                    <span className="text-lg font-bold">{p.kw}</span>
+                    <span className="text-xl font-bold">{p.kw}</span>
                   </div>
                 ))}
                 <Card variant="white" className="bg-rose-600 text-white text-center mt-3">
-                  <p className="text-lg font-bold leading-snug">
+                  <p className="text-xl font-bold leading-snug">
                     상호 30자 안에 네이버 봇이 읽을 수 있는 형태소를 심는 것.<br />
                     <span className="text-amber-200">이것이 타지역서비스 키워드 로직의 핵심입니다.</span>
                   </p>
@@ -717,7 +717,7 @@ export default function KeywordLogic() {
                   '30자 조합형 지역',
                   '지도섹션형 키워드',
                 ].map((t) => (
-                  <div key={t} className="px-3.5 py-3 rounded-card bg-indigo-50/60 border border-indigo-200 text-center text-base text-indigo-700 font-bold">
+                  <div key={t} className="px-3.5 py-3 rounded-card bg-indigo-50/60 border border-indigo-200 text-center text-lg text-indigo-700 font-bold">
                     {t}
                   </div>
                 ))}
@@ -741,7 +741,7 @@ export default function KeywordLogic() {
               우리는 단순히 등록하지 않습니다.<br />
               <span className="text-amber-200">먼저 네이버 1페이지 노출 키워드를 찾습니다.</span>
             </p>
-            <p className="text-lg text-white/90 leading-relaxed mb-5">
+            <p className="text-xl text-white/90 leading-relaxed mb-5">
               대부분의 타지역서비스는 <span className="text-white/70 line-through">지역을 많이 등록하는 것</span>에 집중합니다.<br />
               하지만 타지역닷컴은 다릅니다. <strong className="text-white">지역 등록 전에 먼저 봅니다.</strong>
             </p>
@@ -756,12 +756,12 @@ export default function KeywordLogic() {
               ].map((q) => (
                 <div key={q} className="flex items-center gap-2.5 px-4 py-3 rounded-card bg-white/10 backdrop-blur-sm border border-white/20">
                   <CheckCircle2 size={20} className="text-amber-200 shrink-0" />
-                  <span className="text-base text-white font-medium">{q}</span>
+                  <span className="text-lg text-white font-medium">{q}</span>
                 </div>
               ))}
             </div>
 
-            <p className="text-xl text-white leading-relaxed">
+            <p className="text-2xl text-white leading-relaxed">
               <strong>그 다음에 등록합니다.</strong><br />
               <span className="text-2xl text-amber-200 font-bold mt-2 inline-block">
                 키워드 로직 기반 타지역서비스 등록 전략
@@ -793,17 +793,17 @@ export default function KeywordLogic() {
               ].map((t) => (
                 <div key={t} className="px-4 py-3.5 rounded-card bg-white border border-amber-200 text-center">
                   <XCircle size={20} className="text-rose-400 mx-auto mb-2" />
-                  <span className="text-base text-ink-muted font-medium">{t}</span>
+                  <span className="text-lg text-ink-muted font-medium">{t}</span>
                 </div>
               ))}
             </div>
-            <p className="text-lg text-ink-muted leading-relaxed text-center mb-6">
+            <p className="text-xl text-ink-muted leading-relaxed text-center mb-6">
               고객이 검색하는 1페이지 플레이스 섹션에 <strong className="text-rose-700">들어가기 어렵습니다.</strong>
             </p>
 
             {/* 매출 흐름 */}
             <Card variant="white" className="bg-white border-2 border-emerald-300">
-              <p className="text-lg text-ink-muted text-center mb-3">제대로 심으면 보입니다</p>
+              <p className="text-xl text-ink-muted text-center mb-3">제대로 심으면 보입니다</p>
               <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-2">
                 <FlowStep tone="brand" icon={<Eye size={20} />} label="보이면" />
                 <FlowArrow />
@@ -825,7 +825,7 @@ export default function KeywordLogic() {
               천 원짜리 회선 하나가<br />
               <span className="text-amber-100">네이버 1페이지 노출 통로</span>가 될 수 있습니다.
             </p>
-            <p className="text-xl text-white/95 leading-relaxed mb-5">
+            <p className="text-2xl text-white/95 leading-relaxed mb-5">
               단, 조건이 있습니다.
             </p>
 
@@ -837,13 +837,13 @@ export default function KeywordLogic() {
               ].map((t) => (
                 <div key={t} className="flex items-center gap-2.5 px-4 py-3.5 rounded-card bg-white/15 backdrop-blur-sm border border-white/30">
                   <XCircle size={20} className="text-white shrink-0" />
-                  <span className="text-base text-white font-medium text-left">{t}</span>
+                  <span className="text-lg text-white font-medium text-left">{t}</span>
                 </div>
               ))}
             </div>
 
             <Card variant="white" className="bg-white text-ink mb-5">
-              <p className="text-lg leading-relaxed mb-3 font-bold">
+              <p className="text-xl leading-relaxed mb-3 font-bold">
                 대신 이 3가지 키워드를 찾아야 합니다.
               </p>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
@@ -854,13 +854,13 @@ export default function KeywordLogic() {
                 ].map((t) => (
                   <div key={t} className="px-3 py-3 rounded-card bg-emerald-50 border border-emerald-200 text-center">
                     <CheckCircle2 size={20} className="text-emerald-600 mx-auto mb-1.5" />
-                    <span className="text-base text-ink font-bold">{t}</span>
+                    <span className="text-lg text-ink font-bold">{t}</span>
                   </div>
                 ))}
               </div>
             </Card>
 
-            <p className="text-xl text-white leading-relaxed">
+            <p className="text-2xl text-white leading-relaxed">
               타지역닷컴은 그 키워드를 발굴하고,<br />
               30자 상호 조합으로 설계하고,<br />
               <span className="text-2xl text-amber-100 font-bold mt-2 inline-block">
@@ -878,7 +878,7 @@ export default function KeywordLogic() {
             6-category dna
           </div>
           <h2 className="text-h2 text-ink">키워드 6 카테고리 DNA</h2>
-          <p className="text-lg text-ink-muted mt-2 leading-relaxed">
+          <p className="text-xl text-ink-muted mt-2 leading-relaxed">
             1,875개 등록 상호와 216개 업종 데이터로 구축된 3,574개 토큰 사전을 6개 카테고리로 분류합니다.
           </p>
         </div>
@@ -927,7 +927,7 @@ export default function KeywordLogic() {
           <Combo seed="누수" combos={['누수 누수탐지', '누수 방수', '누수 동파', '누수 고압세척']} />
           <Combo seed="보일러" combos={['보일러 누수탐지', '보일러 설치', '보일러 수리', '경동·린나이·귀뚜라미']} />
         </div>
-        <p className="text-base text-ink-muted mt-4 leading-relaxed">
+        <p className="text-lg text-ink-muted mt-4 leading-relaxed">
           ※ 골든 콤보는 main 카테고리 키워드 + 다른 카테고리(action/place/material/tag) 키워드가
           동시 출현하는 가중치 상위 조합입니다. <strong className="text-ink">노출 가능성이 가장 높은 상호 패턴</strong>을 의미합니다.
         </p>
@@ -943,7 +943,7 @@ export default function KeywordLogic() {
             지금 사장님 업종에도<br />
             <span className="text-brand-700">네이버 1페이지 노출 키워드</span>가 숨어 있습니다
           </h2>
-          <p className="text-lg text-ink-muted mt-3 leading-relaxed">
+          <p className="text-xl text-ink-muted mt-3 leading-relaxed">
             찾지 않으면 모릅니다. 분석하지 않으면 보이지 않습니다.<br />
             <strong className="text-ink">타지역닷컴의 키워드 발굴 솔루션</strong>으로 사장님 업종의 숨은 매출 키워드를 찾아보세요.
           </p>
@@ -991,10 +991,10 @@ function DnaCard({ tag, title, desc, count }: {
         <span className="text-[11px] px-2 py-0.5 rounded-md bg-brand-50 text-brand-700 font-bold tracking-wider">
           {tag}
         </span>
-        <span className="text-lg font-semibold text-ink">{title}</span>
+        <span className="text-xl font-semibold text-ink">{title}</span>
       </div>
-      <p className="text-base text-ink-muted leading-relaxed mb-3">{desc}</p>
-      <div className="text-base text-ink-muted">
+      <p className="text-lg text-ink-muted leading-relaxed mb-3">{desc}</p>
+      <div className="text-lg text-ink-muted">
         토큰 수 <span className="font-mono font-semibold text-ink">{count.toLocaleString()}</span>
       </div>
     </Card>
@@ -1011,9 +1011,9 @@ function StepCard({ num, icon, title, desc }: {
       </div>
       <div className="flex items-center gap-2 mb-2 text-brand-600">
         {icon}
-        <span className="text-lg font-semibold text-ink">{title}</span>
+        <span className="text-xl font-semibold text-ink">{title}</span>
       </div>
-      <p className="text-base text-ink-muted leading-relaxed">{desc}</p>
+      <p className="text-lg text-ink-muted leading-relaxed">{desc}</p>
     </Card>
   )
 }
@@ -1021,10 +1021,10 @@ function StepCard({ num, icon, title, desc }: {
 function Combo({ seed, combos }: { seed: string; combos: string[] }) {
   return (
     <div className="flex items-center gap-2 flex-wrap py-2 border-b border-bg-subtle last:border-b-0">
-      <span className="text-lg font-semibold text-ink min-w-[64px]">{seed}</span>
+      <span className="text-xl font-semibold text-ink min-w-[64px]">{seed}</span>
       <ArrowRight size={16} className="text-ink-muted" />
       {combos.map((c) => (
-        <span key={c} className="text-base px-2.5 py-1 rounded-md bg-bg-subtle text-ink">
+        <span key={c} className="text-lg px-2.5 py-1 rounded-md bg-bg-subtle text-ink">
           {c}
         </span>
       ))}
@@ -1062,11 +1062,11 @@ function ProcessStep({ num, tone, icon, title, desc, example, customBlock }: Pro
         <div className="flex-1 min-w-0">
           <div className={`text-body-sm font-mono font-bold ${tc.text} mb-1`}>STEP {num}</div>
           <h3 className="text-h3 text-ink mb-2">{title}</h3>
-          <p className="text-lg text-ink leading-relaxed">{desc}</p>
+          <p className="text-xl text-ink leading-relaxed">{desc}</p>
           {example && (
             <div className={`flex flex-wrap gap-1.5 mt-3 px-3.5 py-3 rounded-card ${tc.bg}`}>
               {example.map((e) => (
-                <span key={e} className="px-2.5 py-1 rounded-md bg-white text-base text-ink font-semibold border border-bg-subtle">
+                <span key={e} className="px-2.5 py-1 rounded-md bg-white text-lg text-ink font-semibold border border-bg-subtle">
                   {e}
                 </span>
               ))}
@@ -1090,7 +1090,7 @@ function FlowStep({ tone, icon, label }: {
   return (
     <div className={`flex-1 rounded-card border ${tc} px-4 py-4 text-center`}>
       <div className="flex justify-center mb-2">{icon}</div>
-      <div className="text-xl font-bold">{label}</div>
+      <div className="text-2xl font-bold">{label}</div>
     </div>
   )
 }
@@ -1129,10 +1129,10 @@ function CtaBox({ num, title, highlight, to, tone, icon }: CtaBoxProps) {
       </div>
       <div className={`text-body-sm font-mono ${tc.text} mb-1`}>CTA {num}</div>
       <h3 className="text-h3 text-ink leading-tight mb-1">{title}</h3>
-      <p className={`text-lg font-bold ${tc.text} mb-4 leading-tight`}>{highlight}</p>
+      <p className={`text-xl font-bold ${tc.text} mb-4 leading-tight`}>{highlight}</p>
       <Link
         to={to}
-        className={`mt-auto inline-flex items-center justify-center gap-1.5 px-4 py-3 rounded-pill text-white font-bold text-base ${tc.btn} transition-colors`}
+        className={`mt-auto inline-flex items-center justify-center gap-1.5 px-4 py-3 rounded-pill text-white font-bold text-lg ${tc.btn} transition-colors`}
       >
         무료 신청하기 <ArrowRight size={16} />
       </Link>
