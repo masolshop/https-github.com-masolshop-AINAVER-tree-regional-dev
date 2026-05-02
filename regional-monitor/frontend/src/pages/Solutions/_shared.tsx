@@ -52,11 +52,11 @@ export function SolutionDetailLayout(props: SolutionDetailProps) {
             <Icon size={30} />
           </div>
           <div className="flex-1 min-w-0">
-            <div className="text-body-sm text-ink-muted font-mono mb-1">
+            <div className="text-body text-ink-muted font-mono mb-1">
               SOLUTION {props.num}
             </div>
             <h2 className="text-h2 text-ink leading-tight">{props.shortLabel}</h2>
-            <p className="text-base text-ink-muted mt-2 leading-relaxed">
+            <p className="text-lg text-ink-muted mt-2 leading-relaxed">
               {props.tagline}
             </p>
           </div>
@@ -97,7 +97,7 @@ export function SolutionDetailLayout(props: SolutionDetailProps) {
       {/* 사용 가이드 */}
       <section>
         <div className="mb-5">
-          <div className="text-base text-ink-muted uppercase tracking-wider font-semibold mb-1">
+          <div className="text-lg text-ink-muted uppercase tracking-wider font-semibold mb-1">
             how to use
           </div>
           <h2 className="text-h2 text-ink">사용 흐름</h2>
@@ -106,15 +106,15 @@ export function SolutionDetailLayout(props: SolutionDetailProps) {
           <ol className="space-y-5">
             {props.howToUse.map((s, i) => (
               <li key={i} className="flex gap-4">
-                <span className="shrink-0 w-10 h-10 rounded-full bg-brand-500 text-white font-bold flex items-center justify-center text-lg">
+                <span className="shrink-0 w-10 h-10 rounded-full bg-brand-500 text-white font-bold flex items-center justify-center text-xl">
                   {i + 1}
                 </span>
                 <div className="flex-1">
-                  <div className="text-sm text-ink-muted uppercase tracking-wider font-semibold mb-0.5">
+                  <div className="text-base text-ink-muted uppercase tracking-wider font-semibold mb-0.5">
                     {s.step}
                   </div>
-                  <div className="text-xl font-bold text-ink">{s.title}</div>
-                  <p className="text-lg text-ink-muted leading-relaxed mt-1">
+                  <div className="text-2xl font-bold text-ink">{s.title}</div>
+                  <p className="text-xl text-ink-muted leading-relaxed mt-1">
                     {s.desc}
                   </p>
                 </div>
@@ -128,13 +128,13 @@ export function SolutionDetailLayout(props: SolutionDetailProps) {
       <Card variant="cta" className="min-h-[200px] flex items-center">
         <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-5 w-full">
           <div className="flex-1">
-            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-pill bg-white/20 text-white text-body-sm font-bold mb-3 backdrop-blur-sm">
+            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-pill bg-white/20 text-white text-body font-bold mb-3 backdrop-blur-sm">
               🎁 타지역닷컴 위탁 시 100% 무료
             </span>
             <h3 className="text-h2 text-white mb-2 leading-tight">
               망설이는 사이, 옆 가게는 이미 시작했습니다.
             </h3>
-            <p className="text-lg text-white/90 leading-relaxed">
+            <p className="text-xl text-white/90 leading-relaxed">
               <strong className="text-white">등록·관리만 맡기시면 4종 솔루션 전부 무료</strong>로 사용하실 수 있습니다.
               지금 신청하시면 청정 키워드·진입 가능 지역까지 함께 분석해 드립니다.
             </p>
@@ -147,13 +147,13 @@ export function SolutionDetailLayout(props: SolutionDetailProps) {
 
       {/* 다른 솔루션 보러 가기 */}
       <Card variant="white">
-        <div className="text-body-sm text-ink-muted uppercase tracking-wider font-semibold mb-2">
+        <div className="text-body text-ink-muted uppercase tracking-wider font-semibold mb-2">
           related
         </div>
         <div className="flex flex-wrap gap-2">
           <Link
             to="/intro"
-            className="inline-flex items-center gap-1 px-3 py-1.5 rounded-pill bg-bg-subtle text-ink hover:bg-brand-50 hover:text-brand-700 text-body-sm font-medium transition-colors"
+            className="inline-flex items-center gap-1 px-3 py-1.5 rounded-pill bg-bg-subtle text-ink hover:bg-brand-50 hover:text-brand-700 text-body font-medium transition-colors"
           >
             ← 4종 솔루션 통합 소개로 돌아가기
           </Link>
@@ -186,20 +186,20 @@ function BlockCard({ tone, icon, tag, title, headline, bullets }: BlockCardProps
   return (
     <Card variant="white" className="flex flex-col p-7">
       <div
-        className={`inline-flex items-center gap-2 px-3.5 py-1.5 rounded-pill ${t.bg} ${t.text} text-base font-bold tracking-wider self-start mb-5`}
+        className={`inline-flex items-center gap-2 px-3.5 py-1.5 rounded-pill ${t.bg} ${t.text} text-lg font-bold tracking-wider self-start mb-5`}
       >
         {icon}
         {tag}
       </div>
-      <h3 className="text-2xl font-bold text-ink mb-3">{title}</h3>
-      <p className="text-xl text-ink leading-relaxed mb-6 font-medium">
+      <h3 className="text-3xl font-bold text-ink mb-3">{title}</h3>
+      <p className="text-2xl text-ink leading-relaxed mb-6 font-medium">
         {headline}
       </p>
       <ul className="space-y-3">
         {bullets.map((b, i) => (
           <li
             key={i}
-            className="flex items-start gap-3 text-lg text-ink-muted leading-relaxed"
+            className="flex items-start gap-3 text-xl text-ink-muted leading-relaxed"
           >
             <CheckCircle2 size={20} className={`shrink-0 mt-0.5 ${t.text}`} />
             <span>{b}</span>
@@ -221,13 +221,13 @@ function EffectCard({
   return (
     <Card variant="white" className="flex flex-col p-7">
       <div
-        className={`inline-flex items-center gap-2 px-3.5 py-1.5 rounded-pill ${t.bg} ${t.text} text-base font-bold tracking-wider self-start mb-5`}
+        className={`inline-flex items-center gap-2 px-3.5 py-1.5 rounded-pill ${t.bg} ${t.text} text-lg font-bold tracking-wider self-start mb-5`}
       >
         {icon}
         {tag}
       </div>
-      <h3 className="text-2xl font-bold text-ink mb-3">{title}</h3>
-      <p className="text-xl text-ink leading-relaxed mb-5 font-medium">
+      <h3 className="text-3xl font-bold text-ink mb-3">{title}</h3>
+      <p className="text-2xl text-ink leading-relaxed mb-5 font-medium">
         {headline}
       </p>
 
@@ -237,8 +237,8 @@ function EffectCard({
             key={m.label}
             className={`rounded-xl border ${t.border} ${t.bg}/40 px-4 py-4 text-center`}
           >
-            <div className={`text-3xl font-bold ${t.text}`}>{m.value}</div>
-            <div className="text-base text-ink-muted leading-snug mt-1.5">
+            <div className={`text-4xl font-bold ${t.text}`}>{m.value}</div>
+            <div className="text-lg text-ink-muted leading-snug mt-1.5">
               {m.label}
             </div>
           </div>
@@ -249,7 +249,7 @@ function EffectCard({
         {bullets.map((b, i) => (
           <li
             key={i}
-            className="flex items-start gap-3 text-lg text-ink-muted leading-relaxed"
+            className="flex items-start gap-3 text-xl text-ink-muted leading-relaxed"
           >
             <CheckCircle2 size={20} className={`shrink-0 mt-0.5 ${t.text}`} />
             <span>{b}</span>
