@@ -13,6 +13,7 @@ import {
   PlayCircle,
 } from 'lucide-react'
 import { Link } from 'react-router-dom'
+import PageSeo, { buildServiceJsonLd } from '@/components/seo/PageSeo'
 
 export interface SolutionDetailProps {
   num: string
@@ -32,12 +33,36 @@ export interface SolutionDetailProps {
     bullets: string[]
   }
   howToUse: { step: string; title: string; desc: string }[]
+  /** SEO: 현재 페이지 경로(예: "/intro/keyword-dna") */
+  seoPath?: string
+  /** SEO: 메타 description (없으면 tagline 앞부분 사용) */
+  seoDescription?: string
+  /** SEO: 키워드 배열 */
+  seoKeywords?: string[]
+  /** SEO: 서비스 분류 (예: "키워드 분석") */
+  seoServiceType?: string
 }
 
 export function SolutionDetailLayout(props: SolutionDetailProps) {
   const Icon = props.icon
+  const seoDesc =
+    props.seoDescription || props.tagline.replace(/\s+/g, ' ').slice(0, 155)
   return (
     <div className="space-y-10">
+      {props.seoPath && (
+        <PageSeo
+          title={props.title}
+          description={seoDesc}
+          path={props.seoPath}
+          keywords={props.seoKeywords}
+          jsonLd={buildServiceJsonLd({
+            name: props.title,
+            description: seoDesc,
+            path: props.seoPath,
+            serviceType: props.seoServiceType || '네이버 플레이스 노출 솔루션',
+          })}
+        />
+      )}
       <TopBar title={props.title} subtitle={props.subtitle} />
 
       {/* Hero */}

@@ -14,6 +14,7 @@ import { TopBar } from '@/components/layout/TopBar'
 import { KeywordDnaApi, type DictionaryStats } from '@/api/keywordDna'
 import { useAuthStore } from '@/store/auth'
 import { useBodyClass } from '@/hooks/useBodyClass'
+import PageSeo from '@/components/seo/PageSeo'
 import { fmtNum } from './shared'
 
 import DnaTab from './DnaTab'
@@ -61,6 +62,20 @@ export default function KeywordDnaPage() {
   useBodyClass('solution-tool-page')
   return (
     <div className="space-y-5" data-page="solution-tool">
+      <PageSeo
+        title="타지역 키워드 DNA 파싱 솔루션 — 1초 분석"
+        description="시드 키워드 한 개로 6가지 DNA(MAIN·ACTION·MATERIAL·PLACE·BRAND·TAG)를 1초 만에 분해. 1,875개 상호 + 50만 회선 데이터 기반의 규칙형 키워드 분석 엔진."
+        path="/keyword-dna"
+        keywords={[
+          '키워드 DNA',
+          '타지역 키워드',
+          '네이버 키워드 분석',
+          '상호 키워드',
+          '키워드 파싱',
+          '플레이스 키워드',
+          '타지역닷컴',
+        ]}
+      />
       <TopBar
         title="타지역 키워드 DNA 파싱 솔루션"
         subtitle="네이버 봇이 키워드 형태소로 상호를 읽는 로직을 분석 — 등록 상호 DNA·비교·네트워크·블루오션 추천 (AI 미사용 규칙 기반)"

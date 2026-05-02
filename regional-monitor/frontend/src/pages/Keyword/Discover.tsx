@@ -30,6 +30,7 @@ import {
 } from 'lucide-react'
 import { Card } from '@/components/ui/Card'
 import { useBodyClass } from '@/hooks/useBodyClass'
+import PageSeo from '@/components/seo/PageSeo'
 import { keywordApi } from '@/api/keyword'
 import type {
   KeywordDiscoverResult,
@@ -93,6 +94,20 @@ export default function KeywordDiscover() {
 
   return (
     <div className="max-w-6xl mx-auto px-4 lg:px-6 py-6 space-y-5" data-page="solution-tool">
+      <PageSeo
+        title="네이버 1페이지 키워드 발굴"
+        description="네이버 모바일 플레이스 1페이지에서 메인/타지역 플레이스를 자동 분류해 청정 황금 키워드를 발굴합니다. 검색량이 아닌 회선수 기반으로 진짜 수익 가능한 키워드만 골라드립니다."
+        path="/keyword"
+        keywords={[
+          '네이버 1페이지 키워드',
+          '키워드 발굴',
+          '청정 키워드',
+          '플레이스 키워드',
+          '네이버 검색 키워드',
+          '타지역 키워드',
+          '타지역닷컴',
+        ]}
+      />
       <header>
         <h1 className="text-2xl lg:text-3xl font-bold text-ink flex items-center gap-2">
           <Sparkles className="text-amber-500" size={26} />

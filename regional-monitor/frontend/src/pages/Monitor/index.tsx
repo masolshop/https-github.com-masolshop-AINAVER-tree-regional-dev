@@ -15,6 +15,7 @@ import LiveCheckTab from './LiveCheckTab'
 import SettingsTab from './SettingsTab'
 import { HistoryBody } from '../History'
 import { useBodyClass } from '@/hooks/useBodyClass'
+import PageSeo from '@/components/seo/PageSeo'
 import clsx from 'clsx'
 
 type TabKey = 'register' | 'live' | 'history' | 'settings'
@@ -57,6 +58,20 @@ export default function Monitor() {
 
   return (
     <div data-page="solution-tool">
+      <PageSeo
+        title="네이버 노출관리 자동체크 솔루션"
+        description="플레이스 ID 기반 4중 검증(페이지 생존·070 일치·등록 동 일치·상호명 일치)을 매일 새벽 자동 실행합니다. 변경 발생 즉시 이메일·카카오 알림으로 노출 누락을 차단해 매출 손실을 막아드립니다."
+        path="/monitor"
+        keywords={[
+          '네이버 노출관리',
+          '노출 자동체크',
+          '플레이스 모니터링',
+          '070 가상번호',
+          '플레이스 누락',
+          '4중 검증',
+          '타지역닷컴',
+        ]}
+      />
       <TopBar
         title="실시간 노출 관리"
         subtitle="등록한 070 가상번호의 노출 상태를 플레이스 ID 기반으로 점검합니다"

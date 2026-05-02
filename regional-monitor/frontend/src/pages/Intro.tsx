@@ -25,6 +25,7 @@ import {
   ChevronRight,
 } from 'lucide-react'
 import { Link } from 'react-router-dom'
+import PageSeo, { buildFaqJsonLd, buildBreadcrumbJsonLd } from '@/components/seo/PageSeo'
 
 interface SolutionLink {
   id: string
@@ -83,6 +84,42 @@ const SOLUTIONS: SolutionLink[] = [
 export default function Intro() {
   return (
     <div className="space-y-10">
+      <PageSeo
+        title="타지역 4종 솔루션 — 키워드 DNA · 발굴 · 경쟁도 · 자동체크"
+        description="네이버 1페이지 노출의 모든 답: 키워드 DNA 파싱, 1페이지 키워드 발굴, 지역별 경쟁도 분석, 노출관리 자동체크까지 4종 솔루션을 한 번에. 발굴→분석→진입→유지 풀퍼널."
+        path="/intro"
+        keywords={[
+          '타지역서비스',
+          '타지역닷컴',
+          '4종 솔루션',
+          '키워드 DNA',
+          '키워드 발굴',
+          '지역 경쟁도',
+          '노출 자동체크',
+          '네이버 1페이지',
+          '네이버 플레이스 솔루션',
+        ]}
+        jsonLd={[
+          buildBreadcrumbJsonLd([
+            { name: '홈', path: '/' },
+            { name: '4종 솔루션 소개', path: '/intro' },
+          ]),
+          buildFaqJsonLd([
+            {
+              q: '타지역 4종 솔루션은 어떤 순서로 사용하나요?',
+              a: '발굴(키워드 DNA·1페이지 키워드 발굴) → 분석(지역 경쟁도) → 진입(070·플레이스 등록) → 유지(노출 자동체크) 순으로 풀퍼널 사용을 권장합니다.',
+            },
+            {
+              q: '무료로 사용할 수 있나요?',
+              a: '키워드 DNA 분석과 노출 자동체크 기본 플랜은 무료로 제공되며, 대량 분석·정밀 모드는 유료 플랜에서 이용하실 수 있습니다.',
+            },
+            {
+              q: '4종 솔루션 중 한 개만 사용해도 되나요?',
+              a: '네, 솔루션은 독립적으로 사용 가능합니다. 다만 4종을 함께 쓰면 발굴→유지 단계의 누수를 가장 효과적으로 막을 수 있습니다.',
+            },
+          ]),
+        ]}
+      />
       <TopBar
         title="타지역 4종솔루션 소개"
         subtitle="“똑같이 등록했는데 왜 우리만 안 뜰까?” — 그 답답함을 이제 데이터로 풀어드립니다."

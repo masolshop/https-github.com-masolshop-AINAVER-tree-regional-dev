@@ -74,6 +74,19 @@ export default function KeywordDnaIntro() {
           desc: '분석 결과를 Excel로 내려받아 070·플레이스 등록, 상호 작명 회의에 그대로 사용하세요. 사장님 의사결정이 단숨에 빨라집니다.',
         },
       ]}
+      seoPath="/intro/keyword-dna"
+      seoDescription="경쟁사 상호의 키워드 DNA(MAIN·ACTION·MATERIAL·PLACE·BRAND·TAG)를 1초 만에 분해해 네이버 1페이지 노출 정답을 보여드립니다. 1,875개 상호 + 50만 건 회선 데이터 기반."
+      seoKeywords={[
+        '타지역서비스',
+        '키워드 DNA',
+        '키워드 파싱',
+        '네이버 키워드 분석',
+        '상호 키워드',
+        '플레이스 노출 키워드',
+        '키워드 발굴',
+        '타지역닷컴',
+      ]}
+      seoServiceType="키워드 DNA 분석"
     />
   )
 }

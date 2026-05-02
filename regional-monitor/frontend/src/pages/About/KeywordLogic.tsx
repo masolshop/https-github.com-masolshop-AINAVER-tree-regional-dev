@@ -6,6 +6,7 @@
 import { TopBar } from '@/components/layout/TopBar'
 import { Card } from '@/components/ui/Card'
 import { Link } from 'react-router-dom'
+import PageSeo, { buildBreadcrumbJsonLd } from '@/components/seo/PageSeo'
 import {
   Search,
   Layers,
@@ -34,6 +35,25 @@ import {
 export default function KeywordLogic() {
   return (
     <div className="space-y-12">
+      <PageSeo
+        title="타지역 키워드로직 — 네이버 1페이지 키워드의 비밀"
+        description="네이버는 상호를 단순 글자가 아닌 형태소로 분해해 검색어와 매칭합니다. 30자 상호 키워드 로직을 6가지 DNA(MAIN·ACTION·MATERIAL·PLACE·BRAND·TAG)로 풀어드립니다."
+        path="/about/keyword-logic"
+        keywords={[
+          '타지역 키워드로직',
+          '네이버 키워드 로직',
+          '상호 키워드 분석',
+          '플레이스 키워드',
+          '키워드 형태소',
+          '30자 상호',
+          '타지역닷컴',
+        ]}
+        jsonLd={buildBreadcrumbJsonLd([
+          { name: '홈', path: '/' },
+          { name: '타지역서비스 안내', path: '/about/what-is' },
+          { name: '타지역 키워드로직', path: '/about/keyword-logic' },
+        ])}
+      />
       <TopBar
         title="타지역 키워드로직"
         subtitle="네이버 1페이지에 뜨는 키워드는 따로 있습니다 — 30자 상호 키워드 로직 분석"

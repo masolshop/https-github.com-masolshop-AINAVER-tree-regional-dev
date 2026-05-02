@@ -6,6 +6,7 @@
 import { TopBar } from '@/components/layout/TopBar'
 import { Card } from '@/components/ui/Card'
 import { Link } from 'react-router-dom'
+import PageSeo, { buildBreadcrumbJsonLd } from '@/components/seo/PageSeo'
 import {
   Radio,
   Eye,
@@ -44,6 +45,25 @@ import {
 export default function ExposureManagement() {
   return (
     <div className="space-y-12">
+      <PageSeo
+        title="타지역 노출 관리 — 등록보다 유지가 더 중요합니다"
+        description="네이버 1페이지 노출은 변동성이 매우 큽니다. 등록만 해놓고 손 놓고 있으면 노출은 어느 순간 사라집니다. 자동체크솔루션으로 24시간 감시하고 변경 발생 즉시 알림으로 매출 누수를 차단합니다."
+        path="/about/exposure-management"
+        keywords={[
+          '타지역 노출관리',
+          '네이버 노출 유지',
+          '플레이스 모니터링',
+          '노출 자동체크',
+          '네이버 1페이지 변동',
+          '플레이스 누락',
+          '타지역닷컴',
+        ]}
+        jsonLd={buildBreadcrumbJsonLd([
+          { name: '홈', path: '/' },
+          { name: '타지역서비스 안내', path: '/about/what-is' },
+          { name: '타지역 노출 관리', path: '/about/exposure-management' },
+        ])}
+      />
       <TopBar
         title="타지역 노출 관리"
         subtitle="네이버 노출은 등록보다 유지가 어렵습니다 — 자동체크솔루션으로 24시간 감시"

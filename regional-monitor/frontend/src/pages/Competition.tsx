@@ -28,6 +28,7 @@ import {
 } from 'lucide-react'
 import { Card } from '@/components/ui/Card'
 import { useBodyClass } from '@/hooks/useBodyClass'
+import PageSeo from '@/components/seo/PageSeo'
 import { keywordApi } from '@/api/keyword'
 import { competitionApi } from '@/api/competition'
 import type { RegionsResponse } from '@/api/keyword'
@@ -122,6 +123,8 @@ export default function Competition() {
 
   const [regions, setRegions] = useState<RegionsResponse | null>(null)
   const [scanMode, setScanMode] = useState<ScanMode>('fast')
+
+  // (SEO 메타태그는 return 내부에서 PageSeo로 주입 — 아래 참조)
 
   // 공통 입력
   const [keyword, setKeyword] = useState('흥신소')
@@ -369,6 +372,20 @@ export default function Competition() {
 
   return (
     <div className="px-4 lg:px-8 py-6 max-w-7xl mx-auto space-y-6" data-page="solution-tool">
+      <PageSeo
+        title="지역별 노출 경쟁도 분석 솔루션"
+        description="키워드 × 지역의 경쟁 강도를 5단계(무경쟁·청정·경쟁·과열·포화)로 가시화합니다. 17개 시도, 230개 시군구, 4,819개 동·리까지 골목 단위 정밀 스캔으로 진입 가능한 빈 자리를 찾아드립니다."
+        path="/competition"
+        keywords={[
+          '지역 경쟁도',
+          '네이버 지역 분석',
+          '플레이스 경쟁',
+          '청정지역',
+          '동 단위 경쟁도',
+          '시군구 경쟁도',
+          '타지역닷컴',
+        ]}
+      />
       {/* 헤더 */}
       <div>
         <h1 className="text-xl lg:text-2xl font-bold flex items-center gap-2">

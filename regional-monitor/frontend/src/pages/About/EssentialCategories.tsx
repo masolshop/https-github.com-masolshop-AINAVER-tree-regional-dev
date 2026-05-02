@@ -6,6 +6,7 @@
 import { useEffect, useState } from 'react'
 import { TopBar } from '@/components/layout/TopBar'
 import { Card } from '@/components/ui/Card'
+import PageSeo, { buildBreadcrumbJsonLd } from '@/components/seo/PageSeo'
 import {
   Briefcase,
   TrendingUp,
@@ -82,6 +83,24 @@ export default function EssentialCategories() {
 
   return (
     <div className="space-y-12">
+      <PageSeo
+        title="타지역 필수업종 — 시장규모 정렬"
+        description="타지역서비스 운영이 필수이거나 유효한 업종 리스트를 회선수 기준 시장규모로 정렬해 보여드립니다. 흥신소·하수구·열쇠·이사·청소 등 출장형 업종이 핵심입니다."
+        path="/about/essential-categories"
+        keywords={[
+          '타지역서비스 업종',
+          '타지역 필수업종',
+          '출장형 업종',
+          '070 가상번호 업종',
+          '네이버 플레이스 업종',
+          '타지역닷컴',
+        ]}
+        jsonLd={buildBreadcrumbJsonLd([
+          { name: '홈', path: '/' },
+          { name: '타지역서비스 안내', path: '/about/what-is' },
+          { name: '타지역 필수업종', path: '/about/essential-categories' },
+        ])}
+      />
       <TopBar
         title="타지역 필수업종"
         subtitle="타지역서비스 운영이 필수/유효한 업종 리스트 (회선수 기준 시장규모 정렬)"

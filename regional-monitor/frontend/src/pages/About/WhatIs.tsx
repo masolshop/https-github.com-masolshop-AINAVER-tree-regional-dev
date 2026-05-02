@@ -5,6 +5,7 @@
 import { TopBar } from '@/components/layout/TopBar'
 import { Card } from '@/components/ui/Card'
 import { Link } from 'react-router-dom'
+import PageSeo, { buildBreadcrumbJsonLd } from '@/components/seo/PageSeo'
 import {
   Sparkles,
   MapPin,
@@ -33,6 +34,25 @@ import {
 export default function WhatIs() {
   return (
     <div className="space-y-12">
+      <PageSeo
+        title="타지역서비스란 무엇인가? — 네이버플레이스 확장 전략"
+        description="타지역서비스는 사장님의 영업 깃발을 여러 지역에 꽂아 고객을 만나는 통로를 확장하는 네이버 플레이스 확장 전략입니다. 사무실 주소지 근처에서만 노출되는 한계를 넘어 넓은 지역에서 발견되게 합니다."
+        path="/about/what-is"
+        keywords={[
+          '타지역서비스',
+          '타지역서비스란',
+          '네이버플레이스 확장',
+          '플레이스 노출 전략',
+          '070 가상번호',
+          '지역 확장',
+          '타지역닷컴',
+        ]}
+        jsonLd={buildBreadcrumbJsonLd([
+          { name: '홈', path: '/' },
+          { name: '타지역서비스 안내', path: '/about/what-is' },
+          { name: '타지역서비스란?', path: '/about/what-is' },
+        ])}
+      />
       <TopBar
         title="타지역서비스란 무엇인가?"
         subtitle="고객을 여러 지역에서 만나게 하는 네이버플레이스 확장 전략"
