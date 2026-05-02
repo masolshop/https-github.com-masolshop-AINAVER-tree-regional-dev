@@ -30,7 +30,6 @@ import {
   FileWarning,
   X,
 } from 'lucide-react'
-import * as XLSX from 'xlsx'
 import clsx from 'clsx'
 
 import { useBulkCreatePlaces } from '@/hooks/usePlaces'
@@ -623,7 +622,7 @@ async function parseFile(file: File): Promise<ParsedRow[]> {
   }
   if (ext === 'xlsx' || ext === 'xls') {
     const buf = await file.arrayBuffer()
-    return parseXLSX(buf)
+    return await parseXLSX(buf)
   }
   throw new Error('지원하지 않는 파일 형식입니다. .xlsx, .xls, .csv 만 가능합니다.')
 }
@@ -688,8 +687,10 @@ function splitCSVRow(line: string): string[] {
   return out.map((c) => c.trim())
 }
 
-/** xlsx 라이브러리로 파싱 → 첫 시트의 cell 배열을 ParsedRow 로 변환 */
-function parseXLSX(buf: ArrayBuffer): ParsedRow[] {
+/** xlsx 라이브러리로 파싱 → 첫 시트의 cell 배열을 ParsedRow 로 변환 (동적 로드) */
+async function parseXLSX(buf: ArrayBuffer): Promise<ParsedRow[]> {
+  const { loadXLSX } = await import('@/utils/xlsx')
+  const XLSX = await loadXLSX()
   const wb = XLSX.read(buf, { type: 'array' })
   const sheetName = wb.SheetNames[0]
   if (!sheetName) return []
@@ -741,8 +742,10 @@ function rowsToParsed(cells: string[][]): ParsedRow[] {
   return out
 }
 
-function downloadSample() {
+async function downloadSample() {
   // 샘플 엑셀(.xlsx) 생성 — phone(필수) / dong / name 3컬럼
+  const { loadXLSX } = await import('@/utils/xlsx')
+  const XLSX = await loadXLSX()
   const data = [
     ['phone', 'dong', 'name'],
     ['070-4534-9862', '서울 종로구 홍지동', '바비네'],

@@ -2,7 +2,6 @@
  * Tab 1: DNA 분석 (단일 키워드)
  */
 import { useEffect, useState } from 'react'
-import * as XLSX from 'xlsx'
 import clsx from 'clsx'
 import {
   Search as SearchIcon,
@@ -90,8 +89,10 @@ export default function DnaTab() {
     }
   }
 
-  const downloadExcel = () => {
+  const downloadExcel = async () => {
     if (!result) return
+    const { loadXLSX } = await import('@/utils/xlsx')
+    const XLSX = await loadXLSX()
     const wb = XLSX.utils.book_new()
     const summaryRows: any[] = []
     for (const cat of CATEGORIES) {

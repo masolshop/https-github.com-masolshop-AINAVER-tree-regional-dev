@@ -124,16 +124,22 @@ export function SolutionDetailLayout(props: SolutionDetailProps) {
         </Card>
       </section>
 
-      {/* CTA */}
-      <Card variant="cta" className="min-h-[180px] flex items-center">
+      {/* CTA — 무료 강조형 */}
+      <Card variant="cta" className="min-h-[200px] flex items-center">
         <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-5 w-full">
-          <div>
-            <h3 className="text-h2 text-white mb-2">지금 사용해 보세요</h3>
+          <div className="flex-1">
+            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-pill bg-white/20 text-white text-caption font-bold mb-3 backdrop-blur-sm">
+              🎁 타지역닷컴 위탁 시 100% 무료
+            </span>
+            <h3 className="text-h2 text-white mb-2 leading-tight">
+              망설이는 사이, 옆 가게는 이미 시작했습니다.
+            </h3>
             <p className="text-base text-white/90 leading-relaxed">
-              위탁 운영 시 무료 · 자체 운영 시 월정 구독 또는 크레딧 구매로 이용 가능합니다.
+              <strong className="text-white">등록·관리만 맡기시면 4종 솔루션 전부 무료</strong>로 사용하실 수 있습니다.
+              지금 신청하시면 청정 키워드·진입 가능 지역까지 함께 분석해 드립니다.
             </p>
           </div>
-          <Link to={props.ctaTo} className="btn-cta-white">
+          <Link to={props.ctaTo} className="btn-cta-white whitespace-nowrap shrink-0">
             <PlayCircle size={18} /> {props.ctaLabel} <ArrowRight size={18} />
           </Link>
         </div>

@@ -44,7 +44,7 @@ const SOLUTIONS: SolutionLink[] = [
     to: '/intro/keyword-dna',
     title: '타지역키워드 DNA 파싱솔루션',
     shortLabel: 'DNA 파싱',
-    tagline: '상호명을 6 카테고리 DNA로 분해해 노출 로직을 가시화',
+    tagline: '“왜 옆 가게만 1페이지에 뜰까?” 그 비밀을 1초 만에 풀어드립니다.',
     icon: Dna,
     accent: 'from-brand-500 to-indigo-500',
   },
@@ -54,7 +54,7 @@ const SOLUTIONS: SolutionLink[] = [
     to: '/intro/keyword-discover',
     title: '네이버1페이지 노출 키워드 발굴솔루션',
     shortLabel: '키워드 발굴',
-    tagline: '실제 회선수 기반으로 1페이지 진입 가능한 황금 키워드 발굴',
+    tagline: '검색량 큰 레드오션은 그만. 회선수 50만 건이 검증한 청정 황금 키워드만 골라드립니다.',
     icon: Sparkles,
     accent: 'from-amber-500 to-pink-500',
   },
@@ -64,7 +64,7 @@ const SOLUTIONS: SolutionLink[] = [
     to: '/intro/competition',
     title: '지역별 노출경쟁도 분석솔루션',
     shortLabel: '경쟁도 분석',
-    tagline: '시군구·동/리 단위 4,819개 영역 정밀 경쟁도 측정',
+    tagline: '전국 4,819곳 중 사장님이 들어갈 수 있는 “빈 자리”, 데이터로 찾아드립니다.',
     icon: MapPin,
     accent: 'from-teal-500 to-cyan-500',
   },
@@ -74,7 +74,7 @@ const SOLUTIONS: SolutionLink[] = [
     to: '/intro/monitor',
     title: '네이버노출관리 자동체크솔루션',
     shortLabel: '노출관리',
-    tagline: '한 번 등록하면 매일 자동 검증 — 노출 사라짐 24시간 내 감지',
+    tagline: '노출 사라진 걸 일주일 뒤에 알면 늦습니다. 매일 새벽 3시, 사장님 대신 깨어 있습니다.',
     icon: Radio,
     accent: 'from-rose-500 to-orange-500',
   },
@@ -85,7 +85,7 @@ export default function Intro() {
     <div className="space-y-10">
       <TopBar
         title="타지역 4종솔루션 소개"
-        subtitle="4개 솔루션이 발굴 → 분석 → 진입 → 유지의 전 단계를 책임지는 통합 SaaS입니다."
+        subtitle="“똑같이 등록했는데 왜 우리만 안 뜰까?” — 그 답답함을 이제 데이터로 풀어드립니다."
       />
 
       {/* ─── 1) Hero ─── */}
@@ -98,14 +98,14 @@ export default function Intro() {
             <Layers size={12} /> 타지역서비스 통합 운영 플랫폼
           </span>
           <h2 className="text-hero-sm text-ink mb-4">
-            상호 작명 → 키워드 발굴 → 지역 진입 → 노출 유지<br />
-            전 주기를 4개 솔루션이 한 번에.
+            상호 작명부터 노출 유지까지,<br />
+            사장님이 “느낌”으로 결정하던 모든 순간을 데이터로 바꿔드립니다.
           </h2>
           <p className="text-body text-ink-muted leading-relaxed">
-            타지역서비스는 <strong className="text-ink">단일 작업이 아닌 4단계 운영 프로세스</strong>입니다.
-            한 단계라도 빠지면 등록·노출·매출이 새기 시작합니다. 본 SaaS는 4개 솔루션이
+            타지역서비스는 <strong className="text-ink">단일 작업이 아니라 4단계 운영 프로세스</strong>입니다.
+            한 단계라도 빠지면 — 등록비도, 광고비도, 매출도 그대로 새어 나갑니다. 본 SaaS는 4개 솔루션이
             <strong className="text-ink"> 동일한 데이터(1,875 상호 / 216 카테고리 / 회선수 508K / 4,819 동·리)</strong>를
-            공유하여 의사결정을 일관성 있게 자동화합니다.
+            공유하여, 사장님 의사결정이 “감”이 아닌 “증거”로 흐르게 만듭니다.
           </p>
         </div>
       </Card>
@@ -127,28 +127,28 @@ export default function Intro() {
           <FunnelStep
             num="STEP 1"
             title="키워드 구조 해부"
-            desc="DNA 파싱으로 진출하려는 업종의 토큰 구조 파악. 어떤 카테고리 키워드가 노출의 중심인지 식별."
+            desc="“왜 옆 가게만 1페이지에 뜰까?” 그 비밀을 1초 만에 풀어드립니다. 경쟁사 상호 DNA를 6가지로 분해해 노출의 정답을 보여드립니다."
             tone="brand"
             arrow
           />
           <FunnelStep
             num="STEP 2"
             title="진입 키워드 발굴"
-            desc="청정/경쟁 등급 황금 키워드 자동 수집. 기회점수 기반 우선순위로 진입 키워드 결정."
+            desc="검색량 큰 레드오션은 버리세요. 회선수 50만 건이 검증한 “돈 되는 청정 키워드”만 골라 우선순위까지 매겨드립니다."
             tone="amber"
             arrow
           />
           <FunnelStep
             num="STEP 3"
             title="청정 지역 매핑"
-            desc="동·리 단위 경쟁도 측정으로 진입 가능한 지역 자동 매핑. 시군구별 청정 영역 우선 선택."
+            desc="강남구는 포화, 정선군은 청정. 전국 4,819곳 중 사장님이 들어갈 수 있는 “빈 자리”를 지도 위에 그려드립니다."
             tone="teal"
             arrow
           />
           <FunnelStep
             num="STEP 4"
             title="노출 지속 유지"
-            desc="등록 후 매일 자동 검증. 070·플레이스 ID·동·상호 변경 즉시 감지로 매출 누락 차단."
+            desc="네이버는 말없이 노출을 거두어 갑니다. 매일 새벽 3시 자동 검증 — 변경 즉시 알림으로 매출 누락을 24시간 안에 차단합니다."
             tone="rose"
           />
         </div>
@@ -181,7 +181,7 @@ export default function Intro() {
           </div>
           <h2 className="text-h2 text-ink">요금제</h2>
           <p className="text-body-sm text-ink-muted mt-1">
-            타지역닷컴에 등록·관리를 위탁하시는 경우 4종 솔루션 전체를 무료로 이용하실 수 있습니다.
+            등록·관리만 맡기시면 — 4종 솔루션 전체를 <strong className="text-emerald-700">100% 무료</strong>로 사용하실 수 있습니다. 사장님이 잃을 게 없습니다.
           </p>
         </div>
 
@@ -198,9 +198,9 @@ export default function Intro() {
             </div>
             <h3 className="text-h2 text-ink mb-1">무료 플랜</h3>
             <p className="text-body-sm text-ink-muted mb-4 leading-relaxed">
-              타지역닷컴에 <strong className="text-ink">타지역서비스 등록·관리를 위탁</strong>하시는 경우
+              타지역닷컴에 <strong className="text-ink">등록·관리만 맡기시면</strong>
               <br className="hidden md:block" />
-              4종 솔루션 전체를 <strong className="text-emerald-700">무료</strong>로 이용 가능합니다.
+              4종 솔루션 전체를 <strong className="text-emerald-700">평생 무료</strong>로 — 사장님은 결과만 받으시면 됩니다.
             </p>
 
             <div className="rounded-card bg-emerald-50/60 border border-emerald-100 p-4 mb-4">
@@ -312,20 +312,20 @@ export default function Intro() {
 
         <div className="space-y-3">
           <FaqRow
-            q="4종 솔루션 중 한 개만 사용해도 되나요?"
-            a="네. 각 솔루션은 단독 사용 가능합니다. 다만 통합 사용 시 DNA 파싱 결과 → 키워드 발굴 → 경쟁도 분석 → 노출관리로 데이터가 자연스럽게 흐르며, 의사결정 정확도가 크게 상승합니다."
+            q="4종 중에 한 개만 써도 되나요?"
+            a="네, 각 솔루션은 단독으로도 충분히 강력합니다. 다만 4개를 함께 쓰시면 — DNA 파싱에서 찾은 키워드가 발굴 솔루션으로, 거기서 추린 키워드가 경쟁도 분석으로, 그리고 등록 후엔 노출관리로 자연스럽게 흘러갑니다. 사장님 의사결정 정확도가 비교할 수 없을 만큼 올라갑니다."
           />
           <FaqRow
             q="무료 플랜은 어떻게 시작하나요?"
-            a="타지역닷컴에 070·플레이스 등록·관리 운영을 위탁하시면 4종 솔루션 전체가 무료로 제공됩니다. 별도 위탁 계약 후 솔루션 접근 권한이 부여됩니다."
+            a="간단합니다. 타지역닷컴에 070·플레이스 등록·관리만 맡기시면 4종 솔루션 전체가 평생 무료입니다. 별도 위탁 계약 후 바로 솔루션 접근 권한이 열립니다 — 사장님은 결과만 받으시면 됩니다."
           />
           <FaqRow
-            q="유료 플랜의 월정 구독료와 크레딧 구매형 차이는?"
-            a="월정 구독료는 매월 정액으로 4종 솔루션을 무제한 사용하는 방식이며, 크레딧 구매형은 분석 1회마다 크레딧이 차감되는 방식입니다. 정기적·반복적 사용은 월정, 단발성 분석은 크레딧이 유리합니다."
+            q="유료 플랜의 월정 구독과 크레딧 구매형, 뭐가 다른가요?"
+            a="매일·매주 분석을 돌리신다면 월정 구독이 가장 저렴합니다. 가끔 한 번씩, 프로젝트 단위로만 쓰신다면 크레딧 구매형이 훨씬 합리적입니다. 사장님 사용 패턴에 맞게 선택하세요."
           />
           <FaqRow
-            q="4개 솔루션이 같은 데이터로 동작하나요?"
-            a="네. 1,875개 등록 상호 / 216개 카테고리 / 회선수 508,854 / 4,819개 동·리 데이터를 4개 솔루션이 공유합니다. DNA 파싱에서 발견한 토큰이 키워드 발굴 추천에 그대로 반영되는 구조입니다."
+            q="4개 솔루션이 정말 같은 데이터를 쓰나요?"
+            a="네. 1,875개 등록 상호 / 216개 카테고리 / 회선수 508,854 / 4,819개 동·리 — 모두 한 데이터베이스를 공유합니다. DNA 파싱에서 발견한 토큰이 키워드 발굴 추천에 그대로 반영되고, 그 결과가 경쟁도·노출관리로 이어집니다. 분석할 때마다 데이터가 바뀌지 않습니다."
           />
         </div>
       </section>
@@ -334,11 +334,14 @@ export default function Intro() {
       <Card variant="cta" className="min-h-[180px] flex items-center">
         <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-5 w-full">
           <div>
+            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-pill bg-white/20 text-white text-caption font-bold mb-3 backdrop-blur-sm">
+              🎁 위탁만 맡기시면 4종 모두 평생 무료
+            </span>
             <h3 className="text-h1 text-white mb-2">
-              4종 솔루션, 지금 시작해 보세요
+              망설이는 사이, 옆 가게는 이미 시작했습니다.
             </h3>
             <p className="text-body-sm text-white/85">
-              위탁 운영 = 무료 / 자체 운영 = 월정 또는 크레딧 — 운영 방식에 맞춰 선택하실 수 있습니다.
+              등록·관리만 맡기시면 4종 솔루션 전부 무료. 사장님이 잃을 게 없습니다 — 지금 한 발만 떼어 보세요.
             </p>
           </div>
           <Link to="/intro/keyword-dna" className="btn-cta-white">

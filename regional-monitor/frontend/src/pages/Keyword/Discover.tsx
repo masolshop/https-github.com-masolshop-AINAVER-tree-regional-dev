@@ -16,7 +16,6 @@
  *   · 미상           — slate
  */
 import { useEffect, useMemo, useState } from 'react'
-import * as XLSX from 'xlsx'
 import clsx from 'clsx'
 import {
   Search as SearchIcon,
@@ -241,8 +240,10 @@ function KeywordTab({
     }
   }
 
-  function downloadXlsx() {
+  async function downloadXlsx() {
     if (!results.length) return
+    const { loadXLSX } = await import('@/utils/xlsx')
+    const XLSX = await loadXLSX()
 
     const summaryRows = results.map((r) => ({
       키워드: r.keyword,
@@ -1106,8 +1107,10 @@ function BulkRegionTab({
   }, [job, minRatio, hideZero])
 
   // (a) 일괄 결과 요약 Excel 다운로드
-  function downloadSummaryXlsx() {
+  async function downloadSummaryXlsx() {
     if (!filteredResults.length) return
+    const { loadXLSX } = await import('@/utils/xlsx')
+    const XLSX = await loadXLSX()
     const rows = filteredResults.map((r: any) => {
       const sm = r.summary || {}
       return {
@@ -1138,8 +1141,10 @@ function BulkRegionTab({
   }
 
   // (b) 일괄 결과 + 업체 상세 Excel 다운로드 (모달과 동일한 정보)
-  function downloadDetailXlsx() {
+  async function downloadDetailXlsx() {
     if (!filteredResults.length) return
+    const { loadXLSX } = await import('@/utils/xlsx')
+    const XLSX = await loadXLSX()
     const summaryRows = filteredResults.map((r: any) => {
       const sm = r.summary || {}
       return {
@@ -1535,8 +1540,10 @@ function RegionDetailModal({
   const items: KeywordPlaceItem[] = row.items || []
   const ratio = ((sm.third_party_ratio ?? 0) * 100).toFixed(0)
 
-  function downloadModalXlsx() {
+  async function downloadModalXlsx() {
     if (!items.length) return
+    const { loadXLSX } = await import('@/utils/xlsx')
+    const XLSX = await loadXLSX()
     const rows = items.map((it: any) => ({
       시도: row.sido || '',
       시군구: row.sigungu || '',

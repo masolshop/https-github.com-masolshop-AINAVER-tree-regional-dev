@@ -11,7 +11,6 @@
  *   - saturated (포화): 6건+
  */
 import { useState } from 'react'
-import * as XLSX from 'xlsx'
 import clsx from 'clsx'
 import {
   Lightbulb,
@@ -98,8 +97,10 @@ export default function RecommendTab() {
     }
   }
 
-  const downloadExcel = () => {
+  const downloadExcel = async () => {
     if (!result) return
+    const { loadXLSX } = await import('@/utils/xlsx')
+    const XLSX = await loadXLSX()
     const wb = XLSX.utils.book_new()
     const rows = result.candidates.map((c, i) => ({
       순위: i + 1,

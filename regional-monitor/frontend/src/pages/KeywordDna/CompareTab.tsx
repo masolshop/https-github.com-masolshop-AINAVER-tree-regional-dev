@@ -2,7 +2,6 @@
  * Tab 2: 다중 키워드 비교 매트릭스 (히트맵 + 유사도)
  */
 import { useState } from 'react'
-import * as XLSX from 'xlsx'
 import clsx from 'clsx'
 import {
   Plus,
@@ -99,8 +98,10 @@ export default function CompareTab() {
     }
   }
 
-  const downloadExcel = () => {
+  const downloadExcel = async () => {
     if (!result) return
+    const { loadXLSX } = await import('@/utils/xlsx')
+    const XLSX = await loadXLSX()
     const wb = XLSX.utils.book_new()
 
     // Sheet 1: 매트릭스

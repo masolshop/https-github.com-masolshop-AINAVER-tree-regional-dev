@@ -283,9 +283,9 @@ export default function RegisterTab() {
     }
     setDownloading(true)
     try {
-      // xlsx 라이브러리는 BulkUpload 청크에 이미 포함되어 있으므로
-      // 동일한 청크가 재사용된다(추가 다운로드 거의 없음).
-      const XLSX = await import('xlsx')
+      // xlsx 는 공용 동적 로더로 1회만 로드된다(이후 캐시).
+      const { loadXLSX } = await import('@/utils/xlsx')
+      const XLSX = await loadXLSX()
 
       const rows = mismatchedPlaces.map((p, idx) => ({
         '순번': idx + 1,

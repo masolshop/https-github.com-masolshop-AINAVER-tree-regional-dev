@@ -5,10 +5,16 @@
  * - useMe()       : 토큰이 있으면 자동으로 /auth/me 호출 → 만료 시 logout
  * - ProtectedRoute: isAuthenticated=false 면 로그인 모달 + / 로 리다이렉트
  * - AdminRoute   : 슈퍼어드민(is_superadmin)만 통과
+ *
+ * 라우트 코드 스플리팅(2026-05):
+ *   · 홈/소개/About/Intro 페이지는 즉시 로드 (첫 화면 빠른 표시)
+ *   · 보호된 도구 페이지(Monitor, Keyword, Competition, KeywordDna, Admin)는 lazy()
+ *     → 비로그인 방문자가 어드민/모니터 코드까지 받지 않도록 청크 분리
  */
-import { useEffect } from 'react'
+import { lazy, Suspense, useEffect } from 'react'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { Loader2 } from 'lucide-react'
 
 import { AppLayout } from '@/components/layout/AppLayout'
 import { useAuthStore } from '@/store/auth'
@@ -16,13 +22,9 @@ import { configureAuth } from '@/api/client'
 import { useMe } from '@/hooks/useAuth'
 import { useGaPageView } from '@/hooks/useGaPageView'
 
+// ── 즉시 로드 (첫 화면) ────────────────────────────────
 import Home from '@/pages/Home'
 import Intro from '@/pages/Intro'
-import Monitor from '@/pages/Monitor'
-import Admin from '@/pages/Admin'
-import KeywordDiscover from '@/pages/Keyword/Discover'
-import Competition from '@/pages/Competition'
-import KeywordDna from '@/pages/KeywordDna'
 import ResetPassword from '@/pages/ResetPassword'
 import WhatIs from '@/pages/About/WhatIs'
 import EssentialCategories from '@/pages/About/EssentialCategories'
@@ -31,6 +33,13 @@ import KeywordDnaIntro from '@/pages/Solutions/KeywordDnaIntro'
 import KeywordDiscoverIntro from '@/pages/Solutions/KeywordDiscoverIntro'
 import CompetitionIntro from '@/pages/Solutions/CompetitionIntro'
 import MonitorIntro from '@/pages/Solutions/MonitorIntro'
+
+// ── 로그인/권한 필요 페이지 (lazy) ──────────────────────
+const Monitor = lazy(() => import('@/pages/Monitor'))
+const KeywordDiscover = lazy(() => import('@/pages/Keyword/Discover'))
+const Competition = lazy(() => import('@/pages/Competition'))
+const KeywordDna = lazy(() => import('@/pages/KeywordDna'))
+const Admin = lazy(() => import('@/pages/Admin'))
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -123,6 +132,16 @@ function GaTracker() {
   return null
 }
 
+/** lazy 페이지 로딩 중 스피너 */
+function PageFallback() {
+  return (
+    <div className="flex items-center justify-center py-24 text-ink-muted">
+      <Loader2 className="h-5 w-5 animate-spin mr-2" />
+      <span className="text-sm">페이지 로드 중…</span>
+    </div>
+  )
+}
+
 export default function App() {
   return (
     <QueryClientProvider client={queryClient}>
@@ -131,82 +150,84 @@ export default function App() {
       <BrowserRouter>
         <AuthBootstrap />
         <GaTracker />
-        <Routes>
-          {/* 비밀번호 재설정 — 인증 없이 접근, AppLayout 외부 */}
-          <Route path="/reset-password" element={<ResetPassword />} />
-          <Route element={<AppLayout />}>
-            <Route path="/" element={<Home />} />
-            <Route path="/intro" element={<Intro />} />
-            <Route path="/intro/keyword-dna" element={<KeywordDnaIntro />} />
-            <Route path="/intro/keyword-discover" element={<KeywordDiscoverIntro />} />
-            <Route path="/intro/competition" element={<CompetitionIntro />} />
-            <Route path="/intro/monitor" element={<MonitorIntro />} />
-            <Route path="/about/what-is" element={<WhatIs />} />
-            <Route path="/about/essential-categories" element={<EssentialCategories />} />
-            <Route path="/about/keyword-logic" element={<KeywordLogic />} />
-            <Route
-              path="/monitor"
-              element={
-                <ProtectedRoute redirectTo="/monitor">
-                  <MonitorRedirectGate>
-                    <Monitor />
-                  </MonitorRedirectGate>
-                </ProtectedRoute>
-              }
-            />
-            {/* /history 는 /monitor?tab=history 로 리다이렉트 (2026-05 통합) */}
-            <Route path="/history" element={<Navigate to="/monitor?tab=history" replace />} />
-            <Route
-              path="/keyword"
-              element={
-                <ProtectedRoute redirectTo="/keyword">
-                  <KeywordDiscover />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/competition"
-              element={
-                <ProtectedRoute redirectTo="/competition">
-                  <Competition />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/keyword-dna"
-              element={
-                <ProtectedRoute redirectTo="/keyword-dna">
-                  <KeywordDna />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/admin"
-              element={
-                <AdminRoute>
-                  <Admin />
-                </AdminRoute>
-              }
-            />
-            <Route
-              path="/admin/monitor"
-              element={
-                <AdminRoute>
-                  <Admin />
-                </AdminRoute>
-              }
-            />
-            <Route
-              path="/admin/schedule"
-              element={
-                <AdminRoute>
-                  <Admin />
-                </AdminRoute>
-              }
-            />
-            <Route path="*" element={<Navigate to="/" replace />} />
-          </Route>
-        </Routes>
+        <Suspense fallback={<PageFallback />}>
+          <Routes>
+            {/* 비밀번호 재설정 — 인증 없이 접근, AppLayout 외부 */}
+            <Route path="/reset-password" element={<ResetPassword />} />
+            <Route element={<AppLayout />}>
+              <Route path="/" element={<Home />} />
+              <Route path="/intro" element={<Intro />} />
+              <Route path="/intro/keyword-dna" element={<KeywordDnaIntro />} />
+              <Route path="/intro/keyword-discover" element={<KeywordDiscoverIntro />} />
+              <Route path="/intro/competition" element={<CompetitionIntro />} />
+              <Route path="/intro/monitor" element={<MonitorIntro />} />
+              <Route path="/about/what-is" element={<WhatIs />} />
+              <Route path="/about/essential-categories" element={<EssentialCategories />} />
+              <Route path="/about/keyword-logic" element={<KeywordLogic />} />
+              <Route
+                path="/monitor"
+                element={
+                  <ProtectedRoute redirectTo="/monitor">
+                    <MonitorRedirectGate>
+                      <Monitor />
+                    </MonitorRedirectGate>
+                  </ProtectedRoute>
+                }
+              />
+              {/* /history 는 /monitor?tab=history 로 리다이렉트 (2026-05 통합) */}
+              <Route path="/history" element={<Navigate to="/monitor?tab=history" replace />} />
+              <Route
+                path="/keyword"
+                element={
+                  <ProtectedRoute redirectTo="/keyword">
+                    <KeywordDiscover />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/competition"
+                element={
+                  <ProtectedRoute redirectTo="/competition">
+                    <Competition />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/keyword-dna"
+                element={
+                  <ProtectedRoute redirectTo="/keyword-dna">
+                    <KeywordDna />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/admin"
+                element={
+                  <AdminRoute>
+                    <Admin />
+                  </AdminRoute>
+                }
+              />
+              <Route
+                path="/admin/monitor"
+                element={
+                  <AdminRoute>
+                    <Admin />
+                  </AdminRoute>
+                }
+              />
+              <Route
+                path="/admin/schedule"
+                element={
+                  <AdminRoute>
+                    <Admin />
+                  </AdminRoute>
+                }
+              />
+              <Route path="*" element={<Navigate to="/" replace />} />
+            </Route>
+          </Routes>
+        </Suspense>
       </BrowserRouter>
     </QueryClientProvider>
   )

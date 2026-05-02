@@ -5,7 +5,6 @@
  * 외부 d3/react-flow 의존성 없이 순수 SVG로 렌더링.
  */
 import { useMemo, useRef, useState } from 'react'
-import * as XLSX from 'xlsx'
 import {
   Network,
   Loader2,
@@ -189,8 +188,10 @@ export default function GraphTab() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [result, seed])
 
-  const downloadExcel = () => {
+  const downloadExcel = async () => {
     if (!result) return
+    const { loadXLSX } = await import('@/utils/xlsx')
+    const XLSX = await loadXLSX()
     const wb = XLSX.utils.book_new()
     XLSX.utils.book_append_sheet(
       wb,

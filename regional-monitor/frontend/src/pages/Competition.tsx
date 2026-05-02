@@ -15,7 +15,6 @@
  *   · Precise — 시도×시군구의 모든 동/리 prefix 호출 (백그라운드 job, 30s-5min)
  */
 import { useEffect, useMemo, useState } from 'react'
-import * as XLSX from 'xlsx'
 import clsx from 'clsx'
 import {
   Search as SearchIcon,
@@ -306,8 +305,10 @@ export default function Competition() {
   }, [rows, minOther])
 
   // ── Excel 다운로드 ───────────────────────────────────
-  const exportSummary = () => {
+  const exportSummary = async () => {
     if (!result || rows.length === 0) return
+    const { loadXLSX } = await import('@/utils/xlsx')
+    const XLSX = await loadXLSX()
     const sheet = filteredRows.map((r) => ({
       시도: r.sido,
       시군구: r.sigungu,
@@ -323,8 +324,10 @@ export default function Competition() {
     XLSX.writeFile(wb, fname)
   }
 
-  const exportDetail = () => {
+  const exportDetail = async () => {
     if (!result || rows.length === 0) return
+    const { loadXLSX } = await import('@/utils/xlsx')
+    const XLSX = await loadXLSX()
     const detailRows: any[] = []
     for (const r of filteredRows) {
       r.items.forEach((it, idx) => {
