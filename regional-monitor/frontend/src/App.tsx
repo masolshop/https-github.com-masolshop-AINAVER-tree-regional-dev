@@ -29,6 +29,7 @@ import ResetPassword from '@/pages/ResetPassword'
 import WhatIs from '@/pages/About/WhatIs'
 import EssentialCategories from '@/pages/About/EssentialCategories'
 import KeywordLogic from '@/pages/About/KeywordLogic'
+import ExposureManagement from '@/pages/About/ExposureManagement'
 import KeywordDnaIntro from '@/pages/Solutions/KeywordDnaIntro'
 import KeywordDiscoverIntro from '@/pages/Solutions/KeywordDiscoverIntro'
 import CompetitionIntro from '@/pages/Solutions/CompetitionIntro'
@@ -164,6 +165,7 @@ export default function App() {
               <Route path="/about/what-is" element={<WhatIs />} />
               <Route path="/about/essential-categories" element={<EssentialCategories />} />
               <Route path="/about/keyword-logic" element={<KeywordLogic />} />
+              <Route path="/about/exposure-management" element={<ExposureManagement />} />
               <Route
                 path="/monitor"
                 element={

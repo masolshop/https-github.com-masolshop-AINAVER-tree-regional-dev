@@ -35,6 +35,7 @@ import {
   Info,
   Briefcase,
   Cpu,
+  Eye,
 } from 'lucide-react'
 import clsx from 'clsx'
 import { useAuthStore } from '@/store/auth'
@@ -85,9 +86,10 @@ const ABOUT_GROUP: MenuGroup = {
   icon: Globe,
   pathPrefix: '/about',
   children: [
-    { to: '/about/what-is',              label: '타지역서비스란?',  icon: Info,      requireAuth: false },
-    { to: '/about/essential-categories', label: '타지역 필수업종',  icon: Briefcase, requireAuth: false },
-    { to: '/about/keyword-logic',        label: '타지역 키워드로직', icon: Cpu,       requireAuth: false },
+    { to: '/about/what-is',              label: '타지역서비스란?',   icon: Info,      requireAuth: false },
+    { to: '/about/essential-categories', label: '타지역 필수업종',   icon: Briefcase, requireAuth: false },
+    { to: '/about/keyword-logic',        label: '타지역 키워드로직',  icon: Cpu,       requireAuth: false },
+    { to: '/about/exposure-management',  label: '타지역 노출 관리',   icon: Eye,       requireAuth: false },
   ],
 }
 
