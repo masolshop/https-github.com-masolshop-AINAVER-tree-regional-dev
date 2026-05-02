@@ -358,10 +358,13 @@ export function Sidebar({ onItemClick }: SidebarProps = {}) {
           <div className="ml-4 pl-3 border-l border-bg-subtle flex flex-col gap-1">
             {SOLUTIONS_GROUP.children.map((child) => {
               const ChildIcon = child.icon
+              // '/intro' 는 정확 매칭(end)으로 처리해 하위 경로(/intro/keyword-dna 등)에서 동시 active 방지
+              const exactMatch = child.to === '/intro'
               return (
                 <NavLink
                   key={child.to}
                   to={child.to}
+                  end={exactMatch}
                   onClick={(e) => handleMenuClick(child, e)}
                   className={({ isActive }) =>
                     clsx('sidebar-item', isActive && 'active')
