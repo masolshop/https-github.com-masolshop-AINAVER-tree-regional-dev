@@ -337,8 +337,9 @@ export function Sidebar({ onItemClick }: SidebarProps = {}) {
           <button
             type="button"
             onClick={() => setSolutionsOpen((v) => !v)}
+            onMouseDown={(e) => e.preventDefault()}
             aria-expanded={solutionsOpen}
-            className="sidebar-item flex-1"
+            className="flex items-center gap-3 px-4 py-3 rounded-2xl text-[19px] text-ink-muted font-bold cursor-pointer transition-colors hover:bg-bg-subtle hover:text-ink focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-300 flex-1"
           >
             <SOLUTIONS_GROUP.icon size={18} className="shrink-0" />
             <span className="flex-1 text-left text-[clamp(13px,2.6vw,19px)] whitespace-nowrap leading-none">
