@@ -159,3 +159,49 @@
     }
   }
 }
+
+/* ============================================================
+   4대 솔루션 도구 페이지 본문 가독성 향상 (글자 크기 한 단계 ↑)
+   대상 페이지(루트에 data-page="solution-tool" 마커 부착):
+     · /keyword-dna   (KeywordDna/index.tsx)
+     · /keyword       (Keyword/Discover.tsx)
+     · /competition   (Competition.tsx)
+     · /monitor       (Monitor/index.tsx + 하위 탭)
+   토큰(원본 → 강제 px):
+     text-xs       12 → 14
+     text-sm       14 → 16
+     text-base     16 → 18
+     text-caption  12 → 14
+     text-body-sm  13 → 15
+     text-body     14 → 16
+     text-lg       18 → 20
+     text-xl       20 → 22
+     text-h3       18 → 20
+   ============================================================ */
+[data-page="solution-tool"] .text-xs        { font-size: 14px !important; line-height: 1.55 !important; }
+[data-page="solution-tool"] .text-sm        { font-size: 16px !important; line-height: 1.6  !important; }
+[data-page="solution-tool"] .text-base      { font-size: 18px !important; line-height: 1.65 !important; }
+[data-page="solution-tool"] .text-caption   { font-size: 14px !important; line-height: 1.55 !important; }
+[data-page="solution-tool"] .text-body-sm   { font-size: 15px !important; line-height: 1.6  !important; }
+[data-page="solution-tool"] .text-body      { font-size: 16px !important; line-height: 1.65 !important; }
+[data-page="solution-tool"] .text-lg        { font-size: 20px !important; line-height: 1.55 !important; }
+[data-page="solution-tool"] .text-xl        { font-size: 22px !important; line-height: 1.5  !important; }
+[data-page="solution-tool"] .text-h3        { font-size: 20px !important; line-height: 1.45 !important; }
+
+/* 인라인 px 폰트 (예: text-[11px], text-[13px])도 함께 보정 */
+[data-page="solution-tool"] .text-\[11px\] { font-size: 13px !important; line-height: 1.55 !important; }
+[data-page="solution-tool"] .text-\[12px\] { font-size: 14px !important; line-height: 1.55 !important; }
+[data-page="solution-tool"] .text-\[13px\] { font-size: 15px !important; line-height: 1.6  !important; }
+
+/* 모바일에서는 한 단계만 살짝 줄이기 (가독성 유지) */
+@media (max-width: 640px) {
+  [data-page="solution-tool"] .text-xs        { font-size: 13px !important; }
+  [data-page="solution-tool"] .text-sm        { font-size: 15px !important; }
+  [data-page="solution-tool"] .text-base      { font-size: 17px !important; }
+  [data-page="solution-tool"] .text-caption   { font-size: 13px !important; }
+  [data-page="solution-tool"] .text-body-sm   { font-size: 14px !important; }
+  [data-page="solution-tool"] .text-body      { font-size: 15px !important; }
+  [data-page="solution-tool"] .text-lg        { font-size: 18px !important; }
+  [data-page="solution-tool"] .text-xl        { font-size: 20px !important; }
+  [data-page="solution-tool"] .text-h3        { font-size: 18px !important; }
+}

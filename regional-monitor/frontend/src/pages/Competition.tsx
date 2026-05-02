@@ -366,7 +366,7 @@ export default function Competition() {
   const isPreciseRunning = scanMode === 'precise' && !!job && job.status === 'running'
 
   return (
-    <div className="px-4 lg:px-8 py-6 max-w-7xl mx-auto space-y-6">
+    <div className="px-4 lg:px-8 py-6 max-w-7xl mx-auto space-y-6" data-page="solution-tool">
       {/* 헤더 */}
       <div>
         <h1 className="text-xl lg:text-2xl font-bold flex items-center gap-2">

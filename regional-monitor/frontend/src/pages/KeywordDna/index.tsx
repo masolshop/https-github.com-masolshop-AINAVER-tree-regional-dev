@@ -58,7 +58,7 @@ export default function KeywordDnaPage() {
   }
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-5" data-page="solution-tool">
       <TopBar
         title="타지역 키워드 DNA 파싱 솔루션"
         subtitle="네이버 봇이 키워드 형태소로 상호를 읽는 로직을 분석 — 등록 상호 DNA·비교·네트워크·블루오션 추천 (AI 미사용 규칙 기반)"

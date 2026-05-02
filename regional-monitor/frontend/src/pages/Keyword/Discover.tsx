@@ -90,7 +90,7 @@ export default function KeywordDiscover() {
   const [tab, setTab] = useState<TabKey>('keyword')
 
   return (
-    <div className="max-w-6xl mx-auto px-4 lg:px-6 py-6 space-y-5">
+    <div className="max-w-6xl mx-auto px-4 lg:px-6 py-6 space-y-5" data-page="solution-tool">
       <header>
         <h1 className="text-2xl lg:text-3xl font-bold text-ink flex items-center gap-2">
           <Sparkles className="text-amber-500" size={26} />

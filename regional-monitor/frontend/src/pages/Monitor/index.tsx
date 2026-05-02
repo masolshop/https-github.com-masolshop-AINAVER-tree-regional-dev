@@ -54,7 +54,7 @@ export default function Monitor() {
   }
 
   return (
-    <div>
+    <div data-page="solution-tool">
       <TopBar
         title="실시간 노출 관리"
         subtitle="등록한 070 가상번호의 노출 상태를 플레이스 ID 기반으로 점검합니다"
