@@ -15,6 +15,7 @@ import {
 import { Link } from 'react-router-dom'
 import PageSeo, { buildServiceJsonLd } from '@/components/seo/PageSeo'
 import { RelatedLinks, ALL_RELATED_LINKS } from '@/components/seo/RelatedLinks'
+import { KAKAO_CHAT_URL } from '@/utils/contact'
 
 export interface SolutionDetailProps {
   num: string
@@ -165,9 +166,14 @@ export function SolutionDetailLayout(props: SolutionDetailProps) {
               지금 신청하시면 청정 키워드·진입 가능 지역까지 함께 분석해 드립니다.
             </p>
           </div>
-          <Link to={props.ctaTo} className="btn-cta-white whitespace-nowrap shrink-0">
+          <a
+            href={KAKAO_CHAT_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="btn-cta-white whitespace-nowrap shrink-0"
+          >
             <PlayCircle size={18} /> {props.ctaLabel} <ArrowRight size={18} />
-          </Link>
+          </a>
         </div>
       </Card>
 

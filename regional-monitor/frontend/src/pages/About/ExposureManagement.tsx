@@ -5,9 +5,9 @@
  */
 import { TopBar } from '@/components/layout/TopBar'
 import { Card } from '@/components/ui/Card'
-import { Link } from 'react-router-dom'
 import PageSeo, { buildBreadcrumbJsonLd } from '@/components/seo/PageSeo'
 import { RelatedLinks, ALL_RELATED_LINKS } from '@/components/seo/RelatedLinks'
+import { KAKAO_CHAT_URL } from '@/utils/contact'
 import {
   Radio,
   Eye,
@@ -898,12 +898,14 @@ export default function ExposureManagement() {
                 </li>
               ))}
             </ul>
-            <Link
-              to="/intro/monitor"
+            <a
+              href={KAKAO_CHAT_URL}
+              target="_blank"
+              rel="noopener noreferrer"
               className="w-full inline-flex items-center justify-center gap-2 px-4 py-4 rounded-pill text-white font-bold text-xl bg-rose-600 hover:bg-rose-700 transition-colors shadow-card"
             >
-              무료플랜 신청하기 <ArrowRight size={18} />
-            </Link>
+              카카오톡 무료 상담 <ArrowRight size={18} />
+            </a>
           </Card>
         </div>
       </section>

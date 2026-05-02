@@ -26,6 +26,7 @@ import {
 } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import PageSeo, { buildFaqJsonLd, buildBreadcrumbJsonLd } from '@/components/seo/PageSeo'
+import { KAKAO_CHAT_URL } from '@/utils/contact'
 
 interface SolutionLink {
   id: string
@@ -381,9 +382,14 @@ export default function Intro() {
               등록·관리만 맡기시면 4종 솔루션 전부 무료. 사장님이 잃을 게 없습니다 — 지금 한 발만 떼어 보세요.
             </p>
           </div>
-          <Link to="/intro/keyword-dna" className="btn-cta-white">
-            DNA 파싱 솔루션부터 보기 <ArrowRight size={16} />
-          </Link>
+          <a
+            href={KAKAO_CHAT_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="btn-cta-white"
+          >
+            카카오톡 무료 상담 <ArrowRight size={16} />
+          </a>
         </div>
       </Card>
     </div>

@@ -4,9 +4,9 @@
  */
 import { TopBar } from '@/components/layout/TopBar'
 import { Card } from '@/components/ui/Card'
-import { Link } from 'react-router-dom'
 import PageSeo, { buildBreadcrumbJsonLd } from '@/components/seo/PageSeo'
 import { RelatedLinks, ALL_RELATED_LINKS } from '@/components/seo/RelatedLinks'
+import { KAKAO_CHAT_URL } from '@/utils/contact'
 import {
   Sparkles,
   MapPin,
@@ -676,7 +676,6 @@ export default function WhatIs() {
             num="01"
             title="네이버1페이지 플레이스 영역 노출"
             highlight="골든키워드 발굴 무료 문의하기"
-            to="/intro/keyword-discover"
             tone="brand"
             icon={<Sparkles size={22} />}
           />
@@ -684,7 +683,6 @@ export default function WhatIs() {
             num="02"
             title="지역별 키워드"
             highlight="경쟁도 무료 분석 신청하기"
-            to="/intro/competition"
             tone="teal"
             icon={<Target size={22} />}
           />
@@ -692,7 +690,6 @@ export default function WhatIs() {
             num="03"
             title="등록한 타지역서비스"
             highlight="노출 자동체크 무료 플랜 신청하기"
-            to="/intro/monitor"
             tone="rose"
             icon={<ShieldCheck size={22} />}
           />
@@ -980,12 +977,11 @@ interface CtaBoxProps {
   num: string
   title: string
   highlight: string
-  to: string
   tone: 'brand' | 'teal' | 'rose'
   icon: React.ReactNode
 }
 
-function CtaBox({ num, title, highlight, to, tone, icon }: CtaBoxProps) {
+function CtaBox({ num, title, highlight, tone, icon }: CtaBoxProps) {
   const tc = {
     brand: { accent: 'from-brand-500 to-indigo-500', ring: 'ring-brand-200', text: 'text-brand-700', btn: 'bg-brand-600 hover:bg-brand-700' },
     teal: { accent: 'from-teal-500 to-cyan-500', ring: 'ring-teal-200', text: 'text-teal-700', btn: 'bg-teal-600 hover:bg-teal-700' },
@@ -1002,12 +998,14 @@ function CtaBox({ num, title, highlight, to, tone, icon }: CtaBoxProps) {
       <div className={`text-body-sm font-mono ${tc.text} mb-1`}>CTA {num}</div>
       <h3 className="text-h3 text-ink leading-tight mb-1">{title}</h3>
       <p className={`text-lg font-bold ${tc.text} mb-4 leading-tight`}>{highlight}</p>
-      <Link
-        to={to}
+      <a
+        href={KAKAO_CHAT_URL}
+        target="_blank"
+        rel="noopener noreferrer"
         className={`mt-auto inline-flex items-center justify-center gap-1.5 px-4 py-3 rounded-pill text-white font-bold text-base ${tc.btn} transition-colors`}
       >
-        무료 신청하기 <ArrowRight size={16} />
-      </Link>
+        카카오톡 무료 상담 <ArrowRight size={16} />
+      </a>
     </Card>
   )
 }

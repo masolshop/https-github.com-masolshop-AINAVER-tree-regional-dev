@@ -23,6 +23,7 @@ import {
   AlertTriangle,
 } from 'lucide-react'
 import { Link } from 'react-router-dom'
+import { KAKAO_CHAT_URL } from '@/utils/contact'
 
 import { usePlacesSummary } from '@/hooks/usePlaces'
 
@@ -133,9 +134,14 @@ export default function Home() {
               </p>
             </div>
             <div className="mt-5">
-              <Link to="/intro" className="btn-cta-white">
-                무료로 시작하기 <ArrowRight size={16} />
-              </Link>
+              <a
+                href={KAKAO_CHAT_URL}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="btn-cta-white"
+              >
+                카카오톡 무료 상담 <ArrowRight size={16} />
+              </a>
             </div>
           </div>
         </Card>
@@ -332,12 +338,14 @@ export default function Home() {
               <Link to="/intro" className="btn-cta-white">
                 요금제 보기
               </Link>
-              <Link
-                to="/monitor"
+              <a
+                href={KAKAO_CHAT_URL}
+                target="_blank"
+                rel="noopener noreferrer"
                 className="inline-flex items-center gap-2 px-5 py-2.5 rounded-pill bg-white/10 text-white font-semibold text-body border border-white/30 hover:bg-white/20 transition-colors"
               >
-                바로 시작하기 <ArrowRight size={16} />
-              </Link>
+                카카오톡 무료 상담 <ArrowRight size={16} />
+              </a>
             </div>
           </div>
         </Card>
