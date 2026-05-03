@@ -36,16 +36,29 @@ NGINX_SRC="$REPO_DIR/regional-monitor/deploy/nginx-regionwatch.conf"
 NGINX_DST="/etc/nginx/sites-available/regionwatch"
 if [ -f "$NGINX_SRC" ]; then
   if ! sudo diff -q "$NGINX_SRC" "$NGINX_DST" >/dev/null 2>&1; then
-    echo "  → nginx config changed, updating $NGINX_DST"
+    echo "  → nginx site config changed, updating $NGINX_DST"
     sudo cp "$NGINX_SRC" "$NGINX_DST"
     # 심볼릭 링크 보장
     [ -L /etc/nginx/sites-enabled/regionwatch ] || sudo ln -sf "$NGINX_DST" /etc/nginx/sites-enabled/regionwatch
     # 기본 default 비활성화 (있을 경우)
     [ -f /etc/nginx/sites-enabled/default ] && sudo rm -f /etc/nginx/sites-enabled/default
   else
-    echo "  → nginx config unchanged"
+    echo "  → nginx site config unchanged"
   fi
 fi
+
+# Rate limit zone 정의 (http 컨텍스트 — conf.d/* 자동 include)
+RL_SRC="$REPO_DIR/regional-monitor/deploy/nginx-ratelimit.conf"
+RL_DST="/etc/nginx/conf.d/regionwatch-ratelimit.conf"
+if [ -f "$RL_SRC" ]; then
+  if ! sudo diff -q "$RL_SRC" "$RL_DST" >/dev/null 2>&1; then
+    echo "  → nginx rate-limit config changed, updating $RL_DST"
+    sudo cp "$RL_SRC" "$RL_DST"
+  else
+    echo "  → nginx rate-limit config unchanged"
+  fi
+fi
+
 sudo nginx -t && sudo systemctl reload nginx
 
 echo -e "${GREEN}=== Health check ===${NC}"
