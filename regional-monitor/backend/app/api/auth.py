@@ -20,7 +20,7 @@ import secrets
 from datetime import datetime, timedelta
 from app.core.time_utils import now_kst, to_kst, KST
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from sqlalchemy import select, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -125,6 +125,7 @@ def _issue_token(user: User) -> str:
 @limiter.limit("10/minute")
 async def login_with_password(
     request: Request,
+    response: Response,
     body: PasswordLoginRequest,
     db: AsyncSession = Depends(get_db),
 ) -> PasswordLoginResponse:
@@ -198,6 +199,7 @@ async def login_with_password(
 @limiter.limit("20/minute")
 async def login_with_google(
     request: Request,
+    response: Response,
     body: GoogleLoginRequest,
     db: AsyncSession = Depends(get_db),
 ) -> GoogleLoginResponse:
@@ -439,6 +441,7 @@ async def check_duplicate(
 @limiter.limit("5/minute")
 async def signup(
     request: Request,
+    response: Response,
     body: SignupRequest,
     db: AsyncSession = Depends(get_db),
 ) -> SignupResponse:
@@ -562,6 +565,7 @@ def _mask_username(username: str) -> str:
 @limiter.limit("5/minute")
 async def forgot_id(
     request: Request,
+    response: Response,
     body: ForgotIdRequest,
     db: AsyncSession = Depends(get_db),
 ) -> MessageResponse:
@@ -593,6 +597,7 @@ async def forgot_id(
 @limiter.limit("5/minute")
 async def forgot_password(
     request: Request,
+    response: Response,
     body: ForgotPasswordRequest,
     db: AsyncSession = Depends(get_db),
 ) -> MessageResponse:
@@ -654,6 +659,7 @@ async def forgot_password(
 @limiter.limit("30/minute")
 async def verify_reset_token(
     request: Request,
+    response: Response,
     token: str,
     db: AsyncSession = Depends(get_db),
 ) -> ResetPasswordVerifyResponse:
@@ -673,6 +679,7 @@ async def verify_reset_token(
 @limiter.limit("5/minute")
 async def reset_password(
     request: Request,
+    response: Response,
     body: ResetPasswordRequest,
     db: AsyncSession = Depends(get_db),
 ) -> MessageResponse:

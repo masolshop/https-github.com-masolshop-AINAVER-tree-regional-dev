@@ -5,7 +5,7 @@ import time
 from datetime import datetime
 from app.core.time_utils import now_kst, to_kst, KST
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -117,6 +117,7 @@ def _job_to_out(job: VerifyJob) -> VerifyJobOut:
 @limiter.limit("20/minute")
 async def run_live_check(
     request: Request,
+    response: Response,
     req: LiveCheckRequest,
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
