@@ -187,10 +187,14 @@ export function VerifyJobModal({
               </div>
             </div>
 
-            {/* 카운트 */}
+            {/* 카운트
+                용어 통일 (변경 노출 정책):
+                  - warning_count(전화/동/지역 불일치)는 Place ID 살아있는 정상의 일종이라
+                    "주의" 보다 "변경 노출" 로 표기해 고객 불안감 완화. 톤도 amber 유지(info).
+                  - danger_count = 네이버 미노출 (실제 위험) */}
             <div className="grid grid-cols-3 gap-2 text-sm">
               <CountBox label="정상" value={job.ok_count} tone="success" />
-              <CountBox label="주의" value={job.warning_count} tone="warning" />
+              <CountBox label="변경 노출" value={job.warning_count} tone="warning" />
               <CountBox label="네이버 미노출" value={job.danger_count} tone="danger" />
             </div>
 

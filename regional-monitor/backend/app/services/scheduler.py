@@ -959,6 +959,12 @@ def start_scheduler() -> AsyncIOScheduler:
     )
 
     # v1 트리거 — 환경변수로 끌 수 있게 (v2 본가동 후 OFF)
+    #
+    # 2026-05-03: 운영 DB(verification_runs) 분석 결과 KEEP_V1_SCHEDULER=false
+    # 임에도 v1 가 동작하여 회원 1명이 하루 2회(verify_slot=10 → KST 10:00,
+    # verify_slot_15m=84 → KST 21:00) 검증되는 사고가 확인됨.
+    # 원인: 이전 인스턴스에서 등록된 'slot_verification' 잡이 메모리 잔존.
+    # 대책: v1 OFF 면 같은 id 의 잡을 명시적으로 제거 (혹시 모를 잔존 차단).
     if KEEP_V1_SCHEDULER:
         sched.add_job(
             run_slot_verification,
@@ -970,6 +976,21 @@ def start_scheduler() -> AsyncIOScheduler:
             coalesce=True,
             misfire_grace_time=600,
         )
+        log.warning(
+            "scheduler: v1 (slot_verification, %s) ENABLED — KEEP_V1_SCHEDULER=true. "
+            "주의: v2 와 동시 동작 시 회원당 하루 2회 검증됩니다.",
+            AUTO_VERIFY_SCHEDULE,
+        )
+    else:
+        # v1 잡이 어떤 경로로든 등록돼 있으면 제거 (안전장치)
+        try:
+            existing = sched.get_job("slot_verification")
+            if existing is not None:
+                sched.remove_job("slot_verification")
+                log.warning("scheduler: v1 (slot_verification) 잔존 잡 제거 완료")
+        except Exception as _e:  # noqa: BLE001
+            log.debug("scheduler: v1 잡 제거 시도 중 무시 가능한 오류: %s", _e)
+        log.info("scheduler: v1 (slot_verification) DISABLED — v2 단독 본가동")
 
     # 주간 리포트 — 매주 월요일 09:00 KST
     # · 활성 회원 중 7일 활동(신규/미포함/변경/미노출/고객요청 변경)이 있는 회원에게만 발송

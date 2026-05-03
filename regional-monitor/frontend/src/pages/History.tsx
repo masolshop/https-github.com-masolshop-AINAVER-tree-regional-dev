@@ -256,8 +256,11 @@ function RunRow({ run }: { run: VerificationRunOut }) {
       ? Math.round(((run.ok_count + changedCount) / run.total_count) * 100)
       : 0
 
-  // 결과 톤: 변경 발생 / DEAD 多 → warning, 모두 OK → success
-  const hasIssue = run.events_count > 0 || run.dead_count > 0
+  // 결과 톤 (변경 노출 정책):
+  //  - events_count(신규 변경 이벤트) 가 있을 때만 warning
+  //  - dead_count 는 변경 노출(전화/동/지역) 합산이라 그 자체로는 warning 처리하지 않음
+  //  - 모두 OK 또는 변경 노출만 있으면 success
+  const hasIssue = run.events_count > 0
   const tone = hasIssue ? 'warning' : 'success'
 
   return (
@@ -303,11 +306,15 @@ function RunRow({ run }: { run: VerificationRunOut }) {
             <span className="text-caption text-ink-muted">· {time}</span>
           </div>
 
-          {/* 2행: 핵심 통계 */}
+          {/* 2행: 핵심 통계
+              용어 통일 (변경 노출 정책):
+                - dead_count: DEAD + PHONE/DONG/NAME/REGION_MISMATCH 합산 (scheduler.py:703)
+                  → "이상"으로 표기하면 고객 불안 → "변경 노출"로 통일하고 톤도 info(amber)
+                - 진짜 위험은 events_count(신규 변경 발생 건)로 분리 표시 */}
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mb-1.5 text-body-sm">
             <Stat label="검증" value={run.total_count} bold />
             <Stat label="정상" value={run.ok_count} tone="success" />
-            <Stat label="이상" value={run.dead_count} tone={run.dead_count > 0 ? 'danger' : 'muted'} />
+            <Stat label="변경 노출" value={run.dead_count} tone={run.dead_count > 0 ? 'warning' : 'muted'} />
             <Stat label="대기" value={run.pending_count} tone={run.pending_count > 0 ? 'warning' : 'muted'} />
             {run.events_count > 0 && (
               <span className="inline-flex items-center gap-1 text-amber-700 font-semibold">
