@@ -16,11 +16,14 @@ import {
   CheckCircle2,
   Clock,
   Zap,
-  Phone,
   ShieldCheck,
   BellRing,
   TrendingUp,
   AlertTriangle,
+  Dna,
+  Sparkles,
+  MapPin,
+  Radio,
 } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { KAKAO_CHAT_URL } from '@/utils/contact'
@@ -62,75 +65,87 @@ export default function Home() {
         subtitle="네이버 노출 키워드 DNA 분석, SEO 최적화, 지역 경쟁도 분석, 네이버 노출 자동 체크, 노출 상황을 날마다 알림 받으세요."
       />
 
-      {/* ───────────────────────── 1) Hero 4카드 비대칭 그리드 ───────────────────────── */}
+      {/* ───────────────────────── 1) Hero 4카드 — 4종 솔루션 컨셉 ───────────────────────── */}
       <section className="grid grid-cols-12 gap-4">
-        {/* 01 - 화이트 카드 (큰 좌측) */}
+        {/* 01 - 키워드 DNA 분석 (큰 좌측, 화이트) */}
         <Card variant="white" watermarkNumber="01" className="col-span-12 md:col-span-7 min-h-[230px]">
           <div className="pt-12">
-            <h3 className="text-h2 text-ink mb-3">
-              등록 070 한 번으로
+            <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-pill bg-brand-50 text-brand-700 text-caption font-bold mb-3">
+              <Dna size={14} /> SOLUTION 01
+            </div>
+            <h3 className="text-h2 text-ink mb-3 break-keep">
+              네이버 노출
               <br />
-              자동 노출 검증
+              키워드 DNA 분석
             </h3>
-            <p className="text-body-sm text-ink-muted leading-relaxed max-w-md">
-              통신사가 동별로 등록한 가상번호를 시스템이
-              <br />
-              자동으로 추출해 매일 정상 노출 여부를 검증합니다.
+            <p className="text-body-sm text-ink-muted leading-relaxed max-w-md break-keep">
+              상호명을 6대 DNA(MAIN·ACTION·MATERIAL·PLACE·BRAND·TAG)로 1초 만에 분해.
+              내 상호가 왜 검색에 안 잡히는지 데이터로 알려드립니다.
             </p>
             <div className="mt-6 flex items-center gap-2 text-caption text-ink-soft">
               <ShieldCheck size={14} className="text-brand-500" />
-              <span>플레이스 ID 기반 정확도 99%+</span>
+              <span>1,875개 등록 업체 · 3,574개 키워드 사전 검증</span>
             </div>
           </div>
         </Card>
 
-        {/* 02 - 딥네이비 카드 (우측 상단) */}
+        {/* 02 - SEO 최적화 (우측, 딥네이비) */}
         <Card
           variant="dark"
           watermarkNumber="02"
           className="col-span-12 md:col-span-5 min-h-[230px]"
         >
           <div className="pt-12">
-            <h3 className="text-h2 text-white mb-3">
-              24시간
+            <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-pill bg-white/10 text-white text-caption font-bold mb-3">
+              <Sparkles size={14} /> SOLUTION 02
+            </div>
+            <h3 className="text-h2 text-white mb-3 break-keep">
+              네이버 1페이지
               <br />
-              자동 감시
+              SEO 최적화
             </h3>
-            <p className="text-body-sm text-white/70 leading-relaxed">
-              매일 새벽 03:00 자동 점검,
-              <br />
-              변경 발견 시 즉시 알림 발송
+            <p className="text-body-sm text-white/70 leading-relaxed break-keep">
+              레드오션 검색량 키워드는 그만.
+              회선수 50만건이 검증한 청정 황금 키워드만 골라드립니다.
             </p>
           </div>
         </Card>
 
-        {/* 03 - 연그레이 카드 */}
+        {/* 03 - 지역 경쟁도 분석 (연그레이) */}
         <Card
           variant="subtle"
           watermarkNumber="03"
-          className="col-span-12 md:col-span-5 min-h-[200px]"
+          className="col-span-12 md:col-span-5 min-h-[230px]"
         >
           <div className="pt-12">
-            <h3 className="text-h3 text-ink mb-2">변경 즉시 알림</h3>
-            <p className="text-body-sm text-ink-muted leading-relaxed">
-              노출이 사라지면 영업자에게
-              <br />
-              자동으로 재노출 요청을 보냅니다.
+            <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-pill bg-teal-50 text-teal-700 text-caption font-bold mb-3">
+              <MapPin size={14} /> SOLUTION 03
+            </div>
+            <h3 className="text-h2 text-ink mb-2 break-keep">
+              지역 경쟁도 분석
+            </h3>
+            <p className="text-body-sm text-ink-muted leading-relaxed break-keep">
+              전국 4,819곳 동 단위 4단계 등급으로 진입 우선순위 결정.
+              사장님이 들어갈 수 있는 "빈 자리"를 데이터로 찾아드립니다.
             </p>
           </div>
         </Card>
 
-        {/* 04 - CTA 카드 */}
-        <Card variant="cta" className="col-span-12 md:col-span-7 min-h-[200px]">
+        {/* 04 - 노출 자동 체크 + 일일 알림 (CTA, 큰 우측) */}
+        <Card variant="cta" className="col-span-12 md:col-span-7 min-h-[230px]">
           <div className="flex flex-col h-full justify-between">
             <div>
-              <h3 className="text-h1 text-white mb-2">
-                지금 바로
+              <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-pill bg-white/15 text-white text-caption font-bold mb-3">
+                <Radio size={14} /> SOLUTION 04
+              </div>
+              <h3 className="text-h1 text-white mb-2 break-keep">
+                네이버 노출 자동 체크
                 <br />
-                모니터링을 시작하세요
+                노출 상황을 날마다 알림
               </h3>
-              <p className="text-body-sm text-white/85">
-                복잡한 설정 없이 070 등록만으로 자동 점검이 시작됩니다.
+              <p className="text-body-sm text-white/85 break-keep">
+                매일 새벽 3시 4중 자동 검증. 노출 변경 즉시 이메일·카카오 알림으로
+                내 매장의 상태를 매일 받아보세요.
               </p>
             </div>
             <div className="mt-5">
@@ -291,60 +306,86 @@ export default function Home() {
         </Card>
       </section>
 
-      {/* ───────────────────────── 4) 작동 원리 (3-Step) ───────────────────────── */}
+      {/* ───────────────────────── 4) 4종 솔루션 풀퍼널 워크플로우 ───────────────────────── */}
       <section>
         <div className="mb-4">
           <div className="text-caption text-ink-muted uppercase tracking-wider font-semibold mb-1">
             how it works
           </div>
-          <h2 className="text-h2 text-ink">3단계 자동 모니터링 워크플로우</h2>
+          <h2 className="text-h2 text-ink break-keep">발굴 → 분석 → 진입 → 유지 4단계 풀퍼널</h2>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
           <StepCard
             step="STEP 01"
-            icon={<Phone size={20} />}
-            title="070 가상번호 등록"
-            desc="통신사에서 받은 070 번호를 입력하면 시스템이 자동으로 플레이스 ID·등록 동·상호를 추출합니다."
+            icon={<Dna size={20} />}
+            title="키워드 DNA 분석"
+            desc="상호명을 6대 DNA로 분해해 내 매장이 어떤 키워드로 검색에 잡히는지 즉시 분석합니다."
           />
           <StepCard
             step="STEP 02"
-            icon={<ShieldCheck size={20} />}
-            title="매일 자동 4중 검증"
-            desc="매일 새벽 03:00 플레이스 ID로 직접 조회해 생존·전화·동·상호 4가지를 동시에 검증합니다."
+            icon={<Sparkles size={20} />}
+            title="SEO 최적화 발굴"
+            desc="시드 키워드 1개 → 12~50개 후보 + 4단계 경쟁도(청정/경쟁/과열/포화)로 황금 키워드만 골라드립니다."
           />
           <StepCard
             step="STEP 03"
+            icon={<MapPin size={20} />}
+            title="지역 경쟁도 분석"
+            desc="전국 4,819개 동 단위 4단계 등급으로 진입 우선순위 결정. 등록 작업 리스트 엑셀 다운로드."
+          />
+          <StepCard
+            step="STEP 04"
             icon={<BellRing size={20} />}
-            title="변경 즉시 알림"
-            desc="노출 사라짐, 동 변경, 상호 변경 등이 감지되면 이메일·카카오로 즉시 알림이 발송됩니다."
+            title="일일 노출 자동 알림"
+            desc="매일 새벽 3시 4중 자동 검증. 노출 변경 즉시 이메일·카카오로 알려드립니다."
           />
         </div>
       </section>
 
-      {/* ───────────────────────── 5) 하단 CTA ───────────────────────── */}
+      {/* ───────────────────────── 5) 하단 CTA — 3종 카톡 상담 ───────────────────────── */}
       <section>
-        <Card variant="dark" className="min-h-[180px] flex items-center">
-          <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-5 w-full">
+        <Card variant="dark" className="min-h-[200px]">
+          <div className="flex flex-col gap-5">
             <div>
-              <h3 className="text-h1 text-white mb-2">
-                무료 플랜으로 5개 번호까지 즉시 시작
+              <h3 className="text-h1 text-white mb-2 break-keep">
+                국내 최초 타지역서비스 4종 솔루션 무료 플랜
               </h3>
-              <p className="text-body-sm text-white/75">
-                카드 등록 없이 7일 동안 모든 핵심 기능을 사용해보실 수 있습니다.
+              <p className="text-body-sm text-white/75 break-keep">
+                키워드 DNA 분석 · SEO 최적화 · 지역 경쟁도 분석 · 노출 자동 체크까지
+                4종을 모두 무료로 체험하실 수 있습니다.
               </p>
             </div>
-            <div className="flex gap-3">
-              <Link to="/intro" className="btn-cta-white">
-                요금제 보기
-              </Link>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
               <a
                 href={KAKAO_CHAT_URL}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="inline-flex items-center gap-2 px-5 py-2.5 rounded-pill bg-white/10 text-white font-semibold text-body border border-white/30 hover:bg-white/20 transition-colors"
+                className="inline-flex items-center justify-center gap-2 px-5 py-3 rounded-pill bg-white text-ink font-bold text-body hover:bg-amber-50 transition-colors"
               >
-                카카오톡 무료 상담 <ArrowRight size={16} />
+                <Sparkles size={16} className="text-amber-500" />
+                골든키워드 발굴 무료 상담
+                <ArrowRight size={16} />
+              </a>
+              <a
+                href={KAKAO_CHAT_URL}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center justify-center gap-2 px-5 py-3 rounded-pill bg-white text-ink font-bold text-body hover:bg-teal-50 transition-colors"
+              >
+                <MapPin size={16} className="text-teal-500" />
+                지역 경쟁도 무료 상담
+                <ArrowRight size={16} />
+              </a>
+              <a
+                href={KAKAO_CHAT_URL}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center justify-center gap-2 px-5 py-3 rounded-pill bg-white text-ink font-bold text-body hover:bg-rose-50 transition-colors"
+              >
+                <Radio size={16} className="text-rose-500" />
+                노출 자동 체크 무료 상담
+                <ArrowRight size={16} />
               </a>
             </div>
           </div>
