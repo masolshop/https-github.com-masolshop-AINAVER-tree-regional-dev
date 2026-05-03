@@ -126,7 +126,7 @@ function renderMenuItem(
           'sidebar-item',
           isActive && !locked && 'active',
           locked && 'opacity-60',
-          item.boxed && 'rounded-md ring-1 ring-slate-200 bg-white shadow-sm hover:ring-brand-300 hover:shadow my-0.5',
+          item.boxed && 'rounded-md ring-1 ring-amber-400 bg-white shadow-sm hover:ring-amber-500 hover:shadow my-0.5',
         )
       }
     >
