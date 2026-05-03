@@ -70,20 +70,20 @@ export default function Home() {
         {/* 01 - 키워드 DNA 분석 (큰 좌측, 화이트) */}
         <Card variant="white" watermarkNumber="01" className="col-span-12 md:col-span-7 min-h-[230px]">
           <div className="pt-12">
-            <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-pill bg-brand-50 text-brand-700 text-caption font-bold mb-3">
-              <Dna size={14} /> SOLUTION 01
+            <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-pill bg-brand-50 text-brand-700 text-sm font-bold mb-3">
+              <Dna size={16} /> SOLUTION 01
             </div>
             <h3 className="text-h2 text-ink mb-3 break-keep">
               네이버 노출
               <br />
               키워드 DNA 분석
             </h3>
-            <p className="text-body-sm text-ink-muted leading-relaxed max-w-md break-keep">
+            <p className="text-base md:text-lg text-ink-muted leading-relaxed max-w-md break-keep">
               상호명을 6대 DNA(MAIN·ACTION·MATERIAL·PLACE·BRAND·TAG)로 1초 만에 분해.
               내 상호가 왜 검색에 안 잡히는지 데이터로 알려드립니다.
             </p>
-            <div className="mt-6 flex items-center gap-2 text-caption text-ink-soft">
-              <ShieldCheck size={14} className="text-brand-500" />
+            <div className="mt-6 flex items-center gap-2 text-sm text-ink-soft">
+              <ShieldCheck size={16} className="text-brand-500" />
               <span>1,875개 등록 업체 · 3,574개 키워드 사전 검증</span>
             </div>
           </div>
@@ -96,15 +96,15 @@ export default function Home() {
           className="col-span-12 md:col-span-5 min-h-[230px]"
         >
           <div className="pt-12">
-            <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-pill bg-white/10 text-white text-caption font-bold mb-3">
-              <Sparkles size={14} /> SOLUTION 02
+            <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-pill bg-white/10 text-white text-sm font-bold mb-3">
+              <Sparkles size={16} /> SOLUTION 02
             </div>
             <h3 className="text-h2 text-white mb-3 break-keep">
               네이버 1페이지
               <br />
               SEO 최적화
             </h3>
-            <p className="text-body-sm text-white/70 leading-relaxed break-keep">
+            <p className="text-base md:text-lg text-white/80 leading-relaxed break-keep">
               레드오션 검색량 키워드는 그만.
               회선수 50만건이 검증한 청정 황금 키워드만 골라드립니다.
             </p>
@@ -118,13 +118,13 @@ export default function Home() {
           className="col-span-12 md:col-span-5 min-h-[230px]"
         >
           <div className="pt-12">
-            <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-pill bg-teal-50 text-teal-700 text-caption font-bold mb-3">
-              <MapPin size={14} /> SOLUTION 03
+            <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-pill bg-teal-50 text-teal-700 text-sm font-bold mb-3">
+              <MapPin size={16} /> SOLUTION 03
             </div>
             <h3 className="text-h2 text-ink mb-2 break-keep">
               지역 경쟁도 분석
             </h3>
-            <p className="text-body-sm text-ink-muted leading-relaxed break-keep">
+            <p className="text-base md:text-lg text-ink-muted leading-relaxed break-keep">
               전국 4,819곳 동 단위 4단계 등급으로 진입 우선순위 결정.
               사장님이 들어갈 수 있는 "빈 자리"를 데이터로 찾아드립니다.
             </p>
@@ -135,15 +135,15 @@ export default function Home() {
         <Card variant="cta" className="col-span-12 md:col-span-7 min-h-[230px]">
           <div className="flex flex-col h-full justify-between">
             <div>
-              <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-pill bg-white/15 text-white text-caption font-bold mb-3">
-                <Radio size={14} /> SOLUTION 04
+              <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-pill bg-white/15 text-white text-sm font-bold mb-3">
+                <Radio size={16} /> SOLUTION 04
               </div>
               <h3 className="text-h1 text-white mb-2 break-keep">
                 네이버 노출 자동 체크
                 <br />
                 노출 상황을 날마다 알림
               </h3>
-              <p className="text-body-sm text-white/85 break-keep">
+              <p className="text-base md:text-lg text-white/90 leading-relaxed break-keep">
                 매일 새벽 3시 4중 자동 검증. 노출 변경 즉시 이메일·카카오 알림으로
                 내 매장의 상태를 매일 받아보세요.
               </p>
@@ -166,12 +166,12 @@ export default function Home() {
       <section>
         <div className="flex items-end justify-between mb-4">
           <div>
-            <div className="text-caption text-ink-muted uppercase tracking-wider font-semibold mb-1">
+            <div className="text-sm text-ink-muted uppercase tracking-wider font-semibold mb-1">
               real-time metrics
             </div>
             <h2 className="text-h2 text-ink">신뢰할 수 있는 검증 성능</h2>
           </div>
-          <span className="text-caption text-ink-soft">
+          <span className="text-sm text-ink-soft">
             {hasRealData ? '내 등록 기준 실시간' : '최근 30일 누적 기준 (데모)'}
           </span>
         </div>
@@ -268,7 +268,7 @@ export default function Home() {
               <br />
               노출 모니터링
             </h3>
-            <p className="text-body-sm text-ink-muted leading-relaxed">
+            <p className="text-base md:text-lg text-ink-muted leading-relaxed">
               플레이스 ID, 등록 동, 등록 상호명을 4중으로 검증해
               <br />
               실제 노출 상태를 정확하게 판정합니다.
@@ -280,13 +280,13 @@ export default function Home() {
         <Card variant="white" className="col-span-12 lg:col-span-7 min-h-[280px]">
           <div className="flex items-center justify-between mb-5">
             <div>
-              <div className="text-caption text-ink-muted uppercase tracking-wider font-semibold mb-1">
+              <div className="text-sm text-ink-muted uppercase tracking-wider font-semibold mb-1">
                 verdict distribution
               </div>
               <h3 className="text-h3 text-ink">최근 검증 결과 분포</h3>
             </div>
-            <span className="inline-flex items-center gap-1 text-caption text-status-success font-medium">
-              <TrendingUp size={12} /> 정상 비율 +2.1%
+            <span className="inline-flex items-center gap-1 text-sm text-status-success font-medium">
+              <TrendingUp size={14} /> 정상 비율 +2.1%
             </span>
           </div>
 
@@ -297,10 +297,10 @@ export default function Home() {
             <DistBar label="네이버 미노출" count={3} total={100} colorClass="bg-status-danger" />
           </div>
 
-          <div className="mt-6 pt-4 border-t border-bg-subtle flex items-center justify-between text-caption text-ink-muted">
+          <div className="mt-6 pt-4 border-t border-bg-subtle flex items-center justify-between text-sm text-ink-muted">
             <span>전체 100건 기준</span>
             <Link to="/history" className="text-brand-600 font-medium hover:underline inline-flex items-center gap-1">
-              전체 이력 보기 <ArrowRight size={12} />
+              전체 이력 보기 <ArrowRight size={14} />
             </Link>
           </div>
         </Card>
@@ -309,7 +309,7 @@ export default function Home() {
       {/* ───────────────────────── 4) 4종 솔루션 풀퍼널 워크플로우 ───────────────────────── */}
       <section>
         <div className="mb-4">
-          <div className="text-caption text-ink-muted uppercase tracking-wider font-semibold mb-1">
+          <div className="text-sm text-ink-muted uppercase tracking-wider font-semibold mb-1">
             how it works
           </div>
           <h2 className="text-h2 text-ink break-keep">발굴 → 분석 → 진입 → 유지 4단계 풀퍼널</h2>
@@ -351,7 +351,7 @@ export default function Home() {
               <h3 className="text-h1 text-white mb-2 break-keep">
                 국내 최초 타지역서비스 4종 솔루션 무료 플랜
               </h3>
-              <p className="text-body-sm text-white/75 break-keep">
+              <p className="text-base md:text-lg text-white/85 leading-relaxed break-keep">
                 키워드 DNA 분석 · SEO 최적화 · 지역 경쟁도 분석 · 노출 자동 체크까지
                 4종을 모두 무료로 체험하실 수 있습니다.
               </p>
@@ -361,31 +361,31 @@ export default function Home() {
                 href={KAKAO_CHAT_URL}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="inline-flex items-center justify-center gap-2 px-5 py-3 rounded-pill bg-white text-ink font-bold text-body hover:bg-amber-50 transition-colors"
+                className="inline-flex items-center justify-center gap-2 px-5 py-3.5 rounded-pill bg-white text-ink font-bold text-base md:text-lg hover:bg-amber-50 transition-colors"
               >
-                <Sparkles size={16} className="text-amber-500" />
+                <Sparkles size={18} className="text-amber-500" />
                 골든키워드 발굴 무료 상담
-                <ArrowRight size={16} />
+                <ArrowRight size={18} />
               </a>
               <a
                 href={KAKAO_CHAT_URL}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="inline-flex items-center justify-center gap-2 px-5 py-3 rounded-pill bg-white text-ink font-bold text-body hover:bg-teal-50 transition-colors"
+                className="inline-flex items-center justify-center gap-2 px-5 py-3.5 rounded-pill bg-white text-ink font-bold text-base md:text-lg hover:bg-teal-50 transition-colors"
               >
-                <MapPin size={16} className="text-teal-500" />
+                <MapPin size={18} className="text-teal-500" />
                 지역 경쟁도 무료 상담
-                <ArrowRight size={16} />
+                <ArrowRight size={18} />
               </a>
               <a
                 href={KAKAO_CHAT_URL}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="inline-flex items-center justify-center gap-2 px-5 py-3 rounded-pill bg-white text-ink font-bold text-body hover:bg-rose-50 transition-colors"
+                className="inline-flex items-center justify-center gap-2 px-5 py-3.5 rounded-pill bg-white text-ink font-bold text-base md:text-lg hover:bg-rose-50 transition-colors"
               >
-                <Radio size={16} className="text-rose-500" />
+                <Radio size={18} className="text-rose-500" />
                 노출 자동 체크 무료 상담
-                <ArrowRight size={16} />
+                <ArrowRight size={18} />
               </a>
             </div>
           </div>
@@ -418,19 +418,19 @@ function MetricTile({ icon, label, value, unit, trend, tone }: MetricTileProps) 
     <Card variant="white" className="min-h-[140px]">
       <div className="flex items-start justify-between">
         <div
-          className={`w-9 h-9 rounded-2xl flex items-center justify-center ${toneClass}`}
+          className={`w-10 h-10 rounded-2xl flex items-center justify-center ${toneClass}`}
         >
           {icon}
         </div>
-        <span className="text-caption text-ink-soft font-medium">{trend}</span>
+        <span className="text-sm text-ink-soft font-medium">{trend}</span>
       </div>
       <div className="mt-4">
-        <div className="text-caption text-ink-muted mb-1">{label}</div>
+        <div className="text-sm text-ink-muted mb-1">{label}</div>
         <div className="flex items-baseline gap-1">
           <span className="text-[32px] font-bold text-ink leading-none tracking-tight">
             {value}
           </span>
-          <span className="text-body-sm text-ink-muted">{unit}</span>
+          <span className="text-base text-ink-muted">{unit}</span>
         </div>
       </div>
     </Card>
@@ -449,8 +449,8 @@ function DistBar({ label, count, total, colorClass }: DistBarProps) {
   return (
     <div>
       <div className="flex items-center justify-between mb-1.5">
-        <span className="text-body-sm text-ink font-medium">{label}</span>
-        <span className="text-caption text-ink-muted tabular-nums">
+        <span className="text-base text-ink font-medium">{label}</span>
+        <span className="text-sm text-ink-muted tabular-nums">
           {count}건 ({pct.toFixed(0)}%)
         </span>
       </div>
@@ -475,15 +475,15 @@ function StepCard({ step, icon, title, desc }: StepCardProps) {
   return (
     <Card variant="white" className="min-h-[200px]">
       <div className="flex items-center gap-3 mb-4">
-        <div className="w-10 h-10 rounded-2xl bg-brand-50 text-brand-600 flex items-center justify-center">
+        <div className="w-11 h-11 rounded-2xl bg-brand-50 text-brand-600 flex items-center justify-center">
           {icon}
         </div>
-        <span className="text-caption text-ink-muted font-bold tracking-wider">
+        <span className="text-sm text-ink-muted font-bold tracking-wider">
           {step}
         </span>
       </div>
-      <h4 className="text-h3 text-ink mb-2">{title}</h4>
-      <p className="text-body-sm text-ink-muted leading-relaxed">{desc}</p>
+      <h4 className="text-h3 text-ink mb-2 break-keep">{title}</h4>
+      <p className="text-base md:text-lg text-ink-muted leading-relaxed break-keep">{desc}</p>
     </Card>
   )
 }
