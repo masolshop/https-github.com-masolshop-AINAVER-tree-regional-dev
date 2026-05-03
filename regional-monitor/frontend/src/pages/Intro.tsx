@@ -84,7 +84,7 @@ const SOLUTIONS: SolutionLink[] = [
 
 export default function Intro() {
   return (
-    <div className="space-y-10">
+    <div className="space-y-6 md:space-y-10">
       <PageSeo
         title="타지역 4종 솔루션 — 키워드 DNA · 발굴 · 경쟁도 · 자동체크"
         description="네이버 1페이지 노출의 모든 답: 키워드 DNA 파싱, 1페이지 키워드 발굴, 지역별 경쟁도 분석, 노출관리 자동체크까지 4종 솔루션을 한 번에. 발굴→분석→진입→유지 풀퍼널."
@@ -127,19 +127,19 @@ export default function Intro() {
       />
 
       {/* ─── 1) Hero ─── */}
-      <Card variant="white" className="min-h-[240px] relative overflow-hidden">
-        <div className="absolute top-6 left-7 text-[42px] leading-none font-light text-ink-watermark/70 select-none pointer-events-none tracking-tight">
+      <Card variant="white" className="min-h-[200px] md:min-h-[240px] relative overflow-hidden">
+        <div className="absolute top-4 left-5 md:top-6 md:left-7 text-[26px] md:text-[42px] leading-none font-light text-ink-watermark/70 select-none pointer-events-none tracking-tight">
           4 IN ONE <br /> SUITE
         </div>
-        <div className="pt-28 max-w-3xl">
-          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-pill bg-brand-50 text-brand-700 text-base font-semibold mb-3">
+        <div className="pt-20 md:pt-28 max-w-3xl">
+          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-pill bg-brand-50 text-brand-700 text-sm md:text-base font-semibold mb-3">
             <Layers size={12} /> 타지역서비스 통합 운영 플랫폼
           </span>
-          <h2 className="text-hero-sm text-ink mb-4">
-            상호 작명부터 노출 유지까지,<br />
-            사장님이 “느낌”으로 결정하던 모든 순간을 데이터로 바꿔드립니다.
+          <h2 className="text-2xl md:text-hero-sm text-ink mb-3 md:mb-4 leading-tight">
+            상호 작명부터 노출 유지까지,<br className="hidden sm:inline" />
+            <span className="block sm:inline">사장님이 “느낌”으로 결정하던 모든 순간을 데이터로 바꿔드립니다.</span>
           </h2>
-          <p className="text-xl text-ink-muted leading-relaxed">
+          <p className="text-base md:text-xl text-ink-muted leading-relaxed">
             타지역서비스는 <strong className="text-ink">단일 작업이 아니라 4단계 운영 프로세스</strong>입니다.
             한 단계라도 빠지면 — 등록비도, 광고비도, 매출도 그대로 새어 나갑니다. 본 SaaS는 4개 솔루션이
             <strong className="text-ink"> 동일한 데이터(1,875 상호 / 216 카테고리 / 회선수 508K / 4,819 동·리)</strong>를
@@ -150,18 +150,18 @@ export default function Intro() {
 
       {/* ─── 2) 4종 시너지 (퍼널) ─── */}
       <section>
-        <div className="mb-4">
-          <div className="text-base text-ink-muted uppercase tracking-wider font-semibold mb-1">
+        <div className="mb-3 md:mb-4">
+          <div className="text-xs md:text-base text-ink-muted uppercase tracking-wider font-semibold mb-1">
             integrated funnel
           </div>
-          <h2 className="text-h2 text-ink">4종 통합 워크플로우</h2>
-          <p className="text-lg text-ink-muted mt-1">
+          <h2 className="text-xl md:text-h2 text-ink leading-tight">4종 통합 워크플로우</h2>
+          <p className="text-sm md:text-lg text-ink-muted mt-1 leading-relaxed">
             각 솔루션은 단독으로도 작동하지만, 4개를 함께 사용할 때 데이터가 누적되어
             의사결정 정확도가 비약적으로 상승합니다.
           </p>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
           <FunnelStep
             num="STEP 1"
             title="키워드 구조 해부"
@@ -194,17 +194,17 @@ export default function Intro() {
 
       {/* ─── 3) 4개 솔루션 진입 카드 ─── */}
       <section>
-        <div className="mb-4">
-          <div className="text-base text-ink-muted uppercase tracking-wider font-semibold mb-1">
+        <div className="mb-3 md:mb-4">
+          <div className="text-xs md:text-base text-ink-muted uppercase tracking-wider font-semibold mb-1">
             solutions
           </div>
-          <h2 className="text-h2 text-ink">4개 솔루션 — 각각 자세히 보기</h2>
-          <p className="text-lg text-ink-muted mt-1">
+          <h2 className="text-xl md:text-h2 text-ink leading-tight">4개 솔루션 — 각각 자세히 보기</h2>
+          <p className="text-sm md:text-lg text-ink-muted mt-1 leading-relaxed">
             카드를 클릭하면 솔루션별 "무엇 / 왜 / 효과" 상세 페이지로 이동합니다.
           </p>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 md:gap-4">
           {SOLUTIONS.map((s) => (
             <SolutionCard key={s.id} sol={s} />
           ))}
@@ -213,36 +213,37 @@ export default function Intro() {
 
       {/* ─── 4) 요금제 ─── */}
       <section>
-        <div className="mb-4">
-          <div className="text-base text-ink-muted uppercase tracking-wider font-semibold mb-1">
+        <div className="mb-3 md:mb-4">
+          <div className="text-xs md:text-base text-ink-muted uppercase tracking-wider font-semibold mb-1">
             pricing
           </div>
-          <h2 className="text-h2 text-ink">요금제</h2>
-          <p className="text-lg text-ink-muted mt-1">
+          <h2 className="text-xl md:text-h2 text-ink leading-tight">요금제</h2>
+          <p className="text-sm md:text-lg text-ink-muted mt-1 leading-relaxed">
             등록·관리만 맡기시면 — 4종 솔루션 전체를 <strong className="text-emerald-700">100% 무료</strong>로 사용하실 수 있습니다. 사장님이 잃을 게 없습니다.
           </p>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 md:gap-4">
           {/* 무료 플랜 */}
           <Card variant="white" className="relative overflow-hidden">
-            <div className="absolute top-5 right-5">
-              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-pill bg-emerald-50 text-emerald-700 text-base font-bold">
+            <div className="absolute top-4 right-4 md:top-5 md:right-5">
+              <span className="inline-flex items-center gap-1 px-2 md:px-2.5 py-1 rounded-pill bg-emerald-50 text-emerald-700 text-xs md:text-base font-bold">
                 <Gift size={12} /> FREE
               </span>
             </div>
-            <div className="w-12 h-12 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center mb-3">
-              <Gift size={22} />
+            <div className="w-10 h-10 md:w-12 md:h-12 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center mb-3">
+              <Gift size={20} className="md:hidden" />
+              <Gift size={22} className="hidden md:block" />
             </div>
-            <h3 className="text-h2 text-ink mb-1">무료 플랜</h3>
-            <p className="text-lg text-ink-muted mb-4 leading-relaxed">
+            <h3 className="text-xl md:text-h2 text-ink mb-1 leading-tight">무료 플랜</h3>
+            <p className="text-sm md:text-lg text-ink-muted mb-3 md:mb-4 leading-relaxed">
               타지역닷컴에 <strong className="text-ink">등록·관리만 맡기시면</strong>
               <br className="hidden md:block" />
               4종 솔루션 전체를 <strong className="text-emerald-700">평생 무료</strong>로 — 사장님은 결과만 받으시면 됩니다.
             </p>
 
-            <div className="rounded-card bg-emerald-50/60 border border-emerald-100 p-4 mb-4">
-              <div className="text-base font-bold text-emerald-700 mb-2">
+            <div className="rounded-card bg-emerald-50/60 border border-emerald-100 p-3 md:p-4 mb-3 md:mb-4">
+              <div className="text-sm md:text-base font-bold text-emerald-700 mb-2">
                 위탁 운영 시 무료 제공 항목
               </div>
               <ul className="space-y-1.5">
@@ -253,7 +254,7 @@ export default function Intro() {
                   '매일 자동 노출 검증 + 변경 시 즉시 알림',
                   '구글시트 실시간 연동',
                 ].map((f) => (
-                  <li key={f} className="flex items-start gap-2 text-base text-ink leading-relaxed">
+                  <li key={f} className="flex items-start gap-2 text-sm md:text-base text-ink leading-relaxed">
                     <CheckCircle2 size={14} className="shrink-0 mt-0.5 text-emerald-600" />
                     <span>{f}</span>
                   </li>
@@ -261,35 +262,36 @@ export default function Intro() {
               </ul>
             </div>
 
-            <div className="text-base text-ink-muted leading-relaxed">
+            <div className="text-xs md:text-base text-ink-muted leading-relaxed">
               ※ 등록·관리 위탁은 별도 운영 계약을 통해 진행됩니다. 자세한 사항은 문의해주세요.
             </div>
           </Card>
 
           {/* 유료 플랜 */}
           <Card variant="white" className="relative overflow-hidden ring-1 ring-brand-200">
-            <div className="absolute top-5 right-5">
-              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-pill bg-brand-50 text-brand-700 text-base font-bold">
+            <div className="absolute top-4 right-4 md:top-5 md:right-5">
+              <span className="inline-flex items-center gap-1 px-2 md:px-2.5 py-1 rounded-pill bg-brand-50 text-brand-700 text-xs md:text-base font-bold">
                 <CreditCard size={12} /> PAID
               </span>
             </div>
-            <div className="w-12 h-12 rounded-2xl bg-brand-50 text-brand-600 flex items-center justify-center mb-3">
-              <CreditCard size={22} />
+            <div className="w-10 h-10 md:w-12 md:h-12 rounded-2xl bg-brand-50 text-brand-600 flex items-center justify-center mb-3">
+              <CreditCard size={20} className="md:hidden" />
+              <CreditCard size={22} className="hidden md:block" />
             </div>
-            <h3 className="text-h2 text-ink mb-1">유료 플랜</h3>
-            <p className="text-lg text-ink-muted mb-4 leading-relaxed">
+            <h3 className="text-xl md:text-h2 text-ink mb-1 leading-tight">유료 플랜</h3>
+            <p className="text-sm md:text-lg text-ink-muted mb-3 md:mb-4 leading-relaxed">
               자체 운영하시는 경우 <strong className="text-ink">월정 구독</strong> 또는
               <strong className="text-ink"> 크레딧 구매</strong> 방식으로 4종 솔루션을 사용하실 수 있습니다.
             </p>
 
             <div className="space-y-3">
               {/* 월정 구독 */}
-              <div className="rounded-card bg-brand-50/40 border border-brand-100 p-4">
+              <div className="rounded-card bg-brand-50/40 border border-brand-100 p-3 md:p-4">
                 <div className="flex items-center gap-2 mb-2">
                   <CreditCard size={14} className="text-brand-600" />
-                  <span className="text-base font-bold text-brand-700">월정 구독료</span>
+                  <span className="text-sm md:text-base font-bold text-brand-700">월정 구독료</span>
                 </div>
-                <p className="text-base text-ink leading-relaxed mb-2">
+                <p className="text-sm md:text-base text-ink leading-relaxed mb-2">
                   매월 정액으로 4종 솔루션을 무제한 이용. 정기적으로 분석·검증을 수행하시는 경우 적합.
                 </p>
                 <ul className="space-y-1">
@@ -299,7 +301,7 @@ export default function Intro() {
                     '구글시트 실시간 연동',
                     '이메일·카카오 알림',
                   ].map((f) => (
-                    <li key={f} className="flex items-start gap-2 text-base text-ink-muted">
+                    <li key={f} className="flex items-start gap-2 text-sm md:text-base text-ink-muted">
                       <CheckCircle2 size={12} className="shrink-0 mt-0.5 text-brand-500" />
                       <span>{f}</span>
                     </li>
@@ -308,12 +310,12 @@ export default function Intro() {
               </div>
 
               {/* 크레딧 구매형 */}
-              <div className="rounded-card bg-amber-50/40 border border-amber-100 p-4">
+              <div className="rounded-card bg-amber-50/40 border border-amber-100 p-3 md:p-4">
                 <div className="flex items-center gap-2 mb-2">
                   <Coins size={14} className="text-amber-600" />
-                  <span className="text-base font-bold text-amber-700">크레딧 구매형</span>
+                  <span className="text-sm md:text-base font-bold text-amber-700">크레딧 구매형</span>
                 </div>
-                <p className="text-base text-ink leading-relaxed mb-2">
+                <p className="text-sm md:text-base text-ink leading-relaxed mb-2">
                   분석 1건당 크레딧 차감. 비정기적으로 사용하시거나 프로젝트 단위 분석에 적합.
                 </p>
                 <ul className="space-y-1">
@@ -323,7 +325,7 @@ export default function Intro() {
                     '경쟁도 Precise 스캔 1회 = 5 크레딧',
                     '추천·매트릭스·그래프 = 1 크레딧',
                   ].map((f) => (
-                    <li key={f} className="flex items-start gap-2 text-base text-ink-muted">
+                    <li key={f} className="flex items-start gap-2 text-sm md:text-base text-ink-muted">
                       <CheckCircle2 size={12} className="shrink-0 mt-0.5 text-amber-500" />
                       <span>{f}</span>
                     </li>
@@ -332,7 +334,7 @@ export default function Intro() {
               </div>
             </div>
 
-            <div className="mt-4 text-base text-ink-muted leading-relaxed">
+            <div className="mt-3 md:mt-4 text-xs md:text-base text-ink-muted leading-relaxed">
               ※ 정확한 단가는 운영 정책에 따라 안내됩니다. 가입 후 마이페이지에서 구독·크레딧을 선택하실 수 있습니다.
             </div>
           </Card>
@@ -341,14 +343,14 @@ export default function Intro() {
 
       {/* ─── 5) FAQ ─── */}
       <section>
-        <div className="mb-4">
-          <div className="text-base text-ink-muted uppercase tracking-wider font-semibold mb-1">
+        <div className="mb-3 md:mb-4">
+          <div className="text-xs md:text-base text-ink-muted uppercase tracking-wider font-semibold mb-1">
             faq
           </div>
-          <h2 className="text-h2 text-ink">통합 관점 자주 묻는 질문</h2>
+          <h2 className="text-xl md:text-h2 text-ink leading-tight">통합 관점 자주 묻는 질문</h2>
         </div>
 
-        <div className="space-y-3">
+        <div className="space-y-2.5 md:space-y-3">
           <FaqRow
             q="4종 중에 한 개만 써도 되나요?"
             a="네, 각 솔루션은 단독으로도 충분히 강력합니다. 다만 4개를 함께 쓰시면 — DNA 파싱에서 찾은 키워드가 발굴 솔루션으로, 거기서 추린 키워드가 경쟁도 분석으로, 그리고 등록 후엔 노출관리로 자연스럽게 흘러갑니다. 사장님 의사결정 정확도가 비교할 수 없을 만큼 올라갑니다."
@@ -369,16 +371,16 @@ export default function Intro() {
       </section>
 
       {/* ─── 6) CTA ─── */}
-      <Card variant="cta" className="min-h-[180px] flex items-center">
-        <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-5 w-full">
-          <div>
-            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-pill bg-white/20 text-white text-base font-bold mb-3 backdrop-blur-sm">
+      <Card variant="cta" className="min-h-[160px] md:min-h-[180px] flex items-center">
+        <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 md:gap-5 w-full">
+          <div className="w-full md:w-auto">
+            <span className="inline-flex items-center gap-1.5 px-2.5 md:px-3 py-1 rounded-pill bg-white/20 text-white text-xs md:text-base font-bold mb-2 md:mb-3 backdrop-blur-sm">
               🎁 위탁만 맡기시면 4종 모두 평생 무료
             </span>
-            <h3 className="text-h1 text-white mb-2">
+            <h3 className="text-xl md:text-h1 text-white mb-2 leading-tight">
               망설이는 사이, 옆 가게는 이미 시작했습니다.
             </h3>
-            <p className="text-lg text-white/85">
+            <p className="text-sm md:text-lg text-white/85 leading-relaxed">
               등록·관리만 맡기시면 4종 솔루션 전부 무료. 사장님이 잃을 게 없습니다 — 지금 한 발만 떼어 보세요.
             </p>
           </div>
@@ -386,7 +388,7 @@ export default function Intro() {
             href={KAKAO_CHAT_URL}
             target="_blank"
             rel="noopener noreferrer"
-            className="btn-cta-white"
+            className="btn-cta-white w-full md:w-auto justify-center shrink-0"
           >
             카카오톡 무료 상담 <ArrowRight size={16} />
           </a>
@@ -416,11 +418,11 @@ function FunnelStep({
   return (
     <div className="relative">
       <Card variant="white" className="h-full border border-bg-subtle">
-        <div className={`inline-flex items-center px-2.5 py-1 rounded-pill text-[10px] font-bold tracking-wider ${tc} mb-3`}>
+        <div className={`inline-flex items-center px-2.5 py-1 rounded-pill text-[10px] font-bold tracking-wider ${tc} mb-2 md:mb-3`}>
           {num}
         </div>
-        <h4 className="text-h3 text-ink mb-2">{title}</h4>
-        <p className="text-base text-ink-muted leading-relaxed">{desc}</p>
+        <h4 className="text-base md:text-h3 text-ink mb-1.5 md:mb-2 leading-tight">{title}</h4>
+        <p className="text-sm md:text-base text-ink-muted leading-relaxed">{desc}</p>
       </Card>
       {arrow && (
         <ChevronRight
@@ -439,18 +441,19 @@ function SolutionCard({ sol }: { sol: SolutionLink }) {
       to={sol.to}
       className="group block rounded-card bg-white shadow-card hover:shadow-card-lg transition-shadow overflow-hidden"
     >
-      <div className="p-5">
-        <div className="flex items-start gap-4">
-          <div className={`w-14 h-14 rounded-2xl bg-gradient-to-br ${sol.accent} text-white flex items-center justify-center shrink-0 shadow-card`}>
-            <Icon size={26} />
+      <div className="p-4 md:p-5">
+        <div className="flex items-start gap-3 md:gap-4">
+          <div className={`w-11 h-11 md:w-14 md:h-14 rounded-2xl bg-gradient-to-br ${sol.accent} text-white flex items-center justify-center shrink-0 shadow-card`}>
+            <Icon size={22} className="md:hidden" />
+            <Icon size={26} className="hidden md:block" />
           </div>
           <div className="flex-1 min-w-0">
-            <div className="text-base text-ink-muted font-mono mb-1">SOLUTION {sol.num}</div>
-            <h3 className="text-h3 text-ink leading-tight mb-2 group-hover:text-brand-600 transition-colors">
+            <div className="text-xs md:text-base text-ink-muted font-mono mb-1">SOLUTION {sol.num}</div>
+            <h3 className="text-base md:text-h3 text-ink leading-tight mb-1.5 md:mb-2 group-hover:text-brand-600 transition-colors break-keep">
               {sol.title}
             </h3>
-            <p className="text-lg text-ink-muted leading-relaxed">{sol.tagline}</p>
-            <span className="mt-3 inline-flex items-center gap-1 text-base font-semibold text-brand-600 group-hover:gap-2 transition-all">
+            <p className="text-sm md:text-lg text-ink-muted leading-relaxed break-keep">{sol.tagline}</p>
+            <span className="mt-2 md:mt-3 inline-flex items-center gap-1 text-sm md:text-base font-semibold text-brand-600 group-hover:gap-2 transition-all">
               자세히 보기 <ArrowRight size={14} />
             </span>
           </div>
@@ -463,11 +466,11 @@ function SolutionCard({ sol }: { sol: SolutionLink }) {
 function FaqRow({ q, a }: { q: string; a: string }) {
   return (
     <Card variant="white">
-      <h4 className="text-xl font-bold text-ink mb-2 flex items-start gap-2">
+      <h4 className="text-base md:text-xl font-bold text-ink mb-1.5 md:mb-2 flex items-start gap-1.5 md:gap-2 leading-tight">
         <span className="text-brand-500 shrink-0">Q.</span>
-        <span>{q}</span>
+        <span className="break-keep">{q}</span>
       </h4>
-      <p className="text-lg text-ink-muted leading-relaxed pl-6">{a}</p>
+      <p className="text-sm md:text-lg text-ink-muted leading-relaxed pl-5 md:pl-6 break-keep">{a}</p>
     </Card>
   )
 }
