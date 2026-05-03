@@ -19,7 +19,14 @@ import { KAKAO_CHAT_URL } from '@/utils/contact'
 
 export interface SolutionDetailProps {
   num: string
+  /** SEO <title> / JSON-LD name 용 짧은 제목 (60자 이내 권장) */
   title: string
+  /**
+   * TopBar 화면 표시용 메인 타이틀.
+   * 미지정 시 `title` 값을 그대로 사용한다.
+   * SEO 제약과 무관하게 길게 작성 가능.
+   */
+  headerTitle?: string
   subtitle: string
   shortLabel: string
   tagline: string
@@ -65,7 +72,15 @@ export function SolutionDetailLayout(props: SolutionDetailProps) {
           })}
         />
       )}
-      <TopBar title={props.title} subtitle={props.subtitle} />
+      <TopBar
+        title={props.headerTitle || props.title}
+        subtitle={props.subtitle}
+        titleClassName={
+          props.headerTitle
+            ? 'text-lg sm:text-2xl md:text-3xl text-ink font-bold leading-tight break-keep'
+            : undefined
+        }
+      />
 
       {/* Hero */}
       <Card variant="white" className="relative overflow-hidden">

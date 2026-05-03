@@ -14,11 +14,21 @@ import { useEvents, useUnreadCount, useMarkEventsRead } from '@/hooks/useEvents'
 import type { ChangeEventOut, ChangeEventSeverity } from '@/api/types'
 
 interface TopBarProps {
-  title?: string
+  title?: React.ReactNode
   subtitle?: React.ReactNode
+  /**
+   * 제목에 적용할 클래스 오버라이드.
+   * 기본값은 `text-xl sm:text-h1 text-ink truncate` — 길어서 잘리면 안 되는 페이지에서 override.
+   */
+  titleClassName?: string
+  /**
+   * 부제목에 적용할 클래스 오버라이드.
+   * 기본값은 `text-[16px] sm:text-[18px] text-ink-muted mt-0.5 sm:mt-1 line-clamp-2`
+   */
+  subtitleClassName?: string
 }
 
-export function TopBar({ title, subtitle }: TopBarProps) {
+export function TopBar({ title, subtitle, titleClassName, subtitleClassName }: TopBarProps) {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated)
   const isSuperadmin = useAuthStore((s) => !!s.user?.is_superadmin)
   const [open, setOpen] = useState(false)
@@ -39,8 +49,21 @@ export function TopBar({ title, subtitle }: TopBarProps) {
   return (
     <div className="flex items-center justify-between gap-2 px-1 sm:px-2 py-2 sm:py-3 mb-2">
       <div className="min-w-0 flex-1">
-        {title && <h1 className="text-xl sm:text-h1 text-ink truncate">{title}</h1>}
-        {subtitle && <p className="text-[16px] sm:text-[18px] text-ink-muted mt-0.5 sm:mt-1 line-clamp-2">{subtitle}</p>}
+        {title && (
+          <h1 className={titleClassName ?? 'text-xl sm:text-h1 text-ink truncate'}>
+            {title}
+          </h1>
+        )}
+        {subtitle && (
+          <p
+            className={
+              subtitleClassName ??
+              'text-[16px] sm:text-[18px] text-ink-muted mt-0.5 sm:mt-1 line-clamp-2'
+            }
+          >
+            {subtitle}
+          </p>
+        )}
       </div>
 
       <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
