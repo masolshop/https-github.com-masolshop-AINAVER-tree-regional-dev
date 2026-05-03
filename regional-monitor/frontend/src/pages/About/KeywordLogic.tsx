@@ -56,7 +56,7 @@ export default function KeywordLogic() {
         ])}
       />
       <TopBar
-        title="타지역 키워드로직"
+        title="타지역서비스 키워드 로직 최적화"
         subtitle="네이버 1페이지에 뜨는 키워드는 따로 있습니다 — 30자 상호 키워드 로직 분석"
       />
 

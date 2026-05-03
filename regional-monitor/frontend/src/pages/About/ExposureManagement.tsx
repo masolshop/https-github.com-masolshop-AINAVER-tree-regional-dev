@@ -66,7 +66,7 @@ export default function ExposureManagement() {
         ])}
       />
       <TopBar
-        title="타지역 노출 관리"
+        title="타지역서비스 노출 최적화 관리"
         subtitle="네이버 노출은 등록보다 유지가 어렵습니다 — 자동체크솔루션으로 24시간 감시"
       />
 

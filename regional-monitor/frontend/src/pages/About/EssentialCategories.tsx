@@ -103,7 +103,7 @@ export default function EssentialCategories() {
         ])}
       />
       <TopBar
-        title="타지역 필수업종"
+        title="타지역서비스 등록 필수업종"
         subtitle="타지역서비스 운영이 필수/유효한 업종 리스트 (회선수 기준 시장규모 정렬)"
       />
 
