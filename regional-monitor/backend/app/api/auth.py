@@ -15,14 +15,12 @@
   5) 프론트 → POST /auth/profile { name, phone, company, agreements } + Bearer JWT
   6) 백엔드: 검증 → User 업데이트 (is_profile_complete=True)
 """
-from __future__ import annotations
-
 import re
 import secrets
 from datetime import datetime, timedelta
 from app.core.time_utils import now_kst, to_kst, KST
 
-from fastapi import APIRouter, Body, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy import select, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -127,7 +125,7 @@ def _issue_token(user: User) -> str:
 @limiter.limit("10/minute")
 async def login_with_password(
     request: Request,
-    body: PasswordLoginRequest = Body(...),
+    body: PasswordLoginRequest,
     db: AsyncSession = Depends(get_db),
 ) -> PasswordLoginResponse:
     """휴대폰/이메일/아이디 + 비밀번호 로그인.
@@ -200,7 +198,7 @@ async def login_with_password(
 @limiter.limit("20/minute")
 async def login_with_google(
     request: Request,
-    body: GoogleLoginRequest = Body(...),
+    body: GoogleLoginRequest,
     db: AsyncSession = Depends(get_db),
 ) -> GoogleLoginResponse:
     """Google ID 토큰을 검증하고 우리 서비스 JWT를 발급한다.
@@ -441,7 +439,7 @@ async def check_duplicate(
 @limiter.limit("5/minute")
 async def signup(
     request: Request,
-    body: SignupRequest = Body(...),
+    body: SignupRequest,
     db: AsyncSession = Depends(get_db),
 ) -> SignupResponse:
     """아이디/비밀번호 기반 직접 회원가입.
@@ -564,7 +562,7 @@ def _mask_username(username: str) -> str:
 @limiter.limit("5/minute")
 async def forgot_id(
     request: Request,
-    body: ForgotIdRequest = Body(...),
+    body: ForgotIdRequest,
     db: AsyncSession = Depends(get_db),
 ) -> MessageResponse:
     """가입 시 등록한 이메일로 사용자의 아이디(username)를 발송.
@@ -595,7 +593,7 @@ async def forgot_id(
 @limiter.limit("5/minute")
 async def forgot_password(
     request: Request,
-    body: ForgotPasswordRequest = Body(...),
+    body: ForgotPasswordRequest,
     db: AsyncSession = Depends(get_db),
 ) -> MessageResponse:
     """이메일로 비밀번호 재설정 링크를 발송.
@@ -675,7 +673,7 @@ async def verify_reset_token(
 @limiter.limit("5/minute")
 async def reset_password(
     request: Request,
-    body: ResetPasswordRequest = Body(...),
+    body: ResetPasswordRequest,
     db: AsyncSession = Depends(get_db),
 ) -> MessageResponse:
     """이메일 링크로 받은 토큰을 사용해 비밀번호 재설정."""
