@@ -61,6 +61,8 @@ interface MenuItem {
   multiline?: boolean
   icon: React.ComponentType<{ className?: string; size?: number }>
   requireAuth: boolean
+  /** 사각 모서리 박스 형태로 강조 표시(솔루션 4종 카드용) */
+  boxed?: boolean
 }
 
 interface MenuGroup {
@@ -74,10 +76,10 @@ interface MenuGroup {
 
 const MENU: MenuItem[] = [
   { to: '/',         label: '타지역닷컴',                    icon: LayoutDashboard, requireAuth: false },
-  { to: '/keyword-dna', label: '타지역키워드\nDNA 파싱솔루션',     icon: Dna,            requireAuth: true,  multiline: true },
-  { to: '/keyword',  label: '네이버1페이지 노출\n키워드 발굴솔루션', icon: Sparkles,      requireAuth: true,  multiline: true },
-  { to: '/competition', label: '지역별 노출경쟁도\n분석솔루션',   icon: MapPin,         requireAuth: true,  multiline: true },
-  { to: '/monitor',  label: '네이버노출관리\n자동체크솔루션',  icon: Radio,           requireAuth: true,  multiline: true },
+  { to: '/keyword-dna', label: '타지역키워드\nDNA 파싱솔루션',     icon: Dna,            requireAuth: true,  multiline: true, boxed: true },
+  { to: '/keyword',  label: '네이버1페이지 노출\n키워드 발굴솔루션', icon: Sparkles,      requireAuth: true,  multiline: true, boxed: true },
+  { to: '/competition', label: '지역별 노출경쟁도\n분석솔루션',   icon: MapPin,         requireAuth: true,  multiline: true, boxed: true },
+  { to: '/monitor',  label: '네이버노출관리\n자동체크솔루션',  icon: Radio,           requireAuth: true,  multiline: true, boxed: true },
 ]
 
 const ABOUT_GROUP: MenuGroup = {
@@ -124,6 +126,7 @@ function renderMenuItem(
           'sidebar-item',
           isActive && !locked && 'active',
           locked && 'opacity-60',
+          item.boxed && 'rounded-md ring-1 ring-slate-200 bg-white shadow-sm hover:ring-brand-300 hover:shadow my-0.5',
         )
       }
     >
