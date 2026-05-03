@@ -122,7 +122,7 @@ export default function Intro() {
         ]}
       />
       <TopBar
-        title="타지역 4종솔루션 소개"
+        title="타지역서비스 최적화 4종 솔루션 소개"
         subtitle="“똑같이 등록했는데 왜 우리만 안 뜰까?” — 그 답답함을 이제 데이터로 풀어드립니다."
       />
 
