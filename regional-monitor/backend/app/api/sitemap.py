@@ -278,12 +278,15 @@ def build_rss_xml() -> str:
         "    <category>SEO</category>",
         "    <generator>taziyuk.com FastAPI sitemap-generator</generator>",
         "    <ttl>1440</ttl>",
+        # RSS 2.0 image 태그: width 1~144, height 1~400 제한 준수
+        # (OG 이미지 원본은 1200x630이지만 RSS image는 표준 범위로 축소 신고)
         "    <image>",
         f"      <url>{escape(SITE_OG_IMAGE)}</url>",
         _xml("title", SITE_TITLE, indent="      "),
         f'      <link>{escape(SITE_BASE_URL + "/")}</link>',
-        "      <width>1200</width>",
-        "      <height>630</height>",
+        "      <width>144</width>",
+        "      <height>76</height>",
+        "      <description>타지역서비스 네이버 노출 자동체크 솔루션 - 타지역닷컴</description>",
         "    </image>",
     ]
     for r in SITE_ROUTES:

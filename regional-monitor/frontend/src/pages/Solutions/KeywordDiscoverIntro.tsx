@@ -9,7 +9,7 @@ export default function KeywordDiscoverIntro() {
   return (
     <SolutionDetailLayout
       num="02"
-      title="네이버1페이지 노출 키워드 발굴솔루션"
+      title="네이버1페이지 노출 타지역서비스 키워드 발굴솔루션"
       subtitle="“검색량만 보고 골랐는데 왜 안 뜨지?” — 그 함정에서 사장님을 꺼내드립니다."
       shortLabel="네이버1페이지 노출 키워드 발굴솔루션"
       tagline="검색량 큰 키워드는 이미 수십 업체가 점령한 “레드오션”입니다. 진짜 돈이 되는 건, 경쟁이 비어 있는데 회선수는 살아있는 “청정 황금 키워드”. 그것만 골라드립니다."

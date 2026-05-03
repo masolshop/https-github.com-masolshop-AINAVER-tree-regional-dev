@@ -9,7 +9,7 @@ export default function CompetitionIntro() {
   return (
     <SolutionDetailLayout
       num="03"
-      title="지역별 노출경쟁도 분석솔루션"
+      title="타지역서비스 지역별 노출 경쟁도 분석솔루션"
       subtitle="“같은 키워드인데 우리 지역만 안 뜨는 이유” — 4,819개 동·리 단위로 답을 보여드립니다."
       shortLabel="지역별 노출경쟁도 분석솔루션"
       tagline="강남구는 포화, 정선군은 청정. 같은 “하수구”도 지역마다 진입 난이도가 10배 이상 다릅니다. 전국 4,819곳 중 사장님이 들어갈 수 있는 “빈 자리”를 데이터로 찾아드립니다."

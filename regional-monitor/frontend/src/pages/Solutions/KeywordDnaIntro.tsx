@@ -9,7 +9,7 @@ export default function KeywordDnaIntro() {
   return (
     <SolutionDetailLayout
       num="01"
-      title="타지역키워드 DNA 파싱솔루션"
+      title="타지역서비스 키워드 DNA 파싱솔루션"
       subtitle="내 상호가 왜 검색에 안 잡히는지, 처음으로 그 답을 보실 수 있습니다."
       shortLabel="타지역키워드 DNA 파싱솔루션"
       tagline="“똑같이 등록했는데, 왜 옆 가게만 1페이지에 뜰까?” — 그 비밀은 상호명을 이루는 키워드 DNA에 있습니다. 단 1초, 경쟁사 상호를 6가지 DNA로 분해해서 노출의 정답을 보여드립니다."
