@@ -1673,7 +1673,7 @@ function RegionDetailModal({
                       <a
                         href={`https://m.place.naver.com/place/${encodeURIComponent(it.place_id)}`}
                         target="_blank"
-                        rel="noreferrer"
+                        rel="noopener noreferrer"
                         className="text-brand-600 hover:underline inline-flex items-center gap-0.5"
                         onClick={(e) => e.stopPropagation()}
                       >
@@ -1761,7 +1761,7 @@ function PlacesTable({ rows, keyHint }: { rows: KeywordPlaceItem[]; keyHint: str
                 <a
                   href={`https://m.place.naver.com/place/${encodeURIComponent(it.place_id)}`}
                   target="_blank"
-                  rel="noreferrer"
+                  rel="noopener noreferrer"
                   className="text-brand-600 hover:underline inline-flex items-center gap-0.5"
                 >
                   {it.place_id} <ExternalLink size={11} />

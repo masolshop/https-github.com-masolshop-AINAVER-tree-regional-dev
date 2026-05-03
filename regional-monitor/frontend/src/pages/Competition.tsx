@@ -916,7 +916,7 @@ function PlaceRow({ it, rank }: { it: CompetitionPlace; rank: number }) {
           <a
             href={placeUrl}
             target="_blank"
-            rel="noreferrer"
+            rel="noopener noreferrer"
             className="inline-flex items-center gap-1 text-xs text-blue-700 hover:underline"
           >
             열기 <ExternalLink size={11} />

@@ -1,5 +1,14 @@
 """앱 설정 (환경변수 우선)."""
+import logging
+import os
+import secrets
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+_log = logging.getLogger("config")
+
+# 개발 기본값 (운영에서 절대 사용 금지)
+_DEV_JWT_DEFAULT = "dev-secret-change-me-in-production"
 
 
 class Settings(BaseSettings):
@@ -22,7 +31,9 @@ class Settings(BaseSettings):
     DATABASE_URL: str = "sqlite+aiosqlite:///./regional_monitor.db"
 
     # ── 인증 ──
-    JWT_SECRET: str = "dev-secret-change-me-in-production"
+    # 운영(DEBUG=False) 환경에서는 반드시 환경변수 JWT_SECRET을 설정해야 함.
+    # 기본 dev 값으로 운영 시작 시 startup 가드에서 거부.
+    JWT_SECRET: str = _DEV_JWT_DEFAULT
     JWT_ALGORITHM: str = "HS256"
     JWT_EXPIRES_HOURS: int = 24 * 7   # 7일
 
@@ -77,3 +88,22 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
+
+
+# ── 운영 환경 보안 가드 ──
+# DEBUG=False (운영) 일 때 JWT_SECRET이 dev 기본값이거나 너무 짧으면 거부.
+# 환경변수 ALLOW_INSECURE_JWT=1 로 명시적으로 비활성화 가능 (긴급 우회용).
+if not settings.DEBUG:
+    _allow_insecure = os.getenv("ALLOW_INSECURE_JWT") == "1"
+    if settings.JWT_SECRET == _DEV_JWT_DEFAULT or len(settings.JWT_SECRET) < 32:
+        if _allow_insecure:
+            _log.warning(
+                "⚠️ JWT_SECRET 이 안전하지 않습니다. ALLOW_INSECURE_JWT=1 로 무시 — "
+                "즉시 환경변수 JWT_SECRET 을 32자 이상 랜덤 값으로 교체하세요."
+            )
+        else:
+            raise RuntimeError(
+                "보안: 운영(DEBUG=False) 환경에서 JWT_SECRET 이 dev 기본값이거나 32자 미만입니다. "
+                "환경변수 JWT_SECRET 을 강력한 랜덤 값(예: `python -c \"import secrets;print(secrets.token_urlsafe(48))\"`)"
+                "으로 설정한 후 재시작하세요."
+            )

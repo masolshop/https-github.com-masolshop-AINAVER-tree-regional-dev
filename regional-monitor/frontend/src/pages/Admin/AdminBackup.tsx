@@ -368,7 +368,7 @@ export function AdminBackup() {
                                   <a
                                     href={driveFile.web_view_link ?? '#'}
                                     target="_blank"
-                                    rel="noreferrer"
+                                    rel="noopener noreferrer"
                                     title={`Drive 업로드 완료 — ${driveFile.created_time}`}
                                     className="inline-flex items-center gap-1 rounded-lg border border-emerald-200 bg-emerald-50 px-2 py-1 text-[11px] font-semibold text-emerald-700 hover:bg-emerald-100"
                                   >
@@ -560,7 +560,7 @@ function GDriveStatusCard({
               <a
                 href={`https://drive.google.com/drive/folders/${g.folder_id}`}
                 target="_blank"
-                rel="noreferrer"
+                rel="noopener noreferrer"
                 className="inline-flex items-center gap-1 rounded-lg border border-emerald-200 bg-white px-3 py-1.5 text-xs font-semibold text-emerald-700 hover:bg-emerald-50"
               >
                 <ExternalLink className="h-3.5 w-3.5" />
