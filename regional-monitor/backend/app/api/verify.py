@@ -11,6 +11,7 @@ from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core import get_db
+from app.core.rate_limit import limiter
 from app.models.place import RegisteredPlace
 from app.models.user import User
 from app.models.verify_job import VerifyJob
@@ -113,6 +114,7 @@ def _job_to_out(job: VerifyJob) -> VerifyJobOut:
 
 
 @router.post("/live", response_model=LiveCheckResponse)
+@limiter.limit("20/minute")
 async def run_live_check(
     req: LiveCheckRequest,
     request: Request,

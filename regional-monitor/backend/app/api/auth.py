@@ -22,7 +22,7 @@ import secrets
 from datetime import datetime, timedelta
 from app.core.time_utils import now_kst, to_kst, KST
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy import select, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -34,6 +34,7 @@ from app.core import (
     verify_password,
 )
 from app.core.security import hash_password
+from app.core.rate_limit import limiter
 from app.models.user import User
 from app.models.place import RegisteredPlace
 from app.models.check import ChangeEvent, DailyHealthCheck
@@ -123,7 +124,9 @@ def _issue_token(user: User) -> str:
 # ─────────────────────────── 비밀번호 로그인 (어드민/직접가입) ───────────────────────────
 
 @router.post("/login", response_model=PasswordLoginResponse)
+@limiter.limit("10/minute")
 async def login_with_password(
+    request: Request,
     body: PasswordLoginRequest,
     db: AsyncSession = Depends(get_db),
 ) -> PasswordLoginResponse:
@@ -194,7 +197,9 @@ async def login_with_password(
 # ─────────────────────────── 1단계: Google 로그인 ───────────────────────────
 
 @router.post("/google", response_model=GoogleLoginResponse)
+@limiter.limit("20/minute")
 async def login_with_google(
+    request: Request,
     body: GoogleLoginRequest,
     db: AsyncSession = Depends(get_db),
 ) -> GoogleLoginResponse:
@@ -433,7 +438,9 @@ async def check_duplicate(
 # ─────────────────────────── 직접 회원가입 (아이디/비밀번호) ───────────────────────────
 
 @router.post("/signup", response_model=SignupResponse)
+@limiter.limit("5/minute")
 async def signup(
+    request: Request,
     body: SignupRequest,
     db: AsyncSession = Depends(get_db),
 ) -> SignupResponse:
@@ -554,7 +561,9 @@ def _mask_username(username: str) -> str:
 
 
 @router.post("/forgot-id", response_model=MessageResponse)
+@limiter.limit("5/minute")
 async def forgot_id(
+    request: Request,
     body: ForgotIdRequest,
     db: AsyncSession = Depends(get_db),
 ) -> MessageResponse:
@@ -583,7 +592,9 @@ async def forgot_id(
 
 
 @router.post("/forgot-password", response_model=MessageResponse)
+@limiter.limit("5/minute")
 async def forgot_password(
+    request: Request,
     body: ForgotPasswordRequest,
     db: AsyncSession = Depends(get_db),
 ) -> MessageResponse:
@@ -642,7 +653,9 @@ async def forgot_password(
 
 
 @router.get("/reset-password/verify", response_model=ResetPasswordVerifyResponse)
+@limiter.limit("30/minute")
 async def verify_reset_token(
+    request: Request,
     token: str,
     db: AsyncSession = Depends(get_db),
 ) -> ResetPasswordVerifyResponse:
@@ -659,7 +672,9 @@ async def verify_reset_token(
 
 
 @router.post("/reset-password", response_model=MessageResponse)
+@limiter.limit("5/minute")
 async def reset_password(
+    request: Request,
     body: ResetPasswordRequest,
     db: AsyncSession = Depends(get_db),
 ) -> MessageResponse:

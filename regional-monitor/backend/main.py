@@ -10,8 +10,12 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from slowapi import _rate_limit_exceeded_handler  # noqa: F401  (참고용)
+from slowapi.errors import RateLimitExceeded
+from slowapi.middleware import SlowAPIMiddleware
 
 from app.core import settings, init_db
+from app.core.rate_limit import limiter, rate_limit_exceeded_handler
 from app.api import api_router
 from app.services.scheduler import start_scheduler, stop_scheduler
 
@@ -45,6 +49,14 @@ app = FastAPI(
     docs_url="/docs",
     redoc_url="/redoc",
 )
+
+# ── slowapi 2차 rate limit (nginx 우회/내부 호출 방어) ──
+# nginx limit_req 가 1차 방어선이고, slowapi 는 백엔드 직접 호출에도 작동하는 안전망.
+# 라우트 데코레이터(@limiter.limit("10/minute")) 로 엔드포인트별 제한 가능.
+# 전역 default_limits 는 app/core/rate_limit.py 의 DEFAULT_LIMITS 참조.
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, rate_limit_exceeded_handler)
+app.add_middleware(SlowAPIMiddleware)
 
 # CORS — credentials=True 와 origins="*" 는 브라우저가 거부하므로 분리
 # DEBUG 모드: 모든 출처 허용 (credentials 없이)

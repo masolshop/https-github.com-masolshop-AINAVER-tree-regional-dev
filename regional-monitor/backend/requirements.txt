@@ -21,3 +21,6 @@ APScheduler==3.11.2
 alembic==1.18.4
 passlib==1.7.4
 python-dotenv==1.0.1
+# ── DDoS / 브루트포스 2차 방어 (nginx 우회/내부 호출 보호) ──
+slowapi==0.1.9
+limits==3.13.0
