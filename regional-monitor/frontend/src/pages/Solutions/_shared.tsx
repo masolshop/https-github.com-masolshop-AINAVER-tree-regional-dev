@@ -27,7 +27,7 @@ export interface SolutionDetailProps {
    * SEO 제약과 무관하게 길게 작성 가능.
    */
   headerTitle?: string
-  subtitle: string
+  subtitle: React.ReactNode
   shortLabel: string
   tagline: string
   icon: React.ComponentType<{ size?: number; className?: string }>
@@ -80,6 +80,7 @@ export function SolutionDetailLayout(props: SolutionDetailProps) {
             ? 'text-lg sm:text-2xl md:text-3xl text-ink font-bold leading-tight break-keep'
             : undefined
         }
+        subtitleClassName="text-[19px] sm:text-[22px] text-ink-muted mt-1 sm:mt-1.5 leading-relaxed break-keep"
       />
 
       {/* Hero */}
