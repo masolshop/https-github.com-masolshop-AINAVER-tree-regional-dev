@@ -408,8 +408,8 @@ export function Sidebar({ onItemClick }: SidebarProps = {}) {
       </nav>
 
       {/* 하단 푸터 — 회사 정보 */}
-      <div className="mt-auto px-3 py-3 text-[11px] leading-relaxed text-ink-soft border-t border-bg-subtle">
-        <div className="space-y-0.5">
+      <div className="mt-auto px-3 py-3 text-[13px] leading-relaxed text-ink-soft border-t border-bg-subtle">
+        <div className="space-y-1">
           <div>
             <span className="text-ink-muted">상호</span>{' '}
             <span className="font-medium text-ink">주식회사 페마연</span>
