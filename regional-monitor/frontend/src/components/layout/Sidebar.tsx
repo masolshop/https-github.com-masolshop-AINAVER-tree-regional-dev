@@ -407,10 +407,34 @@ export function Sidebar({ onItemClick }: SidebarProps = {}) {
         )}
       </nav>
 
-      {/* 하단 푸터 */}
-      <div className="mt-auto px-3 py-2 text-caption text-ink-soft">
-        <div>© 2026 타지역서비스</div>
-        <div className="mt-1">v0.1.0 · 검증 정확도 97.2%</div>
+      {/* 하단 푸터 — 회사 정보 */}
+      <div className="mt-auto px-3 py-3 text-[11px] leading-relaxed text-ink-soft border-t border-bg-subtle">
+        <div className="space-y-0.5">
+          <div>
+            <span className="text-ink-muted">상호</span>{' '}
+            <span className="font-medium text-ink">주식회사 페마연</span>
+          </div>
+          <div>
+            <span className="text-ink-muted">대표</span>{' '}
+            <span className="text-ink">이종근</span>
+          </div>
+          <div>
+            <span className="text-ink-muted">사업자등록번호</span>{' '}
+            <span className="text-ink">266-81-01215</span>
+          </div>
+          <div>
+            <span className="text-ink-muted">통신판매업신고</span>{' '}
+            <span className="text-ink">2024-서울서초-3721</span>
+          </div>
+          <div className="pt-1">
+            <a
+              href="tel:1688-8750"
+              className="font-semibold text-ink hover:text-brand-600"
+            >
+              ☎ 1688-8750
+            </a>
+          </div>
+        </div>
       </div>
 
       {/* 본인 정보 수정 모달 */}
