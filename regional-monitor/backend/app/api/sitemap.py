@@ -315,10 +315,11 @@ def build_rss_xml() -> str:
 router = APIRouter(prefix="/seo", tags=["seo"])
 
 
-@router.get(
+@router.api_route(
     "/sitemap.xml",
+    methods=["GET", "HEAD"],
     response_class=Response,
-    summary="동적 생성 사이트맵 (sitemap.org 0.9)",
+    summary="동적 생성 사이트맵 (sitemap.org 0.9) — GET/HEAD 모두 허용",
 )
 async def sitemap_xml() -> Response:
     body = build_sitemap_xml()
@@ -333,10 +334,11 @@ async def sitemap_xml() -> Response:
     )
 
 
-@router.get(
+@router.api_route(
     "/rss.xml",
+    methods=["GET", "HEAD"],
     response_class=Response,
-    summary="동적 생성 RSS 피드 (RSS 2.0)",
+    summary="동적 생성 RSS 피드 (RSS 2.0) — GET/HEAD 모두 허용",
 )
 async def rss_xml() -> Response:
     body = build_rss_xml()
