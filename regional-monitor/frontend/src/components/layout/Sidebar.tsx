@@ -434,6 +434,26 @@ export function Sidebar({ onItemClick }: SidebarProps = {}) {
               ☎ 1688-8750
             </a>
           </div>
+          <div>
+            <span className="text-ink-muted">이메일</span>{' '}
+            <a
+              href="mailto:ceo@femayeon.com"
+              className="text-ink hover:text-brand-600 break-all"
+            >
+              ceo@femayeon.com
+            </a>
+          </div>
+          <div>
+            <span className="text-ink-muted">카톡상담</span>{' '}
+            <a
+              href="http://pf.kakao.com/_qemTX"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-ink hover:text-brand-600 break-all"
+            >
+              pf.kakao.com/_qemTX
+            </a>
+          </div>
         </div>
       </div>
 
