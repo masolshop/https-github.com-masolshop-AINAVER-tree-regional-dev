@@ -158,7 +158,10 @@ async def _discover_one(keyword: str, display: int, use_cache: bool) -> dict[str
         "error": raw.get("error"),
         "from_cache": False,
     }
-    _cache.set(cache_key, result)
+    # 0건/에러 결과는 캐시에 저장하지 않음 (네이버 일시 차단으로 빈 응답이
+    # 6시간 동안 캐시에 박혀 같은 키워드를 계속 0건으로 표시하는 문제 방지)
+    if raw.get("error") is None and sm.get("total", 0) > 0:
+        _cache.set(cache_key, result)
     return result
 
 
@@ -320,7 +323,10 @@ async def _discover_one_region(
         "error": raw.get("error"),
         "from_cache": False,
     }
-    _cache.set(cache_key, result)
+    # 0건/에러 결과는 캐시에 저장하지 않음 (네이버 일시 차단으로 빈 응답이
+    # 6시간 동안 캐시에 박혀 같은 (지역, 키워드)를 계속 0건으로 표시하는 문제 방지)
+    if raw.get("error") is None and sm.get("total", 0) > 0:
+        _cache.set(cache_key, result)
     return result
 
 
