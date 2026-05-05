@@ -189,39 +189,16 @@
               "item": "https://taziyuk.com/intro/"
             }
           ]
-        },
-        {
-          "@type": "FAQPage",
-          "@id": "https://taziyuk.com/#faq",
-          "mainEntity": [
-            {
-              "@type": "Question",
-              "name": "타지역서비스란 무엇인가요?",
-              "acceptedAnswer": {
-                "@type": "Answer",
-                "text": "타지역서비스(070 가상번호)는 출장·방문·공사·수리 업종 사장님이 다른 지역 고객에게도 서비스를 제공할 수 있도록 통신사가 제공하는 부가서비스입니다. 네이버 플레이스에서 실수나 정책 변경으로 노출이 누락되면 고객문의가 끊기고 광고비가 손실되므로 자동 체크가 필수입니다."
-              }
-            },
-            {
-              "@type": "Question",
-              "name": "타지역닷컴은 어떤 솔루션을 제공하나요?",
-              "acceptedAnswer": {
-                "@type": "Answer",
-                "text": "키워드 발굴, 지역별 노출 경쟁도 분석, 24시간 네이버 노출 자동 체크, 필수업종 분류의 4종 솔루션을 제공합니다. 1,875개 등록 업체와 508,854개 회선 데이터를 기반으로 정확한 분석을 제공합니다."
-              }
-            },
-            {
-              "@type": "Question",
-              "name": "이용료는 어떻게 되나요?",
-              "acceptedAnswer": {
-                "@type": "Answer",
-                "text": "기본 기능은 무료로 제공되며, 고급 분석과 24시간 자동 체크는 유료 플랜으로 이용 가능합니다. 자세한 상담은 카카오톡(pf.kakao.com/_qemTX) 또는 ☎ 1688-8750으로 문의해 주세요."
-              }
-            }
-          ]
         }
       ]
     }
+    <!--
+      ⚠️ FAQPage JSON-LD 는 의도적으로 정적 index.html 에서 제외.
+      Google 정책: 한 페이지에 FAQPage 는 1개만 허용 (중복 시 'FAQPage 입력란이
+      중복되었습니다' 오류 발생). index.html JSON-LD 는 모든 라우트에 출력되므로
+      여기에 FAQPage 를 두면 /intro 등 자체 FAQPage 를 주입하는 페이지에서 중복.
+      각 페이지가 필요 시 PageSeo + buildFaqJsonLd 로 페이지별 FAQ 를 주입한다.
+    -->
     </script>
   </head>
   <body>

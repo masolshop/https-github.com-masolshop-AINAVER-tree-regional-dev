@@ -9,7 +9,7 @@
  */
 import { TopBar } from '@/components/layout/TopBar'
 import { Card } from '@/components/ui/Card'
-import PageSeo from '@/components/seo/PageSeo'
+import PageSeo, { buildFaqJsonLd } from '@/components/seo/PageSeo'
 import {
   ArrowRight,
   Activity,
@@ -59,6 +59,20 @@ export default function Home() {
           '지역 경쟁도',
           '플레이스 모니터링',
         ]}
+        jsonLd={buildFaqJsonLd([
+          {
+            q: '타지역서비스란 무엇인가요?',
+            a: '타지역서비스(070 가상번호)는 출장·방문·공사·수리 업종 사장님이 다른 지역 고객에게도 서비스를 제공할 수 있도록 통신사가 제공하는 부가서비스입니다. 네이버 플레이스에서 실수나 정책 변경으로 노출이 누락되면 고객문의가 끊기고 광고비가 손실되므로 자동 체크가 필수입니다.',
+          },
+          {
+            q: '타지역닷컴은 어떤 솔루션을 제공하나요?',
+            a: '키워드 발굴, 지역별 노출 경쟁도 분석, 24시간 네이버 노출 자동 체크, 필수업종 분류의 4종 솔루션을 제공합니다. 1,875개 등록 업체와 508,854개 회선 데이터를 기반으로 정확한 분석을 제공합니다.',
+          },
+          {
+            q: '이용료는 어떻게 되나요?',
+            a: '기본 기능은 무료로 제공되며, 고급 분석과 24시간 자동 체크는 유료 플랜으로 이용 가능합니다. 자세한 상담은 카카오톡(pf.kakao.com/_qemTX) 또는 ☎ 1688-8750으로 문의해 주세요.',
+          },
+        ])}
       />
       <TopBar
         title="국내 최초 타지역서비스 최적화 4종 솔루션 무료 플랜 받으세요."
