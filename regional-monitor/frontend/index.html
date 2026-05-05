@@ -3,7 +3,15 @@
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-    <link rel="canonical" href="https://taziyuk.com/" />
+    <!--
+      ⚠️ canonical / og:url / twitter:url 정적 태그는 의도적으로 제거.
+      SPA(React Router) 환경에서 모든 라우트가 동일한 index.html을 공유하므로,
+      정적 canonical을 두면 /intro, /about/* 등 모든 하위 페이지가 홈을 canonical로
+      가리키게 되어 검색엔진이 "중복 콘텐츠"로 오판함.
+      대신 src/components/seo/PageSeo.tsx 가 react-helmet-async 로
+      페이지별 정확한 canonical/og:url/twitter:url 을 주입한다.
+      Bing/Google 모두 JS 렌더링 후 평가하므로 정확한 값이 인식됨.
+    -->
 
     <!-- 모바일 뷰포트 (확대 가능, 노치 영역 활용) -->
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, viewport-fit=cover" />
@@ -36,33 +44,15 @@
     <!-- ───────── RSS 피드 (네이버 검색 가중치) ───────── -->
     <link rel="alternate" type="application/rss+xml" title="타지역닷컴 RSS 피드" href="https://taziyuk.com/rss.xml" />
 
-    <!-- ───────── 카카오톡 / 페이스북 / 라인 (Open Graph) ───────── -->
-    <meta property="og:type" content="website" />
-    <meta property="og:site_name" content="타지역닷컴" />
-    <meta property="og:locale" content="ko_KR" />
-    <meta property="og:url" content="https://taziyuk.com/" />
-    <meta property="og:title" content="타지역서비스 네이버노출 자동체크 솔루션 | 타지역닷컴" />
-    <meta
-      property="og:description"
-      content="타지역서비스(070) 사장님을 위한 고질적인 네이버 플레이스 누락을 자동 체크하여 고객문의 누수 및 광고비 손실을 막아드립니다."
-    />
-    <meta property="og:image" content="https://taziyuk.com/og-thumbnail.png" />
-    <meta property="og:image:secure_url" content="https://taziyuk.com/og-thumbnail.png" />
+    <!--
+      ⚠️ Open Graph / Twitter Card 메타태그는 PageSeo 컴포넌트에서
+      페이지별로 정확한 url/title/description/image 를 주입한다.
+      여기에 정적 값을 두면 SPA 라우트 전환 시 옛 값이 잠시 노출되는 문제 발생.
+      페이지 무관 공통 값(image:type/width/height 등)만 미리 보조 노출.
+    -->
     <meta property="og:image:type" content="image/png" />
     <meta property="og:image:width" content="1024" />
     <meta property="og:image:height" content="510" />
-    <meta property="og:image:alt" content="타지역서비스 네이버노출 자동체크 솔루션 타지역닷컴" />
-
-    <!-- ───────── 트위터 카드 ───────── -->
-    <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:url" content="https://taziyuk.com/" />
-    <meta name="twitter:title" content="타지역서비스 네이버노출 자동체크 솔루션 | 타지역닷컴" />
-    <meta
-      name="twitter:description"
-      content="타지역서비스(070) 사장님을 위한 고질적인 네이버 플레이스 누락을 자동 체크하여 고객문의 누수 및 광고비 손실을 막아드립니다."
-    />
-    <meta name="twitter:image" content="https://taziyuk.com/og-thumbnail.png" />
-    <meta name="twitter:image:alt" content="타지역서비스 네이버노출 자동체크 솔루션 타지역닷컴" />
 
     <!-- ───────── Google Analytics 4 (gtag.js) — 빌드 시 VITE_GA_MEASUREMENT_ID 가 있으면 활성화 ───────── -->
     <script>
