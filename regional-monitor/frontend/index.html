@@ -45,14 +45,34 @@
     <link rel="alternate" type="application/rss+xml" title="타지역닷컴 RSS 피드" href="https://taziyuk.com/rss.xml" />
 
     <!--
-      ⚠️ Open Graph / Twitter Card 메타태그는 PageSeo 컴포넌트에서
-      페이지별로 정확한 url/title/description/image 를 주입한다.
-      여기에 정적 값을 두면 SPA 라우트 전환 시 옛 값이 잠시 노출되는 문제 발생.
-      페이지 무관 공통 값(image:type/width/height 등)만 미리 보조 노출.
+      ⚠️ og:url / twitter:url / canonical 은 페이지별로 달라야 하므로 PageSeo 가 주입.
+      og:title / og:description / og:image 등은 SSR HTML 단계에서 봇이 즉시 발견할 수 있도록
+      사이트 기본값을 정적으로 노출. SPA 라우트 전환 시 React Helmet 이 페이지별 값으로 덮어씀.
+      (Bing Webmaster Tools "Open Graph 제목/설명 없음" 알림 해소)
     -->
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="타지역닷컴" />
+    <meta property="og:locale" content="ko_KR" />
+    <meta property="og:title" content="타지역서비스 네이버노출 자동체크 솔루션 | 타지역닷컴" />
+    <meta
+      property="og:description"
+      content="타지역서비스(070) 사장님을 위한 고질적인 네이버 플레이스 누락을 자동 체크하여 고객문의 누수 및 광고비 손실을 막아드립니다."
+    />
+    <meta property="og:image" content="https://taziyuk.com/og-thumbnail.png" />
+    <meta property="og:image:secure_url" content="https://taziyuk.com/og-thumbnail.png" />
     <meta property="og:image:type" content="image/png" />
     <meta property="og:image:width" content="1024" />
     <meta property="og:image:height" content="510" />
+    <meta property="og:image:alt" content="타지역서비스 네이버노출 자동체크 솔루션 - 타지역닷컴" />
+
+    <!-- Twitter Card (페이지별 값은 PageSeo 가 덮어씀) -->
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="타지역서비스 네이버노출 자동체크 솔루션 | 타지역닷컴" />
+    <meta
+      name="twitter:description"
+      content="타지역서비스(070) 사장님을 위한 고질적인 네이버 플레이스 누락을 자동 체크하여 고객문의 누수 및 광고비 손실을 막아드립니다."
+    />
+    <meta name="twitter:image" content="https://taziyuk.com/og-thumbnail.png" />
 
     <!-- ───────── Google Analytics 4 (gtag.js) — 빌드 시 VITE_GA_MEASUREMENT_ID 가 있으면 활성화 ───────── -->
     <script>
