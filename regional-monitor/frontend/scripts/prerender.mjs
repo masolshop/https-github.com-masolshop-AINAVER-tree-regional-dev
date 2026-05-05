@@ -37,6 +37,7 @@ const ROUTES = [
   '/about/keyword-logic',
   '/about/exposure-management',
   '/about/essential-categories',
+  '/pricing',
 ]
 
 const MIME = {

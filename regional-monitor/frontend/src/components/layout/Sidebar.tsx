@@ -32,21 +32,18 @@ import {
   AlertTriangle,
   Globe,
   ChevronDown,
+  ChevronRight,
   Info,
   Briefcase,
   Cpu,
   Eye,
   CreditCard,
-  Gift,
-  Zap,
-  MessageCircle,
 } from 'lucide-react'
 import clsx from 'clsx'
 import { useAuthStore } from '@/store/auth'
 import { useLogout } from '@/hooks/useAuth'
 import { authApi } from '@/api/auth'
 import type { User } from '@/api/types'
-import { KAKAO_CHAT_URL, EXTERNAL_LINK_PROPS } from '@/utils/contact'
 
 interface SidebarProps {
   onItemClick?: () => void
@@ -99,59 +96,6 @@ const ABOUT_GROUP: MenuGroup = {
     { to: '/about/exposure-management',  label: '타지역 노출 관리',   icon: Eye,       requireAuth: false },
   ],
 }
-
-// ──────────────────────────────────────────────────────────────
-// 요금제 데이터 — 사이드바 하단(푸터 위) 노출용
-// 결제 버튼 클릭 시 카카오톡 상담 링크로 이동 (KAKAO_CHAT_URL)
-// ──────────────────────────────────────────────────────────────
-interface PricingPlan {
-  /** 플랜 식별 키 */
-  key: string
-  /** 플랜 이름 (예: "500플랜") */
-  name: string
-  /** 플랜 설명 (한 줄) */
-  desc: string
-  /** 가격 표시 (예: "월 3만원" / 빈 문자열이면 가격 미노출) */
-  price: string
-  /** 강조 색상 (무료/유료/문의) */
-  variant: 'free' | 'paid' | 'contact'
-}
-
-const PRICING_PLANS: PricingPlan[] = [
-  // 1. 솔루션 4종 무료 플랜
-  {
-    key: 'free-4tools',
-    name: '솔루션 4종 무료플랜',
-    desc: '타지역서비스 등록관리 · 타지역닷컴 등록관리 시',
-    price: '무료',
-    variant: 'free',
-  },
-  // 2. 노출 자동체크 무료 체험 플랜
-  {
-    key: 'free-trial',
-    name: '노출 자동체크 무료체험',
-    desc: '50개 회선 · 1주일 무료체험',
-    price: '무료',
-    variant: 'free',
-  },
-  // 3 ~ 10. 회선 수 기반 유료 플랜
-  { key: 'plan-500',  name: '500플랜',  desc: '500회선까지',  price: '월 3만원',  variant: 'paid' },
-  { key: 'plan-1000', name: '1000플랜', desc: '1000회선까지', price: '월 6만원',  variant: 'paid' },
-  { key: 'plan-1500', name: '1500플랜', desc: '1500회선까지', price: '월 9만원',  variant: 'paid' },
-  { key: 'plan-2000', name: '2000플랜', desc: '2000회선까지', price: '월 12만원', variant: 'paid' },
-  { key: 'plan-2500', name: '2500플랜', desc: '2500회선까지', price: '월 15만원', variant: 'paid' },
-  { key: 'plan-3000', name: '3000플랜', desc: '3000회선까지', price: '월 18만원', variant: 'paid' },
-  { key: 'plan-3500', name: '3500플랜', desc: '3500회선까지', price: '월 21만원', variant: 'paid' },
-  { key: 'plan-4000', name: '4000플랜', desc: '4000회선까지', price: '월 24만원', variant: 'paid' },
-  // 11. 대량 노출체크 관리는 문의
-  {
-    key: 'contact',
-    name: '대량 노출체크 관리',
-    desc: '타지역닷컴으로 문의주세요',
-    price: '문의',
-    variant: 'contact',
-  },
-]
 
 const SOLUTIONS_GROUP: MenuGroup = {
   key: 'intro',
@@ -225,9 +169,6 @@ export function Sidebar({ onItemClick }: SidebarProps = {}) {
     && (window.location.pathname === '/intro'
         || window.location.pathname.startsWith(SOLUTIONS_GROUP.pathPrefix + '/'))
   const [solutionsOpen, setSolutionsOpen] = useState<boolean>(isSolutionsActive)
-
-  // 요금제 섹션 펼침/접힘 — 기본 닫힘 (사용자 명시적 클릭 시 노출)
-  const [pricingOpen, setPricingOpen] = useState<boolean>(false)
 
   const handleMenuClick = (item: MenuItem, e: React.MouseEvent) => {
     if (item.requireAuth && !isAuthenticated) {
@@ -469,105 +410,30 @@ export function Sidebar({ onItemClick }: SidebarProps = {}) {
       </nav>
 
       {/* ────────────────────────────────────────────────────────
-          요금제 메뉴 (푸터 위) — 네이버 노출 자동체크 솔루션
-          무료/유료 플랜 안내 + 결제 버튼 → 카카오톡 상담
+          요금제 메뉴 (푸터 위) — 별도 페이지(/pricing)로 이동
+          상세 11종 플랜 + 카카오톡 결제/문의는 /pricing 페이지에서
           ──────────────────────────────────────────────────────── */}
       <div className="mt-auto pt-3">
-        <button
-          type="button"
-          onClick={() => setPricingOpen((v) => !v)}
-          aria-expanded={pricingOpen}
-          className="w-full flex items-center gap-2 px-3 py-2.5 rounded-xl bg-gradient-to-r from-amber-50 to-amber-100 ring-1 ring-amber-300 hover:from-amber-100 hover:to-amber-200 transition-colors"
+        <NavLink
+          to="/pricing"
+          onClick={() => onItemClick?.()}
+          className={({ isActive }) =>
+            clsx(
+              'w-full flex items-center gap-2 px-3 py-2.5 rounded-xl bg-gradient-to-r from-amber-50 to-amber-100 ring-1 ring-amber-300 hover:from-amber-100 hover:to-amber-200 transition-colors',
+              isActive && 'ring-2 ring-amber-500 from-amber-100 to-amber-200',
+            )
+          }
         >
           <CreditCard size={16} className="shrink-0 text-amber-700" />
           <span className="flex-1 text-left text-[13px] font-bold text-amber-900 leading-tight">
             네이버노출 자동체크솔루션
             <br />
             <span className="text-[12px] font-semibold text-amber-800">
-              무료 · 유료 요금제
+              무료 · 유료 요금제 안내
             </span>
           </span>
-          <ChevronDown
-            size={14}
-            className={clsx(
-              'shrink-0 text-amber-700 transition-transform',
-              pricingOpen ? 'rotate-180' : '',
-            )}
-          />
-        </button>
-
-        {pricingOpen && (
-          <div className="mt-2 space-y-1.5">
-            {/* 자동체크 정책 안내 */}
-            <div className="px-2.5 py-1.5 rounded-lg bg-slate-50 text-[11px] text-ink-muted leading-snug">
-              자동체크는 매일 1회 실행됩니다.
-            </div>
-
-            {PRICING_PLANS.map((plan) => {
-              const PlanIcon =
-                plan.variant === 'free'
-                  ? Gift
-                  : plan.variant === 'contact'
-                    ? MessageCircle
-                    : Zap
-              const wrapperCls = clsx(
-                'rounded-lg p-2.5 ring-1 transition-colors',
-                plan.variant === 'free' &&
-                  'bg-emerald-50 ring-emerald-200',
-                plan.variant === 'paid' && 'bg-white ring-bg-subtle',
-                plan.variant === 'contact' &&
-                  'bg-violet-50 ring-violet-200',
-              )
-              const iconCls = clsx(
-                'shrink-0',
-                plan.variant === 'free' && 'text-emerald-600',
-                plan.variant === 'paid' && 'text-brand-600',
-                plan.variant === 'contact' && 'text-violet-600',
-              )
-              const priceCls = clsx(
-                'text-[12px] font-bold',
-                plan.variant === 'free' && 'text-emerald-700',
-                plan.variant === 'paid' && 'text-brand-700',
-                plan.variant === 'contact' && 'text-violet-700',
-              )
-              return (
-                <div key={plan.key} className={wrapperCls}>
-                  <div className="flex items-start gap-2">
-                    <PlanIcon size={14} className={iconCls} />
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center justify-between gap-2">
-                        <div className="text-[12.5px] font-bold text-ink leading-tight truncate">
-                          {plan.name}
-                        </div>
-                        <div className={priceCls}>{plan.price}</div>
-                      </div>
-                      <div className="mt-0.5 text-[11px] text-ink-muted leading-snug break-keep">
-                        {plan.desc}
-                      </div>
-                      <a
-                        href={KAKAO_CHAT_URL}
-                        {...EXTERNAL_LINK_PROPS}
-                        onClick={() => onItemClick?.()}
-                        className={clsx(
-                          'mt-1.5 w-full inline-flex items-center justify-center gap-1 py-1.5 rounded-md text-[11.5px] font-bold transition-colors',
-                          plan.variant === 'free' &&
-                            'bg-emerald-600 text-white hover:bg-emerald-700',
-                          plan.variant === 'paid' &&
-                            'bg-brand-500 text-white hover:bg-brand-600',
-                          plan.variant === 'contact' &&
-                            'bg-violet-600 text-white hover:bg-violet-700',
-                        )}
-                      >
-                        <MessageCircle size={12} />
-                        {plan.variant === 'contact' ? '문의하기' : '결제'}
-                      </a>
-                    </div>
-                  </div>
-                </div>
-              )
-            })}
-          </div>
-        )}
+          <ChevronRight size={14} className="shrink-0 text-amber-700" />
+        </NavLink>
       </div>
 
       {/* 하단 푸터 — 회사 정보 */}

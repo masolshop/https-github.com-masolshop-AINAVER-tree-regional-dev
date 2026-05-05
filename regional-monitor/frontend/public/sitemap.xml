@@ -49,6 +49,14 @@
     <priority>0.9</priority>
   </url>
 
+  <!-- 요금제 안내 -->
+  <url>
+    <loc>https://taziyuk.com/pricing</loc>
+    <lastmod>2026-05-05</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.9</priority>
+  </url>
+
   <!-- About / 타지역서비스 안내 -->
   <url>
     <loc>https://taziyuk.com/about/what-is</loc>

@@ -41,6 +41,9 @@ const EssentialCategories = lazy(() => import('@/pages/About/EssentialCategories
 const KeywordLogic = lazy(() => import('@/pages/About/KeywordLogic'))
 const ExposureManagement = lazy(() => import('@/pages/About/ExposureManagement'))
 
+// ── 요금제 페이지 (lazy) ─────────────────────────────
+const Pricing = lazy(() => import('@/pages/Pricing'))
+
 // ── 로그인/권한 필요 페이지 (lazy) ──────────────────────
 const Monitor = lazy(() => import('@/pages/Monitor'))
 const KeywordDiscover = lazy(() => import('@/pages/Keyword/Discover'))
@@ -172,6 +175,7 @@ export default function App() {
               <Route path="/about/essential-categories" element={<EssentialCategories />} />
               <Route path="/about/keyword-logic" element={<KeywordLogic />} />
               <Route path="/about/exposure-management" element={<ExposureManagement />} />
+              <Route path="/pricing" element={<Pricing />} />
               <Route
                 path="/monitor"
                 element={
