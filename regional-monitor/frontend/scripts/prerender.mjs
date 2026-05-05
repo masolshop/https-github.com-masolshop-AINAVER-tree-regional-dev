@@ -138,14 +138,109 @@ async function renderRoute(browser, route) {
     /* no-op */
   }
 
-  // 페이지 HTML 추출 — DOCTYPE + <html> 까지 완전한 형태로
-  const html = await page.evaluate(() => {
+  // 페이지 HTML 추출 — DOCTYPE + <html> 까지 완전한 형태로.
+  // 또한 document.title 을 함께 읽어 prerender 후처리에서 정확한 <title>로 강제한다.
+  const { html, docTitle } = await page.evaluate(() => {
     const doctype = '<!DOCTYPE html>\n'
-    return doctype + document.documentElement.outerHTML
+    return {
+      html: doctype + document.documentElement.outerHTML,
+      docTitle: document.title || '',
+    }
   })
 
   await page.close()
-  return html
+  return dedupeHeadMeta(html, docTitle)
+}
+
+/**
+ * Helmet이 주입한 메타와 정적 fallback 메타가 함께 출력되어 중복되는 문제 해결.
+ *
+ * 문제: prerender 결과에 <title>이 3개, og:url이 2개 등 중복 출력됨.
+ *       네이버 Yeti / Bing 등 일부 크롤러는 첫 번째 값을 채택하여
+ *       모든 페이지가 홈 메타로 인식되는 SEO 문제 발생.
+ *
+ * 정책:
+ *  - <title>: 마지막 인스턴스만 유지 (Helmet이 page-specific 값을 마지막에 주입)
+ *  - <meta name="description">: 마지막만 유지
+ *  - <meta name="keywords">: 마지막만 유지
+ *  - <meta property="og:title">, og:description, og:url, og:image, og:image:alt: 마지막만 유지
+ *  - <meta name="twitter:title">, twitter:description, twitter:url, twitter:image: 마지막만 유지
+ *  - <link rel="canonical">: 마지막만 유지
+ *
+ * 다른 메타(viewport, robots, author, og:type, og:site_name, og:locale,
+ * naver-site-verification 등)는 1회만 노출되므로 그대로 둠.
+ */
+function dedupeHeadMeta(html, docTitle = '') {
+  // head 영역만 처리 (body 안의 태그는 건드리지 않음)
+  const headMatch = html.match(/<head[^>]*>([\s\S]*?)<\/head>/i)
+  if (!headMatch) return html
+  const headStart = headMatch.index + headMatch[0].indexOf('>') + 1
+  const headEnd = headMatch.index + headMatch[0].length - '</head>'.length
+  let headInner = headMatch[1]
+
+  // 1단계: HTML 주석을 임시 제거하여 매칭이 주석 안 텍스트를 잡지 못하도록 함.
+  //         자리 표시자로 치환했다가 끝에 복원.
+  const comments = []
+  headInner = headInner.replace(/<!--[\s\S]*?-->/g, (m) => {
+    comments.push(m)
+    return `\u0000COMMENT_${comments.length - 1}\u0000`
+  })
+
+  // 2단계: 중복 제거 대상 패턴 — 각 패턴에서 모든 인스턴스 중 마지막만 남김.
+  const patterns = [
+    /<title>[\s\S]*?<\/title>/gi,
+    /<meta\s+[^>]*name=["']description["'][^>]*>/gi,
+    /<meta\s+[^>]*name=["']keywords["'][^>]*>/gi,
+    /<meta\s+[^>]*property=["']og:title["'][^>]*>/gi,
+    /<meta\s+[^>]*property=["']og:description["'][^>]*>/gi,
+    /<meta\s+[^>]*property=["']og:url["'][^>]*>/gi,
+    /<meta\s+[^>]*property=["']og:image["'][^>]*>/gi,
+    /<meta\s+[^>]*property=["']og:image:alt["'][^>]*>/gi,
+    /<meta\s+[^>]*property=["']og:image:secure_url["'][^>]*>/gi,
+    /<meta\s+[^>]*name=["']twitter:title["'][^>]*>/gi,
+    /<meta\s+[^>]*name=["']twitter:description["'][^>]*>/gi,
+    /<meta\s+[^>]*name=["']twitter:url["'][^>]*>/gi,
+    /<meta\s+[^>]*name=["']twitter:image["'][^>]*>/gi,
+    /<link\s+[^>]*rel=["']canonical["'][^>]*>/gi,
+  ]
+
+  for (const pattern of patterns) {
+    const matches = [...headInner.matchAll(pattern)]
+    if (matches.length <= 1) continue
+    const toRemove = matches.slice(0, -1)
+    for (let i = toRemove.length - 1; i >= 0; i--) {
+      const m = toRemove[i]
+      headInner =
+        headInner.slice(0, m.index) +
+        headInner.slice(m.index + m[0].length)
+    }
+  }
+
+  // 3단계: docTitle 이 주어졌고 정적 fallback <title> 만 남아있으면
+  //         document.title 값으로 강제 교체 (Helmet 이 head DOM 을 직접
+  //         바꾸지 못하는 prerender 환경 대응).
+  if (docTitle && docTitle.trim().length > 0) {
+    const escaped = docTitle
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+    if (/<title>[\s\S]*?<\/title>/i.test(headInner)) {
+      headInner = headInner.replace(
+        /<title>[\s\S]*?<\/title>/i,
+        `<title>${escaped}</title>`,
+      )
+    } else {
+      headInner = `<title>${escaped}</title>\n` + headInner
+    }
+  }
+
+  // 4단계: 주석 자리 표시자를 원본으로 복원
+  headInner = headInner.replace(
+    /\u0000COMMENT_(\d+)\u0000/g,
+    (_, i) => comments[Number(i)] || '',
+  )
+
+  return html.slice(0, headStart) + headInner + html.slice(headEnd)
 }
 
 // dist/<route>/index.html 로 저장. 루트는 dist/index.html 덮어씀.
