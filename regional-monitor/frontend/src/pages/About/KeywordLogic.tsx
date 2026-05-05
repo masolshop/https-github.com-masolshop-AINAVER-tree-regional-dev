@@ -38,7 +38,7 @@ export default function KeywordLogic() {
     <div className="space-y-12">
       <PageSeo
         title="타지역 키워드로직 — 네이버 1페이지 키워드의 비밀"
-        description="네이버는 상호를 단순 글자가 아닌 형태소로 분해해 검색어와 매칭합니다. 30자 상호 키워드 로직을 6가지 DNA(MAIN·ACTION·MATERIAL·PLACE·BRAND·TAG)로 풀어드립니다."
+        description="네이버는 상호를 형태소로 분해해 검색어와 매칭합니다. 30자 상호를 6가지 DNA로 풀어드립니다."
         path="/about/keyword-logic"
         keywords={[
           '타지역 키워드로직',

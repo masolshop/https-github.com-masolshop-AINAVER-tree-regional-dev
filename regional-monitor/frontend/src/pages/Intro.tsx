@@ -86,8 +86,8 @@ export default function Intro() {
   return (
     <div className="space-y-6 md:space-y-10">
       <PageSeo
-        title="타지역 4종 솔루션 — 키워드 DNA · 발굴 · 경쟁도 · 자동체크"
-        description="네이버 1페이지 노출의 모든 답: 키워드 DNA 파싱, 1페이지 키워드 발굴, 지역별 경쟁도 분석, 노출관리 자동체크까지 4종 솔루션을 한 번에. 발굴→분석→진입→유지 풀퍼널."
+        title="타지역 4종 솔루션 — DNA·발굴·경쟁도·자동체크"
+        description="키워드 DNA 파싱, 1페이지 키워드 발굴, 지역 경쟁도 분석, 노출관리 자동체크 4종 솔루션."
         path="/intro"
         keywords={[
           '타지역서비스',

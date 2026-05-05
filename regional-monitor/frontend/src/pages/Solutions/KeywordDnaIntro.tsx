@@ -75,7 +75,7 @@ export default function KeywordDnaIntro() {
         },
       ]}
       seoPath="/intro/keyword-dna"
-      seoDescription="경쟁사 상호의 키워드 DNA(MAIN·ACTION·MATERIAL·PLACE·BRAND·TAG)를 1초 만에 분해해 네이버 1페이지 노출 정답을 보여드립니다. 1,875개 상호 + 50만 건 회선 데이터 기반."
+      seoDescription="경쟁사 상호의 키워드 DNA를 1초 만에 분해해 네이버 1페이지 노출 정답을 보여드립니다."
       seoKeywords={[
         '타지역서비스',
         '키워드 DNA',

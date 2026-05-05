@@ -82,7 +82,7 @@ export default function MonitorIntro() {
         },
       ]}
       seoPath="/intro/monitor"
-      seoDescription="플레이스 ID 기반 4중 검증(페이지 생존·070 일치·등록 동 일치·상호명 일치)을 매일 새벽 자동 실행합니다. 변경 발생 즉시 이메일·카카오 알림으로 노출 누락에 의한 매출 손실을 막아드립니다."
+      seoDescription="플레이스 ID 기반 4중 검증을 매일 새벽 자동 실행. 변경 발생 즉시 이메일·카카오 알림 제공."
       seoKeywords={[
         '타지역서비스',
         '네이버 노출 모니터링',

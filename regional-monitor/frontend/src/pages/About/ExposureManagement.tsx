@@ -48,7 +48,7 @@ export default function ExposureManagement() {
     <div className="space-y-12">
       <PageSeo
         title="타지역 노출 관리 — 등록보다 유지가 더 중요합니다"
-        description="네이버 1페이지 노출은 변동성이 매우 큽니다. 등록만 해놓고 손 놓고 있으면 노출은 어느 순간 사라집니다. 자동체크솔루션으로 24시간 감시하고 변경 발생 즉시 알림으로 매출 누수를 차단합니다."
+        description="네이버 1페이지 노출은 변동성이 큽니다. 24시간 자동 감시·알림으로 매출 누수를 차단합니다."
         path="/about/exposure-management"
         keywords={[
           '타지역 노출관리',

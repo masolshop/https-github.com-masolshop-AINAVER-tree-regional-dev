@@ -96,7 +96,7 @@ export default function KeywordDiscover() {
     <div className="max-w-6xl mx-auto px-4 lg:px-6 py-6 space-y-5" data-page="solution-tool">
       <PageSeo
         title="네이버 1페이지 키워드 발굴"
-        description="네이버 모바일 플레이스 1페이지에서 메인/타지역 플레이스를 자동 분류해 청정 황금 키워드를 발굴합니다. 검색량이 아닌 회선수 기반으로 진짜 수익 가능한 키워드만 골라드립니다."
+        description="네이버 1페이지 자동 분류로 청정 황금 키워드 발굴. 회선수 기반 수익 가능 키워드만 추천."
         path="/keyword"
         keywords={[
           '네이버 1페이지 키워드',

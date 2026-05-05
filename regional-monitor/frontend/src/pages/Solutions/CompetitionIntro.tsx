@@ -75,7 +75,7 @@ export default function CompetitionIntro() {
         },
       ]}
       seoPath="/intro/competition"
-      seoDescription="키워드 × 지역의 경쟁 강도를 5단계(무경쟁·청정·경쟁·과열·포화)로 가시화합니다. 17개 시도, 230개 시군구, 4,819개 동·리까지 골목 단위 정밀 스캔으로 사장님이 들어갈 수 있는 빈 자리를 데이터로 찾아드립니다."
+      seoDescription="키워드×지역 경쟁 강도를 5단계로 가시화. 4,819개 동·리 단위로 진입 가능 빈 자리를 찾습니다."
       seoKeywords={[
         '타지역서비스',
         '지역 경쟁도',

@@ -44,8 +44,8 @@ export default function Home() {
   return (
     <div className="space-y-10">
       <PageSeo
-        title="타지역서비스 네이버 노출 자동 체크 및 1페이지 최적화 솔루션"
-        description="타지역서비스(070) 사장님을 위한 네이버 플레이스 노출 자동 체크 + 1페이지 노출 최적화 4종 솔루션. 키워드 DNA 분석·발굴·지역 경쟁도·노출관리까지 한 번에."
+        title="타지역서비스 네이버 노출 자동체크 솔루션"
+        description="타지역서비스(070) 사장님을 위한 네이버 플레이스 노출 자동체크와 1페이지 최적화 4종 솔루션."
         path="/"
         keywords={[
           '타지역서비스',

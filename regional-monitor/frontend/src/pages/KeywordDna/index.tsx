@@ -64,7 +64,7 @@ export default function KeywordDnaPage() {
     <div className="space-y-5" data-page="solution-tool">
       <PageSeo
         title="타지역 키워드 DNA 파싱 솔루션 — 1초 분석"
-        description="시드 키워드 한 개로 6가지 DNA(MAIN·ACTION·MATERIAL·PLACE·BRAND·TAG)를 1초 만에 분해. 1,875개 상호 + 50만 회선 데이터 기반의 규칙형 키워드 분석 엔진."
+        description="시드 키워드 한 개로 6가지 DNA를 1초 만에 분해하는 규칙형 키워드 분석 엔진입니다."
         path="/keyword-dna"
         keywords={[
           '키워드 DNA',

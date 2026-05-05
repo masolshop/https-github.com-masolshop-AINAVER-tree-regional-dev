@@ -374,7 +374,7 @@ export default function Competition() {
     <div className="px-4 lg:px-8 py-6 max-w-7xl mx-auto space-y-6" data-page="solution-tool">
       <PageSeo
         title="지역별 노출 경쟁도 분석 솔루션"
-        description="키워드 × 지역의 경쟁 강도를 5단계(무경쟁·청정·경쟁·과열·포화)로 가시화합니다. 17개 시도, 230개 시군구, 4,819개 동·리까지 골목 단위 정밀 스캔으로 진입 가능한 빈 자리를 찾아드립니다."
+        description="키워드×지역 경쟁 강도를 5단계로 가시화. 4,819개 동·리 단위로 진입 가능 빈 자리를 찾습니다."
         path="/competition"
         keywords={[
           '지역 경쟁도',

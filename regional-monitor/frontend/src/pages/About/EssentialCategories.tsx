@@ -86,7 +86,7 @@ export default function EssentialCategories() {
     <div className="space-y-12">
       <PageSeo
         title="타지역 필수업종 — 시장규모 정렬"
-        description="타지역서비스 운영이 필수이거나 유효한 업종 리스트를 회선수 기준 시장규모로 정렬해 보여드립니다. 흥신소·하수구·열쇠·이사·청소 등 출장형 업종이 핵심입니다."
+        description="타지역서비스 운영이 필수·유효한 업종을 회선수 기준 시장규모로 정렬해 보여드립니다."
         path="/about/essential-categories"
         keywords={[
           '타지역서비스 업종',

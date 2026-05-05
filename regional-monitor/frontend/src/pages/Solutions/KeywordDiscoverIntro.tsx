@@ -75,7 +75,7 @@ export default function KeywordDiscoverIntro() {
         },
       ]}
       seoPath="/intro/keyword-discover"
-      seoDescription="검색량 함정에서 벗어나세요. 회선수 50만 건 검증으로 경쟁 적고 수익 가능한 청정 황금 키워드를 자동 발굴합니다. 4단계 경쟁도(청정·경쟁·과열·포화)로 진입 가능 키워드만 골라드립니다."
+      seoDescription="검색량 함정 대신 회선수 50만 건 검증으로 진입 가능한 청정 황금 키워드를 자동 발굴합니다."
       seoKeywords={[
         '타지역서비스',
         '네이버 1페이지 키워드',
