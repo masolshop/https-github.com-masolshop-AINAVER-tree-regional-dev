@@ -238,11 +238,20 @@
     </script>
   </head>
   <body>
+    <!--
+      SEO 보조 H1 (sr-only):
+      검색엔진(Bing/Google)이 SSR 단계에서 페이지를 fetch했을 때
+      즉시 H1을 인식할 수 있도록 시각적으로 숨겨진 H1을 본문 최상단에 배치.
+      사용자에게는 보이지 않으며, 스크린리더와 검색엔진은 정상 인식.
+    -->
+    <h1 style="position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0;">
+      타지역서비스 네이버노출 자동체크 솔루션 — 타지역닷컴
+    </h1>
+
     <div id="root"></div>
 
     <!-- SEO 보조: 자바스크립트 비활성 환경에서도 핵심 키워드/문구 노출 -->
     <noscript>
-      <h1>타지역서비스 네이버노출 자동체크 솔루션 — 타지역닷컴</h1>
       <p>
         타지역서비스(070) 사장님을 위한 고질적인 네이버 플레이스 누락을 자동 체크하여
         고객문의 누수 및 광고비 손실을 막아드립니다.

@@ -138,11 +138,11 @@ export default function Home() {
               <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-pill bg-white/15 text-white text-sm font-bold mb-3">
                 <Radio size={16} /> SOLUTION 04
               </div>
-              <h3 className="text-h1 text-white mb-2 break-keep">
+              <h2 className="text-h1 text-white mb-2 break-keep">
                 네이버 노출 자동 체크
                 <br />
                 노출 상황을 날마다 알림
-              </h3>
+              </h2>
               <p className="text-base md:text-lg text-white/90 leading-relaxed break-keep">
                 매일 새벽 3시 4중 자동 검증. 노출 변경 즉시 이메일·카카오 알림으로
                 내 매장의 상태를 매일 받아보세요.
@@ -348,9 +348,9 @@ export default function Home() {
         <Card variant="dark" className="min-h-[200px]">
           <div className="flex flex-col gap-5">
             <div>
-              <h3 className="text-h1 text-white mb-2 break-keep">
+              <h2 className="text-h1 text-white mb-2 break-keep">
                 국내 최초 타지역서비스 4종 솔루션 무료 플랜
-              </h3>
+              </h2>
               <p className="text-base md:text-lg text-white/85 leading-relaxed break-keep">
                 키워드 DNA 분석 · SEO 최적화 · 지역 경쟁도 분석 · 노출 자동 체크까지
                 4종을 모두 무료로 체험하실 수 있습니다.
