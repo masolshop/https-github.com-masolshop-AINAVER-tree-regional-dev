@@ -25,16 +25,13 @@
     <meta name="apple-mobile-web-app-title" content="타지역닷컴" />
     <meta name="application-name" content="타지역닷컴" />
 
-    <!-- ───────── SEO 핵심 ───────── -->
+    <!-- ───────── SEO 핵심 ─────────
+      title / description / keywords 는 PageSeo(react-helmet-async)가 라우트별로 주입한다.
+      prerender(puppeteer) 가 빌드 시 페이지별 정적 HTML을 생성하므로, 정적 기본값은
+      Helmet 이 주입에 실패한 fallback 페이지(없는 라우트 = SPA 404 → 홈) 용도로만 둔다.
+      author/robots/googlebot 등 사이트 공통값만 정적으로 노출.
+    -->
     <title>타지역서비스 네이버노출 자동체크 솔루션 | 타지역닷컴</title>
-    <meta
-      name="description"
-      content="타지역서비스(070) 사장님을 위한 고질적인 네이버 플레이스 누락을 자동 체크하여 고객문의 누수 및 광고비 손실을 막아드립니다."
-    />
-    <meta
-      name="keywords"
-      content="타지역서비스, 타지역닷컴, 네이버노출, 네이버 플레이스, 노출 자동체크, 070 가상번호, 통신사 부가서비스, 출장 광고, 네이버 플레이스 페이지 삭제, 네이버 플레이스 모니터링, 광고 손실 방지"
-    />
     <meta name="author" content="(주)마솔샵 / 타지역닷컴" />
     <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1" />
     <meta name="googlebot" content="index, follow" />
@@ -45,34 +42,14 @@
     <link rel="alternate" type="application/rss+xml" title="타지역닷컴 RSS 피드" href="https://taziyuk.com/rss.xml" />
 
     <!--
-      ⚠️ og:url / twitter:url / canonical 은 페이지별로 달라야 하므로 PageSeo 가 주입.
-      og:title / og:description / og:image 등은 SSR HTML 단계에서 봇이 즉시 발견할 수 있도록
-      사이트 기본값을 정적으로 노출. SPA 라우트 전환 시 React Helmet 이 페이지별 값으로 덮어씀.
-      (Bing Webmaster Tools "Open Graph 제목/설명 없음" 알림 해소)
+      OG / Twitter Card 의 페이지별 값(title/description/url/image)은 PageSeo + prerender 가 주입.
+      여기에는 페이지 무관 공통 값(image:type/width/height)만 두어 중복 메타태그 충돌 방지.
+      (이전: 정적 og:title/og:description 이 prerender 결과보다 먼저 head 에 위치해
+       일부 크롤러가 첫 번째 값을 우선 채택하는 문제가 있었음)
     -->
-    <meta property="og:type" content="website" />
-    <meta property="og:site_name" content="타지역닷컴" />
-    <meta property="og:locale" content="ko_KR" />
-    <meta property="og:title" content="타지역서비스 네이버노출 자동체크 솔루션 | 타지역닷컴" />
-    <meta
-      property="og:description"
-      content="타지역서비스(070) 사장님을 위한 고질적인 네이버 플레이스 누락을 자동 체크하여 고객문의 누수 및 광고비 손실을 막아드립니다."
-    />
-    <meta property="og:image" content="https://taziyuk.com/og-thumbnail.png" />
-    <meta property="og:image:secure_url" content="https://taziyuk.com/og-thumbnail.png" />
     <meta property="og:image:type" content="image/png" />
     <meta property="og:image:width" content="1024" />
     <meta property="og:image:height" content="510" />
-    <meta property="og:image:alt" content="타지역서비스 네이버노출 자동체크 솔루션 - 타지역닷컴" />
-
-    <!-- Twitter Card (페이지별 값은 PageSeo 가 덮어씀) -->
-    <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:title" content="타지역서비스 네이버노출 자동체크 솔루션 | 타지역닷컴" />
-    <meta
-      name="twitter:description"
-      content="타지역서비스(070) 사장님을 위한 고질적인 네이버 플레이스 누락을 자동 체크하여 고객문의 누수 및 광고비 손실을 막아드립니다."
-    />
-    <meta name="twitter:image" content="https://taziyuk.com/og-thumbnail.png" />
 
     <!-- ───────── Google Analytics 4 (gtag.js) — 빌드 시 VITE_GA_MEASUREMENT_ID 가 있으면 활성화 ───────── -->
     <script>
