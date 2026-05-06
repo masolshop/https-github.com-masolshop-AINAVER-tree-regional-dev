@@ -60,7 +60,7 @@ export default function Monitor() {
     <div data-page="solution-tool">
       <PageSeo
         title="네이버 노출관리 자동체크 솔루션"
-        description="플레이스 ID 4중 검증을 매일 새벽 자동 실행. 변경 즉시 이메일·카카오 알림으로 매출 손실 차단."
+        description="플레이스 ID 4중 검증을 매일 1회 자동 실행. 변경 즉시 이메일·카카오 알림으로 매출 손실 차단."
         path="/monitor"
         keywords={[
           '네이버 노출관리',

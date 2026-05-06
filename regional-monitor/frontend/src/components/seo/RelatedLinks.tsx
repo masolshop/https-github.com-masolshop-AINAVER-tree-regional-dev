@@ -132,7 +132,7 @@ export const ALL_RELATED_LINKS: RelatedLinkItem[] = [
   {
     to: '/intro/monitor',
     title: '타지역서비스 노출관리 자동체크솔루션',
-    desc: '24시간 노출 보초병. 매일 새벽 3시 4중 자동 검증(페이지/070/동/상호명). 변동 즉시 이메일·카카오 알림.',
+    desc: '24시간 노출 보초병. 매일 1회 자동 검증(페이지/070/동/상호명 4중). 변동 즉시 이메일·카카오 알림.',
     badge: 'SOLUTION 04',
   },
 ]

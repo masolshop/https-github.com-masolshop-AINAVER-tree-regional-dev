@@ -158,7 +158,7 @@ export default function Home() {
                 노출 상황을 날마다 알림
               </h2>
               <p className="text-base md:text-lg text-white/90 leading-relaxed break-keep">
-                매일 새벽 3시 4중 자동 검증. 노출 변경 즉시 이메일·카카오 알림으로
+                매일 1회 자동 검증(4중). 노출 변경 즉시 이메일·카카오 알림으로
                 내 매장의 상태를 매일 받아보세요.
               </p>
             </div>
@@ -352,7 +352,7 @@ export default function Home() {
             step="STEP 04"
             icon={<BellRing size={20} />}
             title="일일 노출 자동 알림"
-            desc="매일 새벽 3시 4중 자동 검증. 노출 변경 즉시 이메일·카카오로 알려드립니다."
+            desc="매일 1회 자동 검증(4중). 노출 변경 즉시 이메일·카카오로 알려드립니다."
           />
         </div>
       </section>

@@ -76,7 +76,7 @@ const SOLUTIONS: SolutionLink[] = [
     to: '/intro/monitor',
     title: '네이버노출관리 자동체크솔루션',
     shortLabel: '노출관리',
-    tagline: '노출 사라진 걸 일주일 뒤에 알면 늦습니다. 매일 새벽 3시, 사장님 대신 깨어 있습니다.',
+    tagline: '노출 사라진 걸 일주일 뒤에 알면 늦습니다. 매일 1회 자동 검증, 사장님 대신 깨어 있습니다.',
     icon: Radio,
     accent: 'from-rose-500 to-orange-500',
   },
@@ -186,7 +186,7 @@ export default function Intro() {
           <FunnelStep
             num="STEP 4"
             title="노출 지속 유지"
-            desc="네이버는 말없이 노출을 거두어 갑니다. 매일 새벽 3시 자동 검증 — 변경 즉시 알림으로 매출 누락을 24시간 안에 차단합니다."
+            desc="네이버는 말없이 노출을 거두어 갑니다. 매일 1회 자동 검증 — 변경 즉시 알림으로 매출 누락을 24시간 안에 차단합니다."
             tone="rose"
           />
         </div>

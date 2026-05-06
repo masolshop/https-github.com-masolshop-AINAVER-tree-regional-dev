@@ -19,7 +19,7 @@ export default function MonitorIntro() {
         </>
       }
       shortLabel="네이버노출관리 자동체크솔루션"
-      tagline="네이버는 말없이 노출을 거두어 갑니다. 일주일 늦게 알면, 그만큼이 그대로 매출 손실입니다. 매일 새벽 3시, 사장님 대신 자동으로 검증하고 — 변경 즉시 알림으로 깨워드립니다."
+      tagline="네이버는 말없이 노출을 거두어 갑니다. 일주일 늦게 알면, 그만큼이 그대로 매출 손실입니다. 매일 1회 자동 검증, 사장님 대신 검증하고 — 변경 즉시 알림으로 깨워드립니다."
       icon={Radio}
       accent="from-rose-500 to-orange-500"
       ctaTo="/monitor"
@@ -29,7 +29,7 @@ export default function MonitorIntro() {
         bullets: [
           '070 번호 한 개만 등록하시면 — 플레이스 ID·등록 동·상호명을 자동 추출, 사장님 손 갈 일이 없습니다',
           '4중 검증: 페이지 생존 / 070 일치 / 등록 동 일치 / 상호명 일치',
-          '매일 새벽 03:00 KST 자동 실행 — 변경 발생 시 즉시 이메일·카카오 알림',
+          '매일 1회 자동 검증 — 변경 발생 시 즉시 이메일·카카오 알림',
           '응답 0.2~0.3초/건, 정확도 99% 이상, 차단 위험 거의 없음',
           'verdict 4종 분류: OK / DEAD / DONG_MISMATCH / REGION_MISMATCH — 원인까지 한 줄로 알려드립니다',
         ],
@@ -68,7 +68,7 @@ export default function MonitorIntro() {
         {
           step: 'STEP 2',
           title: '자동 검증 시작',
-          desc: '매일 새벽 03:00 KST 자동 실행. 4중 검증을 수행하여 verdict(OK/DEAD/DONG_MISMATCH/REGION_MISMATCH) 산출. 사장님은 잠만 주무세요.',
+          desc: '매일 1회 자동 검증. 4중 검증을 수행하여 verdict(OK/DEAD/DONG_MISMATCH/REGION_MISMATCH) 산출. 사장님은 잠만 주무세요.',
         },
         {
           step: 'STEP 3',
@@ -82,7 +82,7 @@ export default function MonitorIntro() {
         },
       ]}
       seoPath="/intro/monitor"
-      seoDescription="플레이스 ID 기반 4중 검증을 매일 새벽 자동 실행. 변경 발생 즉시 이메일·카카오 알림 제공."
+      seoDescription="플레이스 ID 기반 4중 검증을 매일 1회 자동 실행. 변경 발생 즉시 이메일·카카오 알림 제공."
       seoKeywords={[
         '타지역서비스',
         '네이버 노출 모니터링',
