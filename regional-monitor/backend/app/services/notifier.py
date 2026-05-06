@@ -83,13 +83,19 @@ async def notify_user_events(
 
     Returns: {"email_sent": 0/1, "slack_sent": 0/1, "skipped": N}
     """
-    if not events:
+    has_events = bool(events)
+    has_summary = bool(run_summary and run_summary.get("total"))
+
+    # NOTE (2026-05): 변화가 없어도 매일 1회 자동 검증 결과 요약 메일 발송.
+    # events 가 빈 리스트여도 run_summary(회차 요약)가 있으면 "변경 없음 · 정상 운영"
+    # 일일 리포트 형태로 메일을 보낸다. 둘 다 없으면 즉시 return.
+    if not has_events and not has_summary:
         return {"email_sent": 0, "slack_sent": 0, "skipped": 0}
 
     sent_email = 0
     sent_slack = 0
 
-    # 1) Email (모든 플랜)
+    # 1) Email (모든 플랜) — 변화가 없어도 회차 요약이 있으면 일일 리포트로 발송
     if user.email_alerts and user.email:
         try:
             ok = await asyncio.get_event_loop().run_in_executor(
@@ -103,7 +109,7 @@ async def notify_user_events(
             logger.warning("email send failed for user=%s: %s", user.id, exc)
 
     # 2) Slack (Enterprise — webhook 설정되어 있을 때만)
-    if user.slack_webhook:
+    if user.slack_webhook and has_events:
         try:
             ok = await _send_slack(user.slack_webhook, user, events, place_lookup)
             if ok:
@@ -227,6 +233,13 @@ def _build_subject(events: list[ChangeEvent], run_summary: dict | None = None) -
     if run_summary and run_summary.get("total"):
         total_str = f" ({run_summary['total']}곳 중)"
 
+    # 변경 없음 — 일일 정상 운영 리포트
+    if n == 0:
+        today = now_kst().strftime("%m/%d")
+        if run_summary and run_summary.get("total"):
+            return f"[타지역서비스] ✅ {today} 정상 운영 — 변경 없음 ({run_summary['total']}곳 검증)"
+        return f"[타지역서비스] ✅ {today} 정상 운영 — 변경 없음"
+
     if danger:
         return f"[타지역서비스] 🚨 노출 변경 {n}건 감지 — 위험 {danger}건{total_str}"
     if warning:
@@ -265,6 +278,22 @@ def _trigger_label(trigger: str | None, mode: str | None) -> str:
     return f"{t} · {m}" if m else t
 
 
+
+_NO_CHANGE_HTML = """
+                <tr><td style="padding:0;">
+                  <table role="presentation" style="width:100%;border-collapse:collapse;background:#F0FDF4;border-left:4px solid #059669;margin-bottom:8px;border-radius:8px;overflow:hidden;">
+                    <tr>
+                      <td style="padding:18px 16px;vertical-align:top;width:44px;font-size:24px;">✅</td>
+                      <td style="padding:18px 16px 18px 0;">
+                        <div style="font-size:14px;font-weight:700;color:#1F2D4D;line-height:1.4;">변경 사항 없음 — 모든 등록 장소가 안정적으로 노출되고 있습니다.</div>
+                        <div style="margin-top:6px;font-size:13px;color:#374151;line-height:1.5;">매일 1회 자동 검증을 통해 네이버 노출 상태를 점검했으며, 회복/이탈/상호 불일치 등 변경 이벤트는 발견되지 않았습니다.</div>
+                        <div style="margin-top:8px;font-size:11px;color:#059669;font-weight:700;letter-spacing:.02em;">[정상 운영]</div>
+                      </td>
+                    </tr>
+                  </table>
+                </td></tr>
+                """
+
 def _build_email_body(
     user: User,
     events: list[ChangeEvent],
@@ -299,9 +328,14 @@ def _build_email_body(
 
     # ─── PLAIN TEXT ───
     if plain:
+        # 변경 없음 (n==0) — 일일 정상 운영 리포트
+        if n == 0:
+            header_line = f"{name}님, 매일 1회 자동 검증 결과 — 변경 사항 없음 (정상 운영)"
+        else:
+            header_line = f"{name}님, 타지역서비스 자동 검증에서 변경 {n}건이 감지되었습니다."
         lines = [
-            f"{name}님, 타지역서비스 자동 검증에서 변경 {n}건이 감지되었습니다.",
-            f"감지 시각: {when}",
+            header_line,
+            f"검증 시각: {when}",
             f"검증 모드: {trigger_label}",
             "",
         ]
@@ -315,15 +349,20 @@ def _build_email_body(
             if ok_rate is not None:
                 lines.append(f"  정상률: {ok_rate}%  (정상+변경)/등록   소요시간: {elapsed}")
             lines.append("")
-        lines.append("─── 변경 상세 ───")
-        for e in events:
-            place = place_lookup.get(e.place_id_ref)
-            phone = getattr(place, "phone", "?")
-            biz   = getattr(place, "business_name", "(이름 없음)")
-            meta  = _meta(e.event_type)
-            lines.append(f"  {meta['emoji']} [{meta['label']}] {biz} ({phone})")
-            lines.append(f"     {e.summary}  ({e.prev_verdict} → {e.new_verdict})")
+        if n == 0:
+            lines.append("─── 변경 상세 ───")
+            lines.append("  ✅ 변경 없음 — 모든 등록 장소가 안정적으로 노출되고 있습니다.")
             lines.append("")
+        else:
+            lines.append("─── 변경 상세 ───")
+            for e in events:
+                place = place_lookup.get(e.place_id_ref)
+                phone = getattr(place, "phone", "?")
+                biz   = getattr(place, "business_name", "(이름 없음)")
+                meta  = _meta(e.event_type)
+                lines.append(f"  {meta['emoji']} [{meta['label']}] {biz} ({phone})")
+                lines.append(f"     {e.summary}  ({e.prev_verdict} → {e.new_verdict})")
+                lines.append("")
         lines.append(f"대시보드에서 자세히 보기: {_HISTORY_URL}")
         lines.append("")
         lines.append("─────────────────────────────")
@@ -444,7 +483,7 @@ def _build_email_body(
               </div>
               <h1 style="margin:8px 0 0;font-size:22px;font-weight:800;line-height:1.35;color:white;">
                 {_html_escape(name)}님,<br>
-                변경 {n}건이 감지되었습니다
+                {('변경 없음 — 정상 운영 중' if n == 0 else f'변경 {n}건이 감지되었습니다')}
               </h1>
               <div style="margin-top:10px;font-size:13px;color:rgba(255,255,255,.75);">
                 {when}
@@ -459,7 +498,7 @@ def _build_email_body(
           <tr>
             <td style="padding:8px 28px 4px 28px;">
               <div style="font-size:12px;font-weight:700;color:#6B7280;letter-spacing:.04em;text-transform:uppercase;">
-                변경 상세 · {n}건
+                {('오늘의 검증 결과' if n == 0 else f'변경 상세 · {n}건')}
               </div>
             </td>
           </tr>
@@ -468,7 +507,7 @@ def _build_email_body(
           <tr>
             <td style="padding:8px 28px 16px 28px;">
               <table role="presentation" style="width:100%;border-collapse:collapse;">
-                {''.join(rows_html)}
+                {''.join(rows_html) if rows_html else _NO_CHANGE_HTML}
               </table>
             </td>
           </tr>

@@ -320,9 +320,11 @@ async def _verify_user_places_locked(
             )
 
             # ── 알림 발송 (best-effort, ChangeEvent 가 있을 때만) ──
+            # 변화가 없어도 매일 1회 자동 검증 결과 요약 메일을 발송한다.
+            # (notifier 가 events 빈 리스트 + run_summary 로 "정상 운영" 리포트를 생성)
             new_events = stats.pop("new_events", []) or []
             place_lookup = stats.pop("place_lookup", {}) or {}
-            if settings.NOTIFY_ENABLED and new_events:
+            if settings.NOTIFY_ENABLED and len(results) > 0:
                 try:
                     user = await db.get(User, user_id)
                     if user is not None:
