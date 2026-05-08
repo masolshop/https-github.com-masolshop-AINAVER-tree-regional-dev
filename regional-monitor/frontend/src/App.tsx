@@ -23,6 +23,7 @@ import { useAuthStore } from '@/store/auth'
 import { configureAuth } from '@/api/client'
 import { useMe } from '@/hooks/useAuth'
 import { useGaPageView } from '@/hooks/useGaPageView'
+import { useNaverWcsPageView } from '@/hooks/useNaverWcs'
 
 // ── 즉시 로드 (첫 화면 LCP 최적화) ────────────────────
 import Home from '@/pages/Home'
@@ -142,6 +143,12 @@ function GaTracker() {
   return null
 }
 
+/** SPA 라우트 변경 시 네이버 프리미엄 로그분석/전환추적 페이지뷰 자동 송신 */
+function NaverWcsTracker() {
+  useNaverWcsPageView()
+  return null
+}
+
 /** lazy 페이지 로딩 중 스피너 */
 function PageFallback() {
   return (
@@ -160,6 +167,7 @@ export default function App() {
       <BrowserRouter>
         <AuthBootstrap />
         <GaTracker />
+        <NaverWcsTracker />
         <Suspense fallback={<PageFallback />}>
           <Routes>
             {/* 비밀번호 재설정 — 인증 없이 접근, AppLayout 외부 */}

@@ -59,6 +59,19 @@
       window.gtag = function () { window.dataLayer.push(arguments); };
     </script>
 
+    <!-- ───────── 네이버 프리미엄 로그분석 / 전환추적 공통 스크립트 (모든 페이지) ───────── -->
+    <!-- 신청 사이트: https://taziyuk.com  ·  공통 인증키(wa): s_520428b8a8d -->
+    <script type="text/javascript" src="//wcs.naver.net/wcslog.js"></script>
+    <script type="text/javascript">
+      if (!wcs_add) var wcs_add = {};
+      wcs_add["wa"] = "s_520428b8a8d";
+      if (!_nasa) var _nasa = {};
+      if (window.wcs) {
+        wcs.inflow();
+        wcs_do(_nasa);
+      }
+    </script>
+
     <!-- ───────── 구조화 데이터 (JSON-LD): 검색결과 리치 스니펫 ───────── -->
     <script type="application/ld+json">
     {
