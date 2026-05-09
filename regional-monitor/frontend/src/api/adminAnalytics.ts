@@ -20,6 +20,13 @@ export interface GaHealth {
   credentials_source: 'json_env' | 'file' | 'oauth_user' | null
   oauth_configured: boolean
   oauth_connected: boolean
+  /**
+   * OAuth refresh_token 이 실제로 사용 가능한 상태인지.
+   *  - true  : GA4 Data API 호출 가능
+   *  - false : 토큰 파일은 있으나 만료/revoke 됨 → 재인증 필요
+   *  - null  : OAuth 를 사용하지 않음(서비스 계정 자격증명 사용 중)
+   */
+  oauth_token_valid: boolean | null
   oauth_account_email: string | null
 }
 

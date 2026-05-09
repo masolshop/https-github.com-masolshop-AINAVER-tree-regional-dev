@@ -79,6 +79,61 @@ def get_connected_account_email() -> str | None:
         return None
 
 
+def is_user_token_valid() -> bool:
+    """저장된 OAuth 토큰이 실제로 사용 가능한지 검증.
+
+    토큰 파일이 존재한다고 무조건 유효한 것은 아니다 —
+    Google 측에서 refresh_token 이 만료/회수(revoke)된 경우
+    `invalid_grant: Token has been expired or revoked` 가 발생한다.
+    (테스트 모드 OAuth 동의 화면의 7일 만료 정책, 사용자의 권한 회수,
+    6개월 미사용, 동일 client_id refresh_token 한도 초과 등)
+
+    이 함수는 access_token 이 만료/임박일 때만 실제 refresh 를 시도한다.
+    아직 충분히 유효한 토큰(>5분 남음)은 그대로 True 로 판단하여 매번
+    Google refresh API 호출을 유발하지 않는다.
+
+    Returns:
+        bool: True 면 GA4 Data API 호출이 가능, False 면 재인증 필요.
+    """
+    if not has_user_token():
+        return False
+    try:
+        from google.oauth2.credentials import Credentials  # noqa: F401
+    except ImportError:
+        return False
+
+    try:
+        with open(_token_file_path(), "r", encoding="utf-8") as f:
+            data = json.load(f)
+
+        # refresh_token 이 없으면 더 이상 갱신 불가 → 무효
+        if not data.get("refresh_token"):
+            return False
+
+        # 1) access_token 이 아직 충분히 살아있으면(>5분) 유효로 간주
+        expiry_str = data.get("expiry")
+        if expiry_str:
+            try:
+                from datetime import datetime, timedelta
+                # ISO 형식의 naive UTC datetime 으로 저장됨
+                expiry = datetime.fromisoformat(expiry_str)
+                if expiry.tzinfo is not None:
+                    expiry = expiry.replace(tzinfo=None)
+                now_utc = datetime.utcnow()
+                if expiry - now_utc > timedelta(minutes=5):
+                    return True
+            except Exception:
+                # 파싱 실패 시 아래의 실제 refresh 시도로 폴백
+                pass
+
+        # 2) 만료가 임박했거나 이미 만료 → 실제 refresh 시도
+        creds = build_user_credentials(force_refresh=True)
+        return creds is not None and bool(getattr(creds, "valid", False))
+    except Exception as e:
+        logger.warning("OAuth 토큰 유효성 검증 실패: %s", e)
+        return False
+
+
 # ──────────────────────────────────────────────────────────────
 # 동의 URL 발급 / 콜백 교환
 # ──────────────────────────────────────────────────────────────

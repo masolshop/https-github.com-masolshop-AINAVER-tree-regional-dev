@@ -74,7 +74,14 @@ def _safe_call(fn, *args, **kwargs) -> Any:
 
 @router.get("/health")
 def health() -> dict:
-    """GA4 자격 증명·Property ID 설정 여부."""
+    """GA4 자격 증명·Property ID 설정 여부.
+
+    `oauth_connected` 는 토큰 파일 존재 여부만 본다.
+    `oauth_token_valid` 는 실제로 refresh 가 가능한지(즉 GA4 호출이
+    실제로 작동할지) 검증한 결과이다 — 만료/revoke 된 refresh_token 의 경우
+    파일은 존재해도 False 가 된다. 프론트는 이 값을 보고 재인증 안내를
+    표시한다.
+    """
     # 자격 증명 소스 우선순위: oauth_user > json_env > file
     has_oauth = ga4_oauth.has_user_token()
     if has_oauth:
@@ -85,12 +92,21 @@ def health() -> dict:
         cred_source = "file"
     else:
         cred_source = None
+
+    # 토큰 유효성 — OAuth 사용 시에만 의미가 있다.
+    # 서비스 계정 자격증명은 별도의 만료 개념이 없으므로 None 으로 둔다.
+    if has_oauth:
+        token_valid: bool | None = ga4_oauth.is_user_token_valid()
+    else:
+        token_valid = None
+
     return {
         "configured": ga4_analytics.is_ga4_configured(),
         "property_id": settings.GA4_PROPERTY_ID or None,
         "credentials_source": cred_source,
         "oauth_configured": ga4_oauth.is_oauth_configured(),
         "oauth_connected": has_oauth,
+        "oauth_token_valid": token_valid,
         "oauth_account_email": ga4_oauth.get_connected_account_email(),
     }
 

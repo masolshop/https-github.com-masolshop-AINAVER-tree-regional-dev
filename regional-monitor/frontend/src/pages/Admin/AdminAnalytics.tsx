@@ -165,6 +165,21 @@ export function AdminAnalytics() {
     return <NotConfiguredCard health={healthQ.data} onChanged={() => healthQ.refetch()} />
   }
 
+  // OAuth 토큰이 만료/회수된 상태 — 데이터 위젯을 띄워봤자 모두 503 이므로
+  // 별도의 재인증 안내 카드만 노출하여 사용자가 즉시 복구할 수 있게 한다.
+  const tokenInvalid =
+    healthQ.data?.credentials_source === 'oauth_user' &&
+    healthQ.data?.oauth_token_valid === false
+
+  if (tokenInvalid) {
+    return (
+      <OAuthReconnectCard
+        health={healthQ.data!}
+        onChanged={() => healthQ.refetch()}
+      />
+    )
+  }
+
   return (
     <div className="space-y-6">
       {/* OAuth 연결 상태 표시 */}
@@ -363,6 +378,93 @@ function OAuthConnectCard({ onChanged }: { onChanged?: () => void }) {
             ※ 인증 새 창에서 "확인되지 않은 앱" 경고가 보이면 <strong>고급 → (계속) 이동</strong>을 클릭하세요.
             (GCP 동의 화면이 외부/테스트 모드일 때 발생하는 정상 안내)
           </p>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ──────────────────────────────────────────────────────────────
+// OAuth 토큰 만료/회수 — 재인증 안내 카드
+// ──────────────────────────────────────────────────────────────
+
+function OAuthReconnectCard({
+  health,
+  onChanged,
+}: {
+  health: { oauth_account_email?: string | null; property_id?: string | null }
+  onChanged?: () => void
+}) {
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState<string | null>(null)
+
+  // 콜백 완료 시 부모창 갱신용 메시지 수신
+  useEffect(() => {
+    const handler = (ev: MessageEvent) => {
+      if (ev.data && ev.data.type === 'ga4-oauth-result') {
+        onChanged?.()
+      }
+    }
+    window.addEventListener('message', handler)
+    return () => window.removeEventListener('message', handler)
+  }, [onChanged])
+
+  const onReconnect = async () => {
+    setBusy(true)
+    setErr(null)
+    try {
+      const r = await AdminAnalyticsApi.oauthStart()
+      window.open(r.authorization_url, '_blank', 'width=520,height=680')
+    } catch (e: any) {
+      setErr(e?.message || 'OAuth 시작 실패')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="rounded-card border-2 border-amber-300 bg-gradient-to-br from-amber-50 to-white p-6 shadow-card">
+      <div className="flex items-start gap-3">
+        <AlertTriangle className="h-6 w-6 text-amber-600 shrink-0 mt-0.5" />
+        <div className="flex-1">
+          <h3 className="text-lg font-bold text-amber-900 mb-1">
+            🔄 GA4 재인증이 필요합니다
+          </h3>
+          <p className="text-sm text-ink mb-3 leading-relaxed">
+            <strong>{health.oauth_account_email || '연결된 계정'}</strong>의
+            OAuth 토큰이 <strong>만료되었거나 권한이 회수</strong>되어
+            GA4 데이터 API 호출이 실패하고 있습니다.
+            아래 버튼을 눌러 동일한 Google 계정으로 다시 인증하면 즉시 복구됩니다.
+          </p>
+          <div className="rounded-md bg-amber-100/60 border border-amber-200 px-3 py-2 mb-4 text-xs text-amber-900 leading-relaxed">
+            <strong>💡 자주 발생하는 원인</strong>
+            <ul className="mt-1 ml-4 list-disc space-y-0.5">
+              <li>
+                Google Cloud OAuth 동의 화면이 <strong>"테스트(Testing)" 모드</strong>인 경우
+                refresh_token 은 <strong>7일 후 자동 만료</strong>됩니다.
+              </li>
+              <li>사용자가 myaccount.google.com 에서 앱 권한을 회수한 경우</li>
+              <li>refresh_token 을 6개월 이상 사용하지 않은 경우</li>
+            </ul>
+            <div className="mt-2">
+              ⚙ 영구 해결: GCP 콘솔 → "OAuth 동의 화면" → <strong>앱 게시(In production)</strong>
+              또는 본인 Gmail 을 <strong>테스트 사용자</strong>에 등록하세요.
+            </div>
+          </div>
+          <button
+            onClick={onReconnect}
+            disabled={busy}
+            className="inline-flex items-center gap-2 px-5 py-2.5 rounded-md bg-amber-600 hover:bg-amber-700 text-white font-semibold shadow disabled:opacity-50"
+          >
+            <RefreshCw className={`h-4 w-4 ${busy ? 'animate-spin' : ''}`} />
+            {busy ? '인증 창 여는 중…' : '🔄 Google 재인증'}
+          </button>
+          {err && <div className="mt-3 text-sm text-rose-600">⚠ {err}</div>}
+          {health.property_id && (
+            <p className="mt-3 text-xs text-ink-muted">
+              GA4 Property: <code className="font-mono">{health.property_id}</code>
+            </p>
+          )}
         </div>
       </div>
     </div>
