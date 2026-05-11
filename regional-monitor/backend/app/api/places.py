@@ -428,10 +428,38 @@ async def bulk_create_places(
             await db.commit()
 
     # ── 자동 재검증 잡 큐잉 (마지막 청크 + auto_verify=True) ──
+    #
+    # 정책 (2026-05-11 개선):
+    #   기존: 신규 INSERT + override 갱신 ID 만 자동 검증 → 기존 PENDING(미검증) 누적분이
+    #         계속 "검증 대기" 로 남아 사용자가 의아해함 (사례: user_id=19 케이엘공조,
+    #         1차 1,000건 업로드 후 2차 279건 재업로드 시 신규 279건만 검증되고
+    #         기존 1,000건 PENDING 그대로 남음).
+    #   변경: 신규 + 갱신 + "사용자 전체 등록 중 PENDING/CHECKING 상태인 모든 ID" 합집합으로
+    #         큐잉 → 업로드 한 번이 끝나면 검증 대기가 0 에 수렴.
+    #         (단, 플랜 한도는 run_job 내부에서 다시 적용되므로 안전.)
     auto_verify_queued = False
     auto_verify_target_count = 0
     if req.is_last_chunk and req.auto_verify:
-        target_ids = list({*new_inserted_ids, *updated_ids})
+        # 1) 신규 INSERT + override 갱신 ID
+        target_ids_set: set[int] = {*new_inserted_ids, *updated_ids}
+
+        # 2) 기존 PENDING/CHECKING 상태인 사용자 전체 등록 ID — 검증 대기 누적분 흡수
+        try:
+            pending_q = await db.execute(
+                select(RegisteredPlace.id).where(
+                    RegisteredPlace.user_id == user.id,
+                    RegisteredPlace.current_verdict.in_(("PENDING", "CHECKING")),
+                )
+            )
+            target_ids_set.update(row[0] for row in pending_q.all())
+        except Exception as e:  # noqa: BLE001
+            # 누적분 흡수 실패해도 신규/갱신은 검증 진행 — 비치명적
+            import logging
+            logging.getLogger(__name__).warning(
+                "auto_verify pending sweep 실패: user_id=%s err=%s", user.id, e,
+            )
+
+        target_ids = list(target_ids_set)
         if target_ids:
             try:
                 from app.services.verify_job_runner import enqueue_verify_job
