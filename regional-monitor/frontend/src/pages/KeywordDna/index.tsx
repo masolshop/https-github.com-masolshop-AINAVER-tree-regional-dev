@@ -1,15 +1,16 @@
 /**
- * 타지역키워드 DNA 파싱 솔루션 — 4 탭 통합 페이지.
+ * 타지역키워드 DNA 파싱 솔루션 — 3 탭 통합 페이지.
  *
  * Tab 1: DNA 분석 (단일 키워드 → 6 카테고리 + golden combos)
- * Tab 2: 다중 비교 (2-8개 키워드 매트릭스 + 유사도)
- * Tab 3: 네트워크 그래프 (SVG force-directed)
- * Tab 4: 키워드 추천 (미커버 영역 자동 탐지)
+ * Tab 2: 네트워크 그래프 (SVG force-directed)
+ * Tab 3: 키워드 추천 (미커버 영역 자동 탐지)
+ *
+ * (다중 비교 탭은 2026-05-12 제거됨 — 사용자 결정)
  */
 import { useEffect, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import clsx from 'clsx'
-import { Dna, GitCompare, Network, Lightbulb } from 'lucide-react'
+import { Dna, Network, Lightbulb } from 'lucide-react'
 import { TopBar } from '@/components/layout/TopBar'
 import { KeywordDnaApi, type DictionaryStats } from '@/api/keywordDna'
 import { useAuthStore } from '@/store/auth'
@@ -18,11 +19,10 @@ import PageSeo from '@/components/seo/PageSeo'
 import { fmtNum } from './shared'
 
 import DnaTab from './DnaTab'
-import CompareTab from './CompareTab'
 import GraphTab from './GraphTab'
 import RecommendTab from './RecommendTab'
 
-type TabKey = 'dna' | 'compare' | 'graph' | 'recommend'
+type TabKey = 'dna' | 'graph' | 'recommend'
 
 interface TabDef {
   key: TabKey
@@ -33,7 +33,6 @@ interface TabDef {
 
 const TABS: TabDef[] = [
   { key: 'dna', label: 'DNA 분석', icon: Dna, desc: '단일 키워드를 6 카테고리로 도식화' },
-  { key: 'compare', label: '다중 비교', icon: GitCompare, desc: '2-8개 키워드 매트릭스 + 유사도' },
   { key: 'graph', label: '네트워크 그래프', icon: Network, desc: '토큰 동시출현 시각화' },
   { key: 'recommend', label: '키워드 추천', icon: Lightbulb, desc: '미커버 블루오션 자동 탐지' },
 ]
@@ -78,7 +77,7 @@ export default function KeywordDnaPage() {
       />
       <TopBar
         title="타지역 키워드 DNA 파싱 솔루션"
-        subtitle="네이버 봇이 키워드 형태소로 상호를 읽는 로직을 분석 — 등록 상호 DNA·비교·네트워크·블루오션 추천 (AI 미사용 규칙 기반)"
+        subtitle="네이버 봇이 키워드 형태소로 상호를 읽는 로직을 분석 — 등록 상호 DNA·네트워크·블루오션 추천 (AI 미사용 규칙 기반)"
       />
 
       {/* 사전 통계 카드 */}
@@ -146,7 +145,6 @@ export default function KeywordDnaPage() {
 
       {/* 탭 본문 */}
       {tab === 'dna' && <DnaTab />}
-      {tab === 'compare' && <CompareTab />}
       {tab === 'graph' && <GraphTab />}
       {tab === 'recommend' && <RecommendTab />}
     </div>
