@@ -146,8 +146,18 @@ export default function Pricing() {
       />
 
       <TopBar
-        title="네이버노출 자동체크솔루션 요금제"
-        subtitle="50개 1주일 무료체험부터 4000회선 월 24만원까지 — 모든 플랜은 매일 1회 자동체크 포함"
+        title={
+          <>
+            타지역닷컴에 타지역서비스 등록 및 관리 위탁시
+            <br />
+            네이버노출 매일 자동 체크,
+            <br />
+            타지역 SEO 지역 경쟁 분석 4종 솔루션 무료 사용!
+          </>
+        }
+        subtitle="회선 무관 무료로 사용!"
+        titleClassName="text-lg sm:text-2xl font-bold text-ink leading-snug"
+        subtitleClassName="text-[15px] sm:text-[17px] font-semibold text-brand-700 mt-1"
       />
 
       {/* Hero — 안내 배지 */}
