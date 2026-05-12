@@ -11,18 +11,15 @@
  *   · 없음  0     (slate)
  *
  * 모드:
- *   · Fast    — 시도/시군구 prefix 1-N 호출 (5-30s, 즉시 응답)
- *   · Precise — 시도×시군구의 모든 동/리 prefix 호출 (백그라운드 job, 30s-5min)
+ *   · 정밀모드 — 시도×시군구의 모든 동/리 prefix 호출 (백그라운드 job, 30s-5min)
  */
 import { useEffect, useMemo, useState } from 'react'
 import clsx from 'clsx'
 import {
-  Search as SearchIcon,
   Download,
   AlertTriangle,
   ExternalLink,
   MapPin,
-  Zap,
   Crosshair,
   X,
 } from 'lucide-react'
@@ -36,7 +33,6 @@ import type {
   CompetitionGrade,
   CompetitionRow,
   CompetitionPlace,
-  FastScanResponse,
   PreciseJobStatus,
 } from '@/api/competition'
 import { ApiError } from '@/api/client'
@@ -114,7 +110,6 @@ function safeFilename(s: string): string {
 // ─────────────────────────────────────────────────────────
 // 메인 페이지
 // ─────────────────────────────────────────────────────────
-type ScanMode = 'fast' | 'precise'
 
 export default function Competition() {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated)
@@ -122,23 +117,18 @@ export default function Competition() {
   useBodyClass('solution-tool-page')
 
   const [regions, setRegions] = useState<RegionsResponse | null>(null)
-  const [scanMode, setScanMode] = useState<ScanMode>('fast')
 
   // (SEO 메타태그는 return 내부에서 PageSeo로 주입 — 아래 참조)
 
   // 공통 입력
   const [keyword, setKeyword] = useState('흥신소')
-  const [scope, setScope] = useState<'nationwide' | 'sido' | 'sigungu'>('sido')
+  const [scope, setScope] = useState<'sido' | 'sigungu'>('sido')
   const [sido, setSido] = useState('서울특별시')
   const [sigungu, setSigungu] = useState('')
   const [paceMs, setPaceMs] = useState(400)
   const [concurrency, setConcurrency] = useState(5)
 
-  // Fast 결과
-  const [fastResult, setFastResult] = useState<FastScanResponse | null>(null)
-  const [fastLoading, setFastLoading] = useState(false)
-
-  // Precise 결과 (job)
+  // 정밀 결과 (job)
   const [job, setJob] = useState<PreciseJobStatus | null>(null)
   const [jobId, setJobId] = useState<string | null>(null)
   const [estSec, setEstSec] = useState(0)
@@ -204,7 +194,6 @@ export default function Competition() {
 
   const dongCount = useMemo(() => {
     if (!regions) return 0
-    if (scanMode !== 'precise') return 0
     if (!sido) return 0
     if (scope === 'sigungu' && sigungu) {
       return (regions.tree[sido]?.[sigungu] || []).length
@@ -214,49 +203,9 @@ export default function Competition() {
       return Object.values(s).reduce((acc, arr) => acc + arr.length, 0)
     }
     return 0
-  }, [regions, sido, sigungu, scope, scanMode])
+  }, [regions, sido, sigungu, scope])
 
-  // ── Fast 시작 ────────────────────────────────────────
-  const startFast = async () => {
-    if (!isAuthenticated) {
-      openLoginModal('/competition')
-      return
-    }
-    const kw = keyword.trim()
-    if (!kw) {
-      setErrMsg('키워드를 입력해 주세요.')
-      return
-    }
-    if (scope !== 'nationwide' && !sido) {
-      setErrMsg('시도를 선택해 주세요.')
-      return
-    }
-    if (scope === 'sigungu' && !sigungu) {
-      setErrMsg('시군구를 선택해 주세요.')
-      return
-    }
-    setErrMsg(null)
-    setFastResult(null)
-    setFastLoading(true)
-    try {
-      const res = await competitionApi.scanFast({
-        keyword: kw,
-        scope,
-        sido: scope === 'nationwide' ? '' : sido,
-        sigungu: scope === 'sigungu' ? sigungu : '',
-        pace_ms: paceMs,
-        concurrency,
-      })
-      setFastResult(res)
-    } catch (e) {
-      const msg = e instanceof ApiError ? e.message : e instanceof Error ? e.message : 'Fast 스캔 실패'
-      setErrMsg(msg)
-    } finally {
-      setFastLoading(false)
-    }
-  }
-
-  // ── Precise 시작 ─────────────────────────────────────
+  // ── 정밀 시작 ─────────────────────────────────────
   const startPrecise = async () => {
     if (!isAuthenticated) {
       openLoginModal('/competition')
@@ -292,15 +241,15 @@ export default function Competition() {
       setEstSec(res.estimated_seconds)
       setJobId(res.job_id)
     } catch (e) {
-      const msg = e instanceof ApiError ? e.message : e instanceof Error ? e.message : 'Precise 스캔 실패'
+      const msg = e instanceof ApiError ? e.message : e instanceof Error ? e.message : '정밀 스캔 실패'
       setErrMsg(msg)
     } finally {
       setStarting(false)
     }
   }
 
-  // ── 현재 결과 (Fast | Precise job) ──────────────────
-  const result = scanMode === 'fast' ? fastResult : job
+  // ── 현재 결과 (정밀 job) ──────────────────
+  const result = job
   const rows = result?.rows || []
   const dist = result?.dist
   const totals = result?.totals
@@ -368,7 +317,7 @@ export default function Competition() {
     XLSX.writeFile(wb, fname)
   }
 
-  const isPreciseRunning = scanMode === 'precise' && !!job && job.status === 'running'
+  const isPreciseRunning = !!job && job.status === 'running'
 
   return (
     <div className="px-4 lg:px-8 py-6 max-w-7xl mx-auto space-y-6" data-page="solution-tool">
@@ -398,46 +347,16 @@ export default function Competition() {
         </p>
       </div>
 
-      {/* 모드 선택 */}
+      {/* 모드 안내 */}
       <Card className="p-4">
         <div className="flex flex-wrap gap-2">
-          <button
-            type="button"
-            onClick={() => setScanMode('fast')}
-            className={clsx(
-              'px-4 py-2 rounded-lg border text-sm font-semibold flex items-center gap-2 transition',
-              scanMode === 'fast'
-                ? 'bg-blue-600 text-white border-blue-600 shadow-sm'
-                : 'bg-white text-ink-1 border-slate-300 hover:border-blue-400',
-            )}
-          >
-            <Zap size={16} /> Fast 모드
-            <span className="text-[11px] opacity-75">(5-30초)</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => setScanMode('precise')}
-            className={clsx(
-              'px-4 py-2 rounded-lg border text-sm font-semibold flex items-center gap-2 transition',
-              scanMode === 'precise'
-                ? 'bg-blue-600 text-white border-blue-600 shadow-sm'
-                : 'bg-white text-ink-1 border-slate-300 hover:border-blue-400',
-            )}
-          >
-            <Crosshair size={16} /> Precise 모드
+          <span className="px-4 py-2 rounded-lg border text-sm font-semibold flex items-center gap-2 bg-blue-600 text-white border-blue-600 shadow-sm">
+            <Crosshair size={16} /> 정밀모드
             <span className="text-[11px] opacity-75">(30초-5분)</span>
-          </button>
+          </span>
         </div>
         <p className="mt-3 text-xs text-ink-2">
-          {scanMode === 'fast' ? (
-            <>
-              <b>Fast</b> — 시도/시군구 prefix 1-N회 호출(예: “서울 흥신소”). 한 호출당 75건이라 큰 시군구는 일부 동이 누락될 수 있습니다.
-            </>
-          ) : (
-            <>
-              <b>Precise</b> — 시도×시군구의 모든 동/리 prefix를 호출(예: “압구정동 흥신소”). 동별 정밀도 100%, 시간 더 소요.
-            </>
-          )}
+          <b>정밀모드</b> — 시도×시군구의 모든 동/리 prefix를 호출(예: “압구정동 흥신소”). 동별 정밀도 100%.
         </p>
       </Card>
 
@@ -447,20 +366,6 @@ export default function Competition() {
         <div>
           <div className="text-xs font-semibold text-ink-2 mb-1.5">검색 범위</div>
           <div className="flex flex-wrap gap-2">
-            {scanMode === 'fast' && (
-              <button
-                type="button"
-                onClick={() => setScope('nationwide')}
-                className={clsx(
-                  'px-3 py-1.5 rounded-md border text-sm',
-                  scope === 'nationwide'
-                    ? 'bg-blue-50 text-blue-700 border-blue-300'
-                    : 'bg-white text-ink-1 border-slate-300',
-                )}
-              >
-                전국 ({sidos.length} 시도)
-              </button>
-            )}
             <button
               type="button"
               onClick={() => setScope('sido')}
@@ -490,21 +395,19 @@ export default function Competition() {
 
         {/* 시도/시군구/키워드 */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-          {scope !== 'nationwide' && (
-            <div>
-              <div className="text-xs font-semibold text-ink-2 mb-1">시도</div>
-              <select
-                value={sido}
-                onChange={(e) => setSido(e.target.value)}
-                className="w-full px-3 py-2 rounded-md border border-slate-300 text-sm bg-white"
-              >
-                <option value="">— 선택 —</option>
-                {sidos.map((s) => (
-                  <option key={s} value={s}>{s}</option>
-                ))}
-              </select>
-            </div>
-          )}
+          <div>
+            <div className="text-xs font-semibold text-ink-2 mb-1">시도</div>
+            <select
+              value={sido}
+              onChange={(e) => setSido(e.target.value)}
+              className="w-full px-3 py-2 rounded-md border border-slate-300 text-sm bg-white"
+            >
+              <option value="">— 선택 —</option>
+              {sidos.map((s) => (
+                <option key={s} value={s}>{s}</option>
+              ))}
+            </select>
+          </div>
           {scope === 'sigungu' && (
             <div>
               <div className="text-xs font-semibold text-ink-2 mb-1">시군구</div>
@@ -551,39 +454,25 @@ export default function Competition() {
               className="w-full px-2 py-1.5 rounded-md border border-slate-300 text-sm"
             />
           </div>
-          {scanMode === 'precise' && (
-            <div className="col-span-2">
-              <div className="text-xs text-ink-2 mb-1">대상 동/리 수</div>
-              <div className="px-2 py-1.5 text-sm font-semibold">
-                {dongCount}개 (예상 {Math.max(5, Math.ceil((dongCount / Math.max(1, concurrency)) * (paceMs / 1000 + 0.5)) + 5)}초)
-              </div>
+          <div className="col-span-2">
+            <div className="text-xs text-ink-2 mb-1">대상 동/리 수</div>
+            <div className="px-2 py-1.5 text-sm font-semibold">
+              {dongCount}개 (예상 {Math.max(5, Math.ceil((dongCount / Math.max(1, concurrency)) * (paceMs / 1000 + 0.5)) + 5)}초)
             </div>
-          )}
+          </div>
         </div>
 
         {/* 버튼 */}
         <div className="flex gap-2 pt-2">
-          {scanMode === 'fast' ? (
-            <button
-              type="button"
-              onClick={startFast}
-              disabled={fastLoading}
-              className="px-5 py-2 rounded-md bg-blue-600 text-white text-sm font-semibold flex items-center gap-2 hover:bg-blue-700 disabled:opacity-50"
-            >
-              <SearchIcon size={16} />
-              {fastLoading ? '분석 중…' : 'Fast 분석 시작'}
-            </button>
-          ) : (
-            <button
-              type="button"
-              onClick={startPrecise}
-              disabled={starting || isPreciseRunning}
-              className="px-5 py-2 rounded-md bg-blue-600 text-white text-sm font-semibold flex items-center gap-2 hover:bg-blue-700 disabled:opacity-50"
-            >
-              <Crosshair size={16} />
-              {starting ? '시작 중…' : isPreciseRunning ? '진행 중…' : 'Precise 분석 시작'}
-            </button>
-          )}
+          <button
+            type="button"
+            onClick={startPrecise}
+            disabled={starting || isPreciseRunning}
+            className="px-5 py-2 rounded-md bg-blue-600 text-white text-sm font-semibold flex items-center gap-2 hover:bg-blue-700 disabled:opacity-50"
+          >
+            <Crosshair size={16} />
+            {starting ? '시작 중…' : isPreciseRunning ? '진행 중…' : '정밀 분석 시작'}
+          </button>
         </div>
 
         {errMsg && (
@@ -594,8 +483,8 @@ export default function Competition() {
         )}
       </Card>
 
-      {/* Precise 진행 표시 */}
-      {scanMode === 'precise' && job && (
+      {/* 정밀 진행 표시 */}
+      {job && (
         <Card className="p-4">
           <div className="flex items-center justify-between gap-3 flex-wrap">
             <div className="text-sm">
@@ -635,9 +524,7 @@ export default function Competition() {
             <div className="text-base font-bold flex items-center gap-2">
               <span className="text-blue-600">{result.keyword}</span>
               <span className="text-ink-2 text-sm font-normal">
-                {scanMode === 'fast'
-                  ? `· Fast (${(fastResult?.elapsed_ms || 0) / 1000}초)`
-                  : `· Precise (${job?.total}개 동/리)`}
+                · 정밀모드 ({job?.total}개 동/리)
               </span>
             </div>
             <div className="flex gap-2">
@@ -688,9 +575,6 @@ export default function Competition() {
               <span>총 업체: <b className="text-ink-1">{totals.place_count}</b></span>
               <span>타지역 합계: <b className="text-orange-600">{totals.other_count}</b></span>
               <span>메인 합계: <b className="text-emerald-600">{totals.main_count}</b></span>
-              {scanMode === 'fast' && fastResult && (
-                <span>네이버 totalCount(최대): <b>{fastResult.naver_total_max.toLocaleString()}</b></span>
-              )}
             </div>
           )}
 
@@ -780,11 +664,11 @@ export default function Competition() {
       )}
 
       {/* 결과 없음 안내 */}
-      {!result && !fastLoading && !starting && !job && (
+      {!result && !starting && !job && (
         <Card className="p-8 text-center text-sm text-ink-2">
-          모드와 검색 범위를 선택한 뒤, 키워드를 입력하고 “분석 시작” 버튼을 눌러주세요.
+          검색 범위를 선택한 뒤, 키워드를 입력하고 “정밀 분석 시작” 버튼을 눌러주세요.
           <br />
-          예시: <b>흥신소</b> · 서울특별시 · 시·군·구 단위 · 강남구 → Fast 모드 ≈ 1초.
+          예시: <b>흥신소</b> · 서울특별시 · 시·군·구 단위 · 강남구.
         </Card>
       )}
 
