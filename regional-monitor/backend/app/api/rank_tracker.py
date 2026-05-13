@@ -446,8 +446,8 @@ async def trigger_rank_check_now(
 ) -> RunRankCheckResponse:
     """관리자 전용 — 전체 등록 회원의 일일 순위 체크를 즉시 실행 (백그라운드).
 
-    실제 잡은 systemd timer가 매일 새벽 2시 KST에 자동 실행.
-    수동 트리거는 운영/디버깅용.
+    현재 정책: 자동 배치(systemd timer)는 비활성. 운영자가 본 엔드포인트로
+    매일 자동체크를 수동 트리거하여 모든 매칭 완료 회원의 추적 키워드를 일괄 체크한다.
     """
     q = await db.execute(
         select(RegisteredPlace).where(

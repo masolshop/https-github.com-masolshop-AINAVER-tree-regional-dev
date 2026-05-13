@@ -161,14 +161,15 @@
 }
 
 /* ============================================================
-   4대 솔루션 도구 페이지 본문 가독성 향상 (글자 크기 한 단계 ↑)
+   5대 솔루션 도구 페이지 본문 가독성 향상 (글자 크기 한 단계 ↑)
    적용 방식: <body>에 'solution-tool-page' 클래스를 토글
               → useBodyClass 훅이 페이지 마운트/언마운트 시 자동 부착
    대상 페이지:
-     · /keyword-dna   (KeywordDna/index.tsx)
-     · /keyword       (Keyword/Discover.tsx)
-     · /competition   (Competition.tsx)
-     · /monitor       (Monitor/index.tsx + 하위 탭 전체)
+     · /keyword-dna       (KeywordDna/index.tsx)
+     · /keyword           (Keyword/Discover.tsx)
+     · /competition       (Competition.tsx)
+     · /monitor           (Monitor/index.tsx + 하위 탭 전체)
+     · /auto-rank-check   (RankTracker.tsx — 타지역 순위 자동체크)
    토큰(원본 → 강제 px):
      text-xs       12 → 15
      text-sm       14 → 17

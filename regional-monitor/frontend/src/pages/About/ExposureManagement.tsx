@@ -713,13 +713,13 @@ export default function ExposureManagement() {
         </div>
       </section>
 
-      {/* 4) 솔루션 4대 핵심 기능 ─────────────────── */}
+      {/* 4) 솔루션 5대 핵심 기능 ─────────────────── */}
       <section>
         <div className="mb-5">
           <div className="text-body-sm text-ink-muted uppercase tracking-wider font-semibold mb-1">
             core features
           </div>
-          <h2 className="text-h2 text-ink">자동체크솔루션 4대 핵심 기능</h2>
+          <h2 className="text-h2 text-ink">자동체크솔루션 5대 핵심 기능</h2>
           <p className="text-xl text-ink-muted mt-2 leading-relaxed">
             등록한 타지역서비스의 노출 상태를 자동으로 추적하고 관리합니다.
           </p>

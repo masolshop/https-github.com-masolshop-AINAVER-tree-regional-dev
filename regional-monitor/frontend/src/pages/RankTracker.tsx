@@ -295,7 +295,7 @@ export default function RankTracker() {
         </h1>
         <p className="text-sm text-ink-2 mt-1">
           <strong>070전번 · 등록동 · 상호 · 추적키워드</strong> 4컬럼 엑셀 한 번 업로드 →
-          네이버 플레이스 자동 매칭 + 매일 새벽 2시 KST 동별 노출 순위 자동 추적.
+          네이버 플레이스 자동 매칭 + 매일 자동체크로 동별 노출 순위를 시계열 그래프로 추적합니다.
         </p>
       </div>
 
@@ -785,7 +785,7 @@ function RankChartModal(props: { place: RankPlaceOut; onClose: () => void }) {
             <div className="py-16 text-center text-sm text-ink-2">
               아직 기록된 순위 데이터가 없습니다.
               <br />
-              매일 새벽 2시 KST 자동 배치 이후 데이터가 누적됩니다.
+              매일 자동체크 이후 데이터가 누적됩니다.
             </div>
           ) : (
             <div className="space-y-6">

@@ -1,10 +1,10 @@
 /**
  * 홈 (대시보드)
  * 구성:
- *  1) Hero 4카드 비대칭 그리드 (등록/24h/알림/CTA)
+ *  1) Hero 5카드 비대칭 그리드 (DNA/SEO/경쟁도/자동체크/타지역순위 자동체크)
  *  2) KPI 메트릭 타일 (4개 - 정확도/검증건수/평균응답/처리량)
  *  3) DATA DRIVEN 섹션 - 실시간 데이터 기반 노출 모니터링
- *  4) 작동 원리 (3-step 워크플로우)
+ *  4) 작동 원리 (5-step 워크플로우)
  *  5) 하단 CTA
  */
 import { TopBar } from '@/components/layout/TopBar'
@@ -45,7 +45,7 @@ export default function Home() {
     <div className="space-y-10">
       <PageSeo
         title="타지역서비스 네이버 노출 자동체크 솔루션"
-        description="타지역서비스(070) 사장님을 위한 네이버 플레이스 노출 자동체크와 1페이지 최적화 4종 솔루션."
+        description="타지역서비스(070) 사장님을 위한 네이버 플레이스 노출 자동체크 · 타지역 순위 자동체크 · 1페이지 최적화 5종 솔루션."
         path="/"
         keywords={[
           '타지역서비스',
@@ -66,7 +66,7 @@ export default function Home() {
           },
           {
             q: '타지역닷컴은 어떤 솔루션을 제공하나요?',
-            a: '키워드 발굴, 지역별 노출 경쟁도 분석, 24시간 네이버 노출 자동 체크, 필수업종 분류의 4종 솔루션을 제공합니다. 1,875개 등록 업체와 508,854개 회선 데이터를 기반으로 정확한 분석을 제공합니다.',
+            a: '키워드 DNA 분석, 키워드 발굴 · 지역별 노출 경쟁도 분석, 24시간 네이버 노출 자동 체크, 타지역 순위 자동체크(동별 시계열 추적)의 5종 솔루션을 제공합니다. 1,875개 등록 업체와 508,854개 회선 데이터를 기반으로 정확한 분석을 제공합니다.',
           },
           {
             q: '이용료는 어떻게 되나요?',
@@ -75,11 +75,11 @@ export default function Home() {
         ])}
       />
       <TopBar
-        title="국내 최초 타지역서비스 최적화 4종 솔루션 무료 플랜 받으세요."
-        subtitle="네이버 노출 키워드 DNA 분석, SEO 최적화, 지역 경쟁도 분석, 네이버 노출 자동 체크, 노출 상황을 날마다 알림 받으세요."
+        title="국내 최초 타지역서비스 최적화 5종 솔루션 무료 플랜 받으세요."
+        subtitle="키워드 DNA 분석 · SEO 최적화 · 지역 경쟁도 분석 · 네이버 노출 자동 체크 · 타지역 순위 자동체크까지 매일 자동으로 점검해드립니다."
       />
 
-      {/* ───────────────────────── 1) Hero 4카드 — 4종 솔루션 컨셉 ───────────────────────── */}
+      {/* ───────────────────────── 1) Hero 5카드 — 5종 솔루션 컨셉 ───────────────────────── */}
       <section className="grid grid-cols-12 gap-4">
         {/* 01 - 키워드 DNA 분석 (큰 좌측, 화이트) */}
         <Card variant="white" watermarkNumber="01" className="col-span-12 md:col-span-7 min-h-[230px]">
@@ -172,6 +172,31 @@ export default function Home() {
                 카카오톡 무료 상담 <ArrowRight size={16} />
               </a>
             </div>
+          </div>
+        </Card>
+
+        {/* 05 - 타지역 순위 자동체크 (전폭, 화이트 + 블루 액센트) */}
+        <Card variant="white" watermarkNumber="05" className="col-span-12 min-h-[200px]">
+          <div className="pt-10 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+            <div className="flex-1">
+              <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-pill bg-blue-50 text-blue-700 text-sm font-bold mb-3">
+                <TrendingUp size={16} /> SOLUTION 05
+              </div>
+              <h3 className="text-h2 text-ink mb-2 break-keep">
+                타지역 순위 자동체크 · 매일 동별 순위 추적
+              </h3>
+              <p className="text-base md:text-lg text-ink-muted leading-relaxed break-keep">
+                070전번·등록동·상호·추적키워드 4컬럼 엑셀 한 번 업로드 →
+                네이버 플레이스 자동 매칭 + <strong className="text-blue-700">매일 자동체크</strong>로
+                동별 노출 순위를 시계열로 보여드립니다.
+              </p>
+            </div>
+            <Link
+              to="/auto-rank-check"
+              className="inline-flex items-center justify-center gap-2 px-5 py-3 rounded-pill bg-blue-600 text-white font-bold text-sm md:text-base hover:bg-blue-700 transition-colors shrink-0"
+            >
+              순위 자동체크 시작 <ArrowRight size={16} />
+            </Link>
           </div>
         </Card>
       </section>
@@ -320,16 +345,16 @@ export default function Home() {
         </Card>
       </section>
 
-      {/* ───────────────────────── 4) 4종 솔루션 풀퍼널 워크플로우 ───────────────────────── */}
+      {/* ───────────────────────── 4) 5종 솔루션 풀퍼널 워크플로우 ───────────────────────── */}
       <section>
         <div className="mb-4">
           <div className="text-sm text-ink-muted uppercase tracking-wider font-semibold mb-1">
             how it works
           </div>
-          <h2 className="text-h2 text-ink break-keep">발굴 → 분석 → 진입 → 유지 4단계 풀퍼널</h2>
+          <h2 className="text-h2 text-ink break-keep">분석 → 발굴 → 진입 → 유지 → 추적 5단계 풀퍼널</h2>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
           <StepCard
             step="STEP 01"
             icon={<Dna size={20} />}
@@ -339,7 +364,7 @@ export default function Home() {
           <StepCard
             step="STEP 02"
             icon={<Sparkles size={20} />}
-            title="SEO 최적화 발굴"
+            title="SEO 키워드 발굴"
             desc="시드 키워드 1개 → 12~50개 후보 + 4단계 경쟁도(청정/경쟁/과열/포화)로 황금 키워드만 골라드립니다."
           />
           <StepCard
@@ -351,8 +376,14 @@ export default function Home() {
           <StepCard
             step="STEP 04"
             icon={<BellRing size={20} />}
-            title="일일 노출 자동 알림"
-            desc="매일 1회 자동 검증(4중). 노출 변경 즉시 이메일·카카오로 알려드립니다."
+            title="노출 자동 알림"
+            desc="매일 자동체크(4중 검증). 노출 변경 즉시 이메일·카카오로 알려드립니다."
+          />
+          <StepCard
+            step="STEP 05"
+            icon={<TrendingUp size={20} />}
+            title="타지역 순위 자동체크"
+            desc="070·등록동·상호·추적키워드 엑셀 한 번 → 매일 자동체크로 동별 순위를 시계열 그래프로 추적합니다."
           />
         </div>
       </section>
@@ -363,11 +394,11 @@ export default function Home() {
           <div className="flex flex-col gap-5">
             <div>
               <h2 className="text-h1 text-white mb-2 break-keep">
-                국내 최초 타지역서비스 4종 솔루션 무료 플랜
+                국내 최초 타지역서비스 5종 솔루션 무료 플랜
               </h2>
               <p className="text-base md:text-lg text-white/85 leading-relaxed break-keep">
-                키워드 DNA 분석 · SEO 최적화 · 지역 경쟁도 분석 · 노출 자동 체크까지
-                4종을 모두 무료로 체험하실 수 있습니다.
+                키워드 DNA 분석 · SEO 최적화 · 지역 경쟁도 분석 · 노출 자동 체크 · 타지역 순위 자동체크까지
+                5종을 모두 무료로 체험하실 수 있습니다.
               </p>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3">

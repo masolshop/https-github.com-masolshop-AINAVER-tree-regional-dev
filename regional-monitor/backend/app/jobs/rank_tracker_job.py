@@ -1,8 +1,10 @@
 """
-타지역 순위 자동체크 솔루션 — 일일 배치 CLI 엔트리.
+타지역 순위 자동체크 솔루션 — 매일 자동체크 CLI 엔트리.
 
-매일 새벽 KST 02:00 systemd timer 가 호출:
-    python -m app.jobs.rank_tracker_job
+현재 정책: 자동 systemd timer 는 비활성화. 운영자가 다음 중 한 가지 방법으로 호출:
+  1) 수동 CLI:        python -m app.jobs.rank_tracker_job
+  2) 관리자 API:      POST /api/v1/rank-tracker/run-rank-check (백그라운드 실행)
+  3) 향후 스케줄러:    cron / systemd timer 가 재활성화되면 동일 진입점을 호출
 
 동작:
 1) AsyncSessionLocal 세션 생성

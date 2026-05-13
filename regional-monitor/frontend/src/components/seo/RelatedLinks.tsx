@@ -83,7 +83,7 @@ export function RelatedLinks({
   )
 }
 
-/** About 4종 + Solutions 4종 통합 후보군 (필요 시 import 해서 재사용) */
+/** About 4종 + Solutions 5종 통합 후보군 (필요 시 import 해서 재사용) */
 export const ALL_RELATED_LINKS: RelatedLinkItem[] = [
   // About
   {

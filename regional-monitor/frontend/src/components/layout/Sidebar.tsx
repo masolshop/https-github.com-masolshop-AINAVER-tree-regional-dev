@@ -432,7 +432,7 @@ export function Sidebar({ onItemClick }: SidebarProps = {}) {
             네이버노출 자동체크솔루션
             <br />
             <span className="text-[12px] font-semibold text-amber-800">
-              4대 솔루션 무료 사용방법
+              5대 솔루션 무료 사용방법
             </span>
           </span>
           <ChevronRight size={14} className="shrink-0 text-amber-700" />

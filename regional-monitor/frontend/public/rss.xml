@@ -7,7 +7,7 @@
     <title>타지역닷컴 — 타지역서비스 네이버 노출 솔루션</title>
     <link>https://taziyuk.com/</link>
     <atom:link href="https://taziyuk.com/rss.xml" rel="self" type="application/rss+xml" />
-    <description>타지역서비스(070 가상번호) 사장님을 위한 네이버 1페이지 노출 키워드 발굴, 지역 경쟁도 분석, 24시간 노출 자동 체크 4종 솔루션. 1,875개 등록 업체·508,854개 회선 데이터 기반 분석.</description>
+    <description>타지역서비스(070 가상번호) 사장님을 위한 키워드 DNA 분석, 네이버 1페이지 노출 키워드 발굴, 지역 경쟁도 분석, 24시간 노출 자동 체크, 타지역 순위 자동체크(동별 시계열 추적) 5종 솔루션. 1,875개 등록 업체·508,854개 회선 데이터 기반 분석.</description>
     <language>ko-KR</language>
     <copyright>Copyright © 2026 타지역닷컴. All rights reserved.</copyright>
     <managingEditor>contact@taziyuk.com (타지역닷컴)</managingEditor>
@@ -33,7 +33,7 @@
       <title>타지역서비스 네이버 노출 자동 체크 및 1페이지 노출 최적화 솔루션 — 타지역닷컴</title>
       <link>https://taziyuk.com/</link>
       <guid isPermaLink="true">https://taziyuk.com/</guid>
-      <description><![CDATA[등록하신 타지역서비스의 네이버 노출 상태를 매일 자동으로 점검하고, 1페이지 노출에 효과적인 키워드를 데이터 기반으로 발굴해드립니다. 1,875개 등록 업체와 508,854개 회선 데이터로 검증된 4종 솔루션을 제공합니다.]]></description>
+      <description><![CDATA[등록하신 타지역서비스의 네이버 노출 상태를 매일 자동으로 점검하고, 1페이지 노출에 효과적인 키워드를 데이터 기반으로 발굴해드립니다. 1,875개 등록 업체와 508,854개 회선 데이터로 검증된 5종 솔루션(타지역 순위 자동체크 포함)을 제공합니다.]]></description>
       <category>홈</category>
       <pubDate>Sat, 02 May 2026 00:00:00 +0900</pubDate>
       <dc:creator>타지역닷컴</dc:creator>
@@ -41,10 +41,10 @@
 
     <!-- 솔루션 종합 인트로 -->
     <item>
-      <title>타지역 4종 솔루션 소개 — "똑같이 등록했는데 왜 우리만 안 뜰까?"</title>
+      <title>타지역 5종 솔루션 소개 — "똑같이 등록했는데 왜 우리만 안 뜰까?"</title>
       <link>https://taziyuk.com/intro</link>
       <guid isPermaLink="true">https://taziyuk.com/intro</guid>
-      <description><![CDATA[발굴 → 분석 → 진입 → 유지로 이어지는 4종 통합 솔루션. 키워드 DNA 파싱, 1페이지 노출 키워드 발굴, 지역별 경쟁도 분석, 노출 관리 자동 체크. 한 번의 등록으로 4단계 마케팅 사이클을 완성합니다.]]></description>
+      <description><![CDATA[분석 → 발굴 → 진입 → 유지 → 추적으로 이어지는 5종 통합 솔루션. 키워드 DNA 파싱, 1페이지 노출 키워드 발굴, 지역별 경쟁도 분석, 노출 관리 자동 체크, 타지역 순위 자동체크(동별 시계열 추적). 한 번의 등록으로 5단계 마케팅 사이클을 완성합니다.]]></description>
       <category>솔루션 소개</category>
       <pubDate>Sat, 02 May 2026 00:00:00 +0900</pubDate>
       <dc:creator>타지역닷컴</dc:creator>
@@ -88,8 +88,19 @@
       <title>네이버 노출 관리 자동 체크 솔루션 — 24시간 노출 보초병</title>
       <link>https://taziyuk.com/intro/monitor</link>
       <guid isPermaLink="true">https://taziyuk.com/intro/monitor</guid>
-      <description><![CDATA[070 번호 등록 → Place ID·등록 동·상호명 자동 추출 → 매일 1회 자동 4중 검증(페이지/070/동/상호명). 변동 감지 즉시 이메일·카카오 알림. "어제까지 잘 떴는데 오늘 갑자기 안 뜬다" 그 사이의 매출을 다시 잡아드립니다.]]></description>
+      <description><![CDATA[070 번호 등록 → Place ID·등록 동·상호명 자동 추출 → 매일 자동체크로 4중 검증(페이지/070/동/상호명). 변동 감지 즉시 이메일·카카오 알림. "어제까지 잘 떴는데 오늘 갑자기 안 뜬다" 그 사이의 매출을 다시 잡아드립니다.]]></description>
       <category>노출 자동 체크</category>
+      <pubDate>Sat, 02 May 2026 00:00:00 +0900</pubDate>
+      <dc:creator>타지역닷컴</dc:creator>
+    </item>
+
+    <!-- 솔루션 5: 타지역 순위 자동체크 -->
+    <item>
+      <title>타지역 순위 자동체크 솔루션 — 동별 순위를 매일 자동으로 추적</title>
+      <link>https://taziyuk.com/intro/rank-tracker</link>
+      <guid isPermaLink="true">https://taziyuk.com/intro/rank-tracker</guid>
+      <description><![CDATA[070 번호·등록동·상호·추적 키워드 엑셀 한 번으로 업로드하면 매일 자동체크로 동별 순위 데이터를 수집해 시계열 그래프로 보여드립니다. 타지역 진입 후 노출 순위가 올라가는지, 경쟁사에 밀리는지 수치로 확인하세요.]]></description>
+      <category>타지역 순위 자동체크</category>
       <pubDate>Sat, 02 May 2026 00:00:00 +0900</pubDate>
       <dc:creator>타지역닷컴</dc:creator>
     </item>

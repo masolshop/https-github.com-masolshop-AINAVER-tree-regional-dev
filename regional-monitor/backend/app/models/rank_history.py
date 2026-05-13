@@ -1,7 +1,7 @@
 """PlaceRankHistory 모델 — 동별 키워드 순위 일별 이력 (솔루션 #5).
 
-매일 새벽 배치(rank_scheduler)가 등록된 (place, dong, keyword) 조합으로
-네이버 지도 검색 → 사장님 업체의 현재 노출 순위(1~75위)를 기록한다.
+매일 자동체크(운영자 트리거 또는 향후 스케줄러)가 등록된 (place, dong, keyword)
+조합으로 네이버 지도 검색 → 사장님 업체의 현재 노출 순위(1~75위)를 기록한다.
 
 UNIQUE(place_pk, check_date, keyword) — 같은 날 같은 키워드 중복 방지.
 """

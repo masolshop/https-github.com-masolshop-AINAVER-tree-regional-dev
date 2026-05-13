@@ -178,7 +178,7 @@ export function SolutionDetailLayout(props: SolutionDetailProps) {
               망설이는 사이, 옆 가게는 이미 시작했습니다.
             </h3>
             <p className="text-white/90 leading-relaxed" style={{ fontSize: '22px', lineHeight: '1.7' }}>
-              <strong className="text-white">등록·관리만 맡기시면 4종 솔루션 전부 무료</strong>로 사용하실 수 있습니다.
+              <strong className="text-white">등록·관리만 맡기시면 5종 솔루션 전부 무료</strong>로 사용하실 수 있습니다.
               지금 신청하시면 청정 키워드·진입 가능 지역까지 함께 분석해 드립니다.
             </p>
           </div>
@@ -193,14 +193,14 @@ export function SolutionDetailLayout(props: SolutionDetailProps) {
         </div>
       </Card>
 
-      {/* 4종 솔루션 통합 소개로 돌아가기 */}
+      {/* 5종 솔루션 통합 소개로 돌아가기 */}
       <Card variant="white">
         <div className="flex flex-wrap items-center gap-3">
           <Link
             to="/intro"
             className="inline-flex items-center gap-1 px-3 py-1.5 rounded-pill bg-bg-subtle text-ink hover:bg-brand-50 hover:text-brand-700 text-body font-medium transition-colors"
           >
-            ← 4종 솔루션 통합 소개로 돌아가기
+            ← 5종 솔루션 통합 소개로 돌아가기
           </Link>
         </div>
       </Card>

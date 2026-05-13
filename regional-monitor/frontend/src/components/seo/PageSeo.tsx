@@ -96,7 +96,7 @@ export default function PageSeo({
 }
 
 /**
- * Service 스키마 빌더 — 4대 솔루션 인트로 페이지에서 재사용.
+ * Service 스키마 빌더 — 5대 솔루션 인트로 페이지에서 재사용.
  */
 export function buildServiceJsonLd(opts: {
   name: string

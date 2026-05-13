@@ -667,7 +667,7 @@ export default function WhatIs() {
           </span>
           <h2 className="text-h2 text-ink">지금 바로 무료로 시작하세요</h2>
           <p className="text-lg text-ink-muted mt-2 leading-relaxed">
-            등록·관리만 맡기시면 4종 솔루션 전부 무료. 사장님이 잃을 게 없습니다.
+            등록·관리만 맡기시면 5종 솔루션 전부 무료. 사장님이 잃을 게 없습니다.
           </p>
         </div>
 
