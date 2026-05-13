@@ -1,7 +1,7 @@
 """RegisteredPlace 모델 — 사용자가 등록한 070+Place ID 매핑."""
 from datetime import datetime
 from app.core.time_utils import now_kst, KSTDateTime
-from sqlalchemy import String, Integer, DateTime, ForeignKey, Index, Boolean
+from sqlalchemy import String, Integer, DateTime, ForeignKey, Index, Boolean, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.database import Base
@@ -13,6 +13,7 @@ class RegisteredPlace(Base):
         Index("ix_user_phone", "user_id", "phone", unique=True),
         Index("ix_user_status", "user_id", "current_verdict"),
         Index("ix_user_in_latest", "user_id", "in_latest_upload"),
+        Index("ix_user_match_status", "user_id", "match_status"),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True, autoincrement=True)
@@ -30,6 +31,20 @@ class RegisteredPlace(Base):
     # 자동 추출 부가 정보
     full_address: Mapped[str | None] = mapped_column(String(300), nullable=True)
     category: Mapped[str | None] = mapped_column(String(80), nullable=True)
+
+    # ─────────────────────────────────────────────────────────
+    # RankTracker (솔루션 #5) — 순위 자동체크용 컬럼
+    # ─────────────────────────────────────────────────────────
+    # 추적 키워드(쉼표 구분, 최대 5개). 예: "흥신소,심부름센터"
+    tracking_keywords: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # 매칭 신뢰도 0~100 (place_matcher 산출)
+    match_confidence: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # AUTO_MATCHED / REVIEW_NEEDED / NOT_FOUND / CONFIRMED / PENDING_MATCH
+    match_status: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    # 후보 N개 JSON(REVIEW_NEEDED일 때만 채움)
+    match_candidates: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # 매칭 시도/완료 타임스탬프
+    matched_at: Mapped[datetime | None] = mapped_column(KSTDateTime, nullable=True)
 
     # 현재 검증 상태 (마지막 daily_health_check 결과 캐시)
     # OK / PHONE_MISMATCH / DONG_MISMATCH / NAME_MISMATCH / REGION_MISMATCH / DEAD / PENDING

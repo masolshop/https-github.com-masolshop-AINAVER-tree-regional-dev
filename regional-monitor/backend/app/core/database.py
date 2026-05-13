@@ -69,6 +69,7 @@ async def init_db() -> None:
     await _ensure_verify_schedule_v2_columns()
     await _ensure_notify_emails_column()
     await _ensure_excluded_upload_columns()
+    await _ensure_rank_tracker_columns()
 
 
 async def _ensure_user_account_columns() -> None:
@@ -364,4 +365,93 @@ async def _ensure_excluded_upload_columns() -> None:
             await conn.execute(text(
                 "CREATE INDEX IF NOT EXISTS ix_user_in_latest "
                 "ON registered_places(user_id, in_latest_upload)"
+            ))
+
+
+async def _ensure_rank_tracker_columns() -> None:
+    """RankTracker (솔루션 #5) 마이그레이션.
+
+    registered_places 확장:
+      · tracking_keywords TEXT          — 쉼표 구분 키워드 목록
+      · match_confidence  INTEGER       — 0~100
+      · match_status      VARCHAR(20)   — AUTO_MATCHED/REVIEW_NEEDED/NOT_FOUND/CONFIRMED/PENDING_MATCH
+      · match_candidates  TEXT          — REVIEW_NEEDED일 때 후보 JSON
+      · matched_at        TIMESTAMP
+
+    신규 테이블 place_rank_history는 Base.metadata.create_all에서 자동 생성.
+    인덱스만 별도 보장.
+    """
+    from sqlalchemy import text
+
+    is_sqlite = settings.DATABASE_URL.startswith("sqlite")
+
+    async with engine.begin() as conn:
+        if is_sqlite:
+            res = await conn.execute(text("PRAGMA table_info(registered_places)"))
+            existing_cols = {row[1] for row in res.fetchall()}
+            if "tracking_keywords" not in existing_cols:
+                await conn.execute(text(
+                    "ALTER TABLE registered_places ADD COLUMN tracking_keywords TEXT"
+                ))
+            if "match_confidence" not in existing_cols:
+                await conn.execute(text(
+                    "ALTER TABLE registered_places ADD COLUMN match_confidence INTEGER"
+                ))
+            if "match_status" not in existing_cols:
+                await conn.execute(text(
+                    "ALTER TABLE registered_places ADD COLUMN match_status VARCHAR(20)"
+                ))
+            if "match_candidates" not in existing_cols:
+                await conn.execute(text(
+                    "ALTER TABLE registered_places ADD COLUMN match_candidates TEXT"
+                ))
+            if "matched_at" not in existing_cols:
+                await conn.execute(text(
+                    "ALTER TABLE registered_places ADD COLUMN matched_at TIMESTAMP"
+                ))
+            await conn.execute(text(
+                "CREATE INDEX IF NOT EXISTS ix_user_match_status "
+                "ON registered_places(user_id, match_status)"
+            ))
+            # place_rank_history 인덱스 (테이블 자체는 metadata.create_all에서 생성)
+            await conn.execute(text(
+                "CREATE INDEX IF NOT EXISTS ix_rank_history_place_date "
+                "ON place_rank_history(place_pk, check_date)"
+            ))
+            await conn.execute(text(
+                "CREATE INDEX IF NOT EXISTS ix_rank_history_keyword_date "
+                "ON place_rank_history(keyword, check_date)"
+            ))
+        else:
+            await conn.execute(text(
+                "ALTER TABLE registered_places ADD COLUMN IF NOT EXISTS "
+                "tracking_keywords TEXT"
+            ))
+            await conn.execute(text(
+                "ALTER TABLE registered_places ADD COLUMN IF NOT EXISTS "
+                "match_confidence INTEGER"
+            ))
+            await conn.execute(text(
+                "ALTER TABLE registered_places ADD COLUMN IF NOT EXISTS "
+                "match_status VARCHAR(20)"
+            ))
+            await conn.execute(text(
+                "ALTER TABLE registered_places ADD COLUMN IF NOT EXISTS "
+                "match_candidates TEXT"
+            ))
+            await conn.execute(text(
+                "ALTER TABLE registered_places ADD COLUMN IF NOT EXISTS "
+                "matched_at TIMESTAMPTZ"
+            ))
+            await conn.execute(text(
+                "CREATE INDEX IF NOT EXISTS ix_user_match_status "
+                "ON registered_places(user_id, match_status)"
+            ))
+            await conn.execute(text(
+                "CREATE INDEX IF NOT EXISTS ix_rank_history_place_date "
+                "ON place_rank_history(place_pk, check_date)"
+            ))
+            await conn.execute(text(
+                "CREATE INDEX IF NOT EXISTS ix_rank_history_keyword_date "
+                "ON place_rank_history(keyword, check_date)"
             ))

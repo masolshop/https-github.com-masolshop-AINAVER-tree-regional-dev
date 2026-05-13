@@ -6,6 +6,7 @@ from .payment import Payment
 from .verify_job import VerifyJob
 from .verify_schedule_log import VerifyScheduleLog
 from .weekly_report_log import WeeklyReportLog
+from .rank_history import PlaceRankHistory
 
 __all__ = [
     "User", "RegisteredPlace",
@@ -13,4 +14,5 @@ __all__ = [
     "Payment", "VerifyJob",
     "VerifyScheduleLog",
     "WeeklyReportLog",
+    "PlaceRankHistory",
 ]

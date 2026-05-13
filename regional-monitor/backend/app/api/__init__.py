@@ -12,6 +12,7 @@ from .competition import router as competition_router
 from .keyword import router as keyword_router
 from .keyword_dna import router as keyword_dna_router
 from .places import router as places_router
+from .rank_tracker import router as rank_tracker_router
 from .settings import router as settings_router
 from .sitemap import router as sitemap_router
 from .verify import router as verify_router
@@ -31,6 +32,7 @@ api_router.include_router(backup_router)
 api_router.include_router(keyword_router)
 api_router.include_router(competition_router)
 api_router.include_router(keyword_dna_router)
+api_router.include_router(rank_tracker_router)
 api_router.include_router(sitemap_router)
 
 __all__ = ["api_router"]
