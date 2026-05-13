@@ -33,6 +33,7 @@ const ROUTES = [
   '/intro/keyword-discover',
   '/intro/competition',
   '/intro/monitor',
+  '/intro/rank-tracker',
   '/about/what-is',
   '/about/keyword-logic',
   '/about/exposure-management',

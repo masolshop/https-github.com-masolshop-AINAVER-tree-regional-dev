@@ -35,6 +35,7 @@ const KeywordDnaIntro = lazy(() => import('@/pages/Solutions/KeywordDnaIntro'))
 const KeywordDiscoverIntro = lazy(() => import('@/pages/Solutions/KeywordDiscoverIntro'))
 const CompetitionIntro = lazy(() => import('@/pages/Solutions/CompetitionIntro'))
 const MonitorIntro = lazy(() => import('@/pages/Solutions/MonitorIntro'))
+const RankTrackerIntro = lazy(() => import('@/pages/Solutions/RankTrackerIntro'))
 
 // ── About 페이지 (lazy) ─────────────────────────────
 const WhatIs = lazy(() => import('@/pages/About/WhatIs'))
@@ -50,6 +51,7 @@ const Monitor = lazy(() => import('@/pages/Monitor'))
 const KeywordDiscover = lazy(() => import('@/pages/Keyword/Discover'))
 const Competition = lazy(() => import('@/pages/Competition'))
 const KeywordDna = lazy(() => import('@/pages/KeywordDna'))
+const RankTracker = lazy(() => import('@/pages/RankTracker'))
 const Admin = lazy(() => import('@/pages/Admin'))
 
 const queryClient = new QueryClient({
@@ -179,6 +181,7 @@ export default function App() {
               <Route path="/intro/keyword-discover" element={<KeywordDiscoverIntro />} />
               <Route path="/intro/competition" element={<CompetitionIntro />} />
               <Route path="/intro/monitor" element={<MonitorIntro />} />
+              <Route path="/intro/rank-tracker" element={<RankTrackerIntro />} />
               <Route path="/about/what-is" element={<WhatIs />} />
               <Route path="/about/essential-categories" element={<EssentialCategories />} />
               <Route path="/about/keyword-logic" element={<KeywordLogic />} />
@@ -217,6 +220,14 @@ export default function App() {
                 element={
                   <ProtectedRoute redirectTo="/keyword-dna">
                     <KeywordDna />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/auto-rank-check"
+                element={
+                  <ProtectedRoute redirectTo="/auto-rank-check">
+                    <RankTracker />
                   </ProtectedRoute>
                 }
               />

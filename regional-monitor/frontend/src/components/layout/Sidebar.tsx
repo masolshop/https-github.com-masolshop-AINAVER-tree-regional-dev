@@ -22,6 +22,7 @@ import {
   Sparkles,
   MapPin,
   Dna,
+  TrendingUp,
   LogIn,
   LogOut,
   User as UserIcon,
@@ -63,7 +64,7 @@ interface MenuItem {
   multiline?: boolean
   icon: React.ComponentType<{ className?: string; size?: number }>
   requireAuth: boolean
-  /** 사각 모서리 박스 형태로 강조 표시(솔루션 4종 카드용) */
+  /** 사각 모서리 박스 형태로 강조 표시(솔루션 5종 카드용) */
   boxed?: boolean
 }
 
@@ -82,6 +83,7 @@ const MENU: MenuItem[] = [
   { to: '/keyword',  label: '네이버1페이지 노출\n키워드 발굴솔루션', icon: Sparkles,      requireAuth: true,  multiline: true, boxed: true },
   { to: '/competition', label: '지역별 노출경쟁도\n분석솔루션',   icon: MapPin,         requireAuth: true,  multiline: true, boxed: true },
   { to: '/monitor',  label: '네이버노출관리\n자동체크솔루션',  icon: Radio,           requireAuth: true,  multiline: true, boxed: true },
+  { to: '/auto-rank-check', label: '타지역 순위\n자동체크 솔루션', icon: TrendingUp,    requireAuth: true,  multiline: true, boxed: true },
 ]
 
 const ABOUT_GROUP: MenuGroup = {
@@ -99,15 +101,16 @@ const ABOUT_GROUP: MenuGroup = {
 
 const SOLUTIONS_GROUP: MenuGroup = {
   key: 'intro',
-  label: '타지역 4종솔루션소개',
+  label: '타지역 5종솔루션소개',
   icon: BookOpen,
   pathPrefix: '/intro',
   children: [
-    { to: '/intro',                   label: '타지역 4종 솔루션이란',   icon: BookOpen, requireAuth: false },
-    { to: '/intro/keyword-dna',       label: '타지역키워드 DNA 파싱',  icon: Dna,      requireAuth: false },
-    { to: '/intro/keyword-discover',  label: '키워드 발굴솔루션',       icon: Sparkles, requireAuth: false },
-    { to: '/intro/competition',       label: '지역 경쟁도 분석솔루션',  icon: MapPin,   requireAuth: false },
-    { to: '/intro/monitor',           label: '노출관리 자동체크솔루션',  icon: Radio,    requireAuth: false },
+    { to: '/intro',                   label: '타지역 5종 솔루션이란',     icon: BookOpen,    requireAuth: false },
+    { to: '/intro/keyword-dna',       label: '타지역키워드 DNA 파싱',    icon: Dna,         requireAuth: false },
+    { to: '/intro/keyword-discover',  label: '키워드 발굴솔루션',         icon: Sparkles,    requireAuth: false },
+    { to: '/intro/competition',       label: '지역 경쟁도 분석솔루션',    icon: MapPin,      requireAuth: false },
+    { to: '/intro/monitor',           label: '노출관리 자동체크솔루션',    icon: Radio,       requireAuth: false },
+    { to: '/intro/rank-tracker',      label: '순위 자동체크 솔루션',      icon: TrendingUp,  requireAuth: false },
   ],
 }
 
@@ -164,7 +167,7 @@ export function Sidebar({ onItemClick }: SidebarProps = {}) {
     && window.location.pathname.startsWith(ABOUT_GROUP.pathPrefix)
   const [aboutOpen, setAboutOpen] = useState<boolean>(isAboutActive)
 
-  // "타지역 4종솔루션소개" 그룹: 현재 경로가 /intro/* 또는 /intro 이면 자동 펼침
+  // "타지역 5종솔루션소개" 그룹: 현재 경로가 /intro/* 또는 /intro 이면 자동 펼침
   const isSolutionsActive = typeof window !== 'undefined'
     && (window.location.pathname === '/intro'
         || window.location.pathname.startsWith(SOLUTIONS_GROUP.pathPrefix + '/'))
@@ -337,7 +340,7 @@ export function Sidebar({ onItemClick }: SidebarProps = {}) {
           </div>
         )}
 
-        {/* 3) 타지역 4종솔루션소개 그룹 (확장형, 토글 전용 — 페이지 연결 X) */}
+        {/* 3) 타지역 5종솔루션소개 그룹 (확장형, 토글 전용 — 페이지 연결 X) */}
         <div className="flex items-stretch gap-0.5">
           <button
             type="button"
