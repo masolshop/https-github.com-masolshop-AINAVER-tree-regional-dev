@@ -232,9 +232,16 @@ async def run_rank_check_for_places(
                     stats["success"] += 1
                 try:
                     await _persist_outcome(db, outcome, check_date)
+                    # 매트릭스 실시간 폴링이 셀을 즉시 볼 수 있도록 outcome 마다 커밋.
+                    # (이전: 모든 worker 완료 후 일괄 커밋 → 5초 폴링 중 셀이 계속 "—" 로 남음)
+                    await db.commit()
                 except Exception as e:  # noqa: BLE001
                     log.exception("rank persist failed: %s", e)
                     stats["error"] += 1
+                    try:
+                        await db.rollback()
+                    except Exception:  # noqa: BLE001
+                        pass
                 if pace_s:
                     await asyncio.sleep(pace_s)
 
@@ -242,10 +249,11 @@ async def run_rank_check_for_places(
             worker(pk, pid, dg, kw) for (pk, pid, dg, kw) in tasks
         ])
 
+    # 안전망 — 위 per-outcome 커밋이 모두 끝났더라도 남은 변경이 있으면 flush.
     try:
         await db.commit()
     except Exception as e:  # noqa: BLE001
-        log.exception("rank batch commit failed: %s", e)
+        log.exception("rank batch final commit failed: %s", e)
         await db.rollback()
 
     return stats
