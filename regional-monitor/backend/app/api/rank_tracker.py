@@ -17,6 +17,8 @@ from app.models.place import RegisteredPlace
 from app.models.rank_history import PlaceRankHistory
 from app.models.user import User
 from app.schemas.rank_tracker import (
+    CompetitionItem,
+    CompetitionResponse,
     ConfirmCandidateRequest,
     ConfirmPlaceIdRequest,
     ConfirmPlaceIdResponse,
@@ -46,6 +48,7 @@ from app.services.place_matcher import (
     match_one,
     serialize_match,
 )
+from app.services.naver_map import search_map
 from app.services.rank_checker import run_rank_check_for_places
 
 from .deps import get_current_user, require_superadmin
@@ -841,6 +844,112 @@ async def list_latest_ranks(
                 ))
 
     return LatestRanksResponse(count=len(cells), cells=cells)
+
+
+# ─────────────────────────────────────────────────────────
+# 경쟁업체 스냅샷 — 모달에서 키워드 클릭 시
+# ─────────────────────────────────────────────────────────
+@router.get(
+    "/competition/{place_pk}",
+    response_model=CompetitionResponse,
+)
+async def get_competition(
+    place_pk: int,
+    keyword: str,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> CompetitionResponse:
+    """{등록동} {keyword} 검색 결과 1~75위 + 내 업체 강조.
+
+    매트릭스 행 → PlaceDetailModal → 키워드 클릭 시 호출.
+    네이버 m.map.naver.com 검색 결과를 그대로 반환하되, 호출자의 place_id
+    위치를 is_me=True 로 마킹.
+    """
+    # 1) 사용자 소유 검증 + place 로드
+    q = await db.execute(
+        select(RegisteredPlace).where(
+            RegisteredPlace.id == place_pk,
+            RegisteredPlace.user_id == user.id,
+        )
+    )
+    place = q.scalar_one_or_none()
+    if place is None:
+        raise HTTPException(status_code=404, detail="place not found")
+
+    dong = (place.registered_dong or "").strip()
+    kw = (keyword or "").strip()
+    if not dong or not kw:
+        raise HTTPException(
+            status_code=400,
+            detail="registered_dong and keyword are required",
+        )
+    if kw not in _csv_to_keywords(place.tracking_keywords):
+        # 사용자가 추적 중인 키워드만 허용 (악의적 임의 키워드 조회 방지)
+        raise HTTPException(
+            status_code=400,
+            detail=f"keyword '{kw}' is not in tracking_keywords",
+        )
+
+    # 2) 네이버 검색 — rank_checker 와 동일한 쿼리 규칙
+    from app.services.region_loader import lookup_region_by_dong
+
+    parts: list[str] = []
+    regions = lookup_region_by_dong(dong)
+    if regions:
+        sido, sigungu = regions[0]
+        if sido:
+            parts.append(sido)
+        if sigungu:
+            parts.append(sigungu)
+    parts.append(dong)
+    parts.append(kw)
+    query = " ".join(parts)
+
+    res = await search_map(query, display=75, client=None)
+    if res.error:
+        return CompetitionResponse(
+            place_pk=place_pk,
+            keyword=kw,
+            query=query,
+            my_place_id=place.place_id,
+            my_rank=None,
+            out_of_range=True,
+            total_count=0,
+            items=[],
+            error=res.error,
+        )
+
+    my_pid = str(place.place_id) if place.place_id else None
+    my_rank: int | None = None
+    items: list[CompetitionItem] = []
+    for i, it in enumerate(res.items, start=1):
+        pid = str(it.place_id or "")
+        is_me = bool(my_pid and pid == my_pid)
+        if is_me and my_rank is None:
+            my_rank = i
+        items.append(
+            CompetitionItem(
+                rank=i,
+                place_id=pid,
+                name=it.name or "",
+                category=it.category or "",
+                phone=it.phone or "",
+                virtual_phone=it.virtual_phone or "",
+                address=it.address or "",
+                is_me=is_me,
+            )
+        )
+
+    return CompetitionResponse(
+        place_pk=place_pk,
+        keyword=kw,
+        query=query,
+        my_place_id=my_pid,
+        my_rank=my_rank,
+        out_of_range=(my_rank is None),
+        total_count=res.total_count,
+        items=items,
+    )
 
 
 # ─────────────────────────────────────────────────────────

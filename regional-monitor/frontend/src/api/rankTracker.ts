@@ -236,3 +236,33 @@ export const confirmPlaceId = (
     req,
     { timeoutMs: 30_000 },
   )
+
+/* ─────────── 경쟁업체 스냅샷 (모달에서 키워드 클릭 시) ─────────── */
+export interface CompetitionItem {
+  rank: number
+  place_id: string
+  name: string
+  category: string
+  phone: string
+  virtual_phone: string
+  address: string
+  is_me: boolean
+}
+
+export interface CompetitionResponse {
+  place_pk: number
+  keyword: string
+  query: string
+  my_place_id: string | null
+  my_rank: number | null
+  out_of_range: boolean
+  total_count: number
+  items: CompetitionItem[]
+  error: string | null
+}
+
+export const getCompetition = (placePk: number, keyword: string) =>
+  api.get<CompetitionResponse>(
+    `/api/v1/rank-tracker/competition/${placePk}?keyword=${encodeURIComponent(keyword)}`,
+    { timeoutMs: 30_000 },
+  )

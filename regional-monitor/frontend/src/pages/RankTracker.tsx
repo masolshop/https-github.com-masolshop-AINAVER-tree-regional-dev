@@ -13,7 +13,7 @@
  *  4) 등록동 × 키워드 매트릭스 (현재 순위 한눈에)
  *  5) 키워드별 30일 순위 추이 SVG 라인차트 (Y축 반전)
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   TrendingUp,
   Upload,
@@ -49,6 +49,7 @@ import {
   getRankHistory,
   getRankProgress,
   resetAllRankData,
+  getCompetition,
   type RankUploadRow,
   type RankPlaceOut,
   type RankPlaceListOut,
@@ -56,6 +57,7 @@ import {
   type LatestRanksResponse,
   type RankCheckProgress,
   type RankHistoryResponse,
+  type CompetitionResponse,
 } from '@/api/rankTracker'
 
 /* ────────────────────────────────────────────────────────────
@@ -1349,6 +1351,12 @@ function PlaceDetailModal(props: {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
+  // 경쟁업체 펼치기 (키워드 클릭 시) — 키워드별 캐시
+  const [openedKw, setOpenedKw] = useState<string | null>(null)
+  const [compCache, setCompCache] = useState<Record<string, CompetitionResponse>>({})
+  const [compLoadingKw, setCompLoadingKw] = useState<string | null>(null)
+  const [compErrorKw, setCompErrorKw] = useState<Record<string, string>>({})
+
   // ESC 키로 닫기
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -1377,6 +1385,32 @@ function PlaceDetailModal(props: {
       cancelled = true
     }
   }, [place.id])
+
+  // 키워드 행 클릭 → 경쟁업체 펼치기/접기
+  const toggleCompetition = useCallback(
+    async (kw: string) => {
+      if (openedKw === kw) {
+        setOpenedKw(null)
+        return
+      }
+      setOpenedKw(kw)
+      // 캐시 hit 면 즉시 표시
+      if (compCache[kw]) return
+      setCompLoadingKw(kw)
+      setCompErrorKw((m) => ({ ...m, [kw]: '' }))
+      try {
+        const resp = await getCompetition(place.id, kw)
+        setCompCache((c) => ({ ...c, [kw]: resp }))
+      } catch (e: any) {
+        const msg =
+          e?.response?.data?.detail || e?.message || '경쟁업체 조회 실패'
+        setCompErrorKw((m) => ({ ...m, [kw]: String(msg) }))
+      } finally {
+        setCompLoadingKw(null)
+      }
+    },
+    [openedKw, compCache, place.id],
+  )
 
   // 키워드별 최신/7일전/30일전 rank 추출
   const summaries = useMemo(() => {
@@ -1613,6 +1647,9 @@ function PlaceDetailModal(props: {
                   size={12}
                 />
               )}
+              <span className="text-[10px] text-ink-2 normal-case tracking-normal font-normal ml-1">
+                · 행 클릭 시 경쟁업체 1~75위 펼치기
+              </span>
             </h4>
             {error ? (
               <div className="text-xs text-rose-600 bg-rose-50 rounded px-3 py-2">
@@ -1642,36 +1679,84 @@ function PlaceDetailModal(props: {
                       <th className="px-2 py-1.5 text-center font-semibold">
                         기록
                       </th>
+                      <th className="px-2 py-1.5 text-center font-semibold w-8">
+                        {/* expand icon */}
+                      </th>
                     </tr>
                   </thead>
                   <tbody>
-                    {summaries.map((s) => (
-                      <tr
-                        key={s.keyword}
-                        className="border-t border-slate-100"
-                      >
-                        <td className="px-2 py-1.5 font-semibold">
-                          {s.keyword}
-                        </td>
-                        <td className="px-2 py-1.5 text-center">
-                          {rankBadge(s.latest, s.latestOOR)}
-                        </td>
-                        <td className="px-2 py-1.5 text-center">
-                          {diffBadge(s.diff7)}
-                        </td>
-                        <td className="px-2 py-1.5 text-center">
-                          {diffBadge(s.diff30)}
-                        </td>
-                        <td className="px-2 py-1.5 text-center text-[11px] text-ink-2">
-                          {s.points}건
-                        </td>
-                      </tr>
-                    ))}
+                    {summaries.map((s) => {
+                      const isOpen = openedKw === s.keyword
+                      const comp = compCache[s.keyword]
+                      const compLoading = compLoadingKw === s.keyword
+                      const compError = compErrorKw[s.keyword]
+                      return (
+                        <Fragment key={s.keyword}>
+                          <tr
+                            onClick={() => toggleCompetition(s.keyword)}
+                            className={clsx(
+                              'border-t border-slate-100 cursor-pointer hover:bg-blue-50/40',
+                              isOpen && 'bg-blue-50/60',
+                            )}
+                          >
+                            <td className="px-2 py-1.5 font-semibold text-blue-700">
+                              {s.keyword}
+                            </td>
+                            <td className="px-2 py-1.5 text-center">
+                              {rankBadge(s.latest, s.latestOOR)}
+                            </td>
+                            <td className="px-2 py-1.5 text-center">
+                              {diffBadge(s.diff7)}
+                            </td>
+                            <td className="px-2 py-1.5 text-center">
+                              {diffBadge(s.diff30)}
+                            </td>
+                            <td className="px-2 py-1.5 text-center text-[11px] text-ink-2">
+                              {s.points}건
+                            </td>
+                            <td className="px-2 py-1.5 text-center text-ink-2">
+                              {compLoading ? (
+                                <Loader2
+                                  className="inline animate-spin text-blue-500"
+                                  size={12}
+                                />
+                              ) : isOpen ? (
+                                <ChevronUp size={14} />
+                              ) : (
+                                <ChevronDown size={14} />
+                              )}
+                            </td>
+                          </tr>
+                          {isOpen && (
+                            <tr className="bg-slate-50/50">
+                              <td colSpan={6} className="px-2 py-2">
+                                {compError ? (
+                                  <div className="text-xs text-rose-600 bg-rose-50 rounded px-2 py-1.5">
+                                    {compError}
+                                  </div>
+                                ) : !comp ? (
+                                  <div className="text-xs text-ink-2 py-2 text-center">
+                                    <Loader2
+                                      className="inline animate-spin mr-1 text-blue-500"
+                                      size={12}
+                                    />
+                                    경쟁업체 불러오는 중…
+                                  </div>
+                                ) : (
+                                  <CompetitionList comp={comp} />
+                                )}
+                              </td>
+                            </tr>
+                          )}
+                        </Fragment>
+                      )
+                    })}
                   </tbody>
                 </table>
                 <p className="text-[11px] text-ink-2 mt-2">
                   ▲ 상승(과거보다 좋은 순위) · ▼ 하락 · 75위 밖은 비교에서
-                  제외됨.
+                  제외됨. 행 클릭 시 그 키워드의 동×키워드 검색 결과 1~75위가
+                  펼쳐집니다.
                 </p>
               </div>
             )}
@@ -1690,6 +1775,156 @@ function PlaceDetailModal(props: {
             닫기
           </button>
         </div>
+      </div>
+    </div>
+  )
+}
+
+/* ────────────────────────────────────────────────────────────
+ * 컴포넌트: 경쟁업체 리스트 (모달 안에서 키워드 펼치기 시)
+ *  - 1~75위 전체 표시, 내 업체는 강조 배경
+ *  - 1~3위 emerald, 4~10 blue, 11~30 slate, 31~75 amber 배지
+ *  - 네이버 플레이스 직링크 외부 아이콘
+ * ──────────────────────────────────────────────────────────── */
+function CompetitionList(props: { comp: CompetitionResponse }) {
+  const { comp } = props
+
+  const rankTone = (r: number) =>
+    r <= 3
+      ? 'bg-emerald-100 text-emerald-800'
+      : r <= 10
+        ? 'bg-blue-100 text-blue-800'
+        : r <= 30
+          ? 'bg-slate-100 text-slate-800'
+          : 'bg-amber-100 text-amber-800'
+
+  if (comp.error) {
+    return (
+      <div className="text-xs text-rose-600 bg-rose-50 rounded px-2 py-1.5">
+        네이버 검색 실패: {comp.error}
+      </div>
+    )
+  }
+
+  if (comp.items.length === 0) {
+    return (
+      <div className="text-xs text-ink-2 bg-slate-50 rounded px-2 py-2 text-center">
+        검색 결과가 없습니다. (쿼리: <code>{comp.query}</code>)
+      </div>
+    )
+  }
+
+  return (
+    <div className="space-y-2">
+      {/* 헤더: 쿼리 + 내 순위 */}
+      <div className="flex items-center justify-between text-[11px] text-ink-2 px-1">
+        <div>
+          쿼리: <code className="bg-white px-1 rounded">{comp.query}</code>
+          {' · '}
+          전체 {comp.total_count}건 중 {comp.items.length}건
+        </div>
+        <div>
+          내 업체:{' '}
+          {comp.my_rank != null ? (
+            <span
+              className={clsx(
+                'px-1.5 py-0.5 rounded font-bold',
+                rankTone(comp.my_rank),
+              )}
+            >
+              {comp.my_rank}위
+            </span>
+          ) : (
+            <span className="px-1.5 py-0.5 rounded font-bold bg-rose-100 text-rose-700">
+              75위 밖
+            </span>
+          )}
+        </div>
+      </div>
+
+      {/* 리스트 */}
+      <div className="max-h-[360px] overflow-y-auto rounded border border-slate-200 bg-white">
+        <table className="w-full text-xs border-collapse">
+          <thead className="bg-slate-50 sticky top-0 z-10">
+            <tr className="text-ink-2">
+              <th className="px-2 py-1.5 text-center font-semibold w-12">
+                순위
+              </th>
+              <th className="px-2 py-1.5 text-left font-semibold">상호</th>
+              <th className="px-2 py-1.5 text-left font-semibold">카테고리</th>
+              <th className="px-2 py-1.5 text-left font-semibold hidden sm:table-cell">
+                주소
+              </th>
+              <th className="px-2 py-1.5 text-center font-semibold w-12">
+                {/* link */}
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {comp.items.map((it) => (
+              <tr
+                key={`${it.rank}-${it.place_id}`}
+                className={clsx(
+                  'border-t border-slate-100',
+                  it.is_me
+                    ? 'bg-emerald-50 ring-1 ring-emerald-300'
+                    : 'hover:bg-slate-50',
+                )}
+              >
+                <td className="px-2 py-1.5 text-center">
+                  <span
+                    className={clsx(
+                      'inline-block px-1.5 py-0.5 rounded font-bold text-[11px]',
+                      rankTone(it.rank),
+                    )}
+                  >
+                    {it.rank}
+                  </span>
+                </td>
+                <td className="px-2 py-1.5">
+                  <div
+                    className={clsx(
+                      'font-semibold',
+                      it.is_me && 'text-emerald-800',
+                    )}
+                  >
+                    {it.name || '-'}
+                    {it.is_me && (
+                      <span className="ml-1 text-[10px] px-1 py-0.5 rounded bg-emerald-200 text-emerald-900 font-bold">
+                        내 업체
+                      </span>
+                    )}
+                  </div>
+                  {(it.phone || it.virtual_phone) && (
+                    <div className="text-[10px] text-ink-2 font-mono">
+                      {it.phone || it.virtual_phone}
+                    </div>
+                  )}
+                </td>
+                <td className="px-2 py-1.5 text-ink-2 text-[11px]">
+                  {it.category || '-'}
+                </td>
+                <td className="px-2 py-1.5 text-ink-2 text-[11px] hidden sm:table-cell">
+                  {it.address || '-'}
+                </td>
+                <td className="px-2 py-1.5 text-center">
+                  {it.place_id && (
+                    <a
+                      href={`https://m.place.naver.com/place/${it.place_id}/home`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      onClick={(e) => e.stopPropagation()}
+                      className="inline-flex items-center text-blue-600 hover:text-blue-800"
+                      aria-label="네이버 플레이스 열기"
+                    >
+                      <ExternalLink size={11} />
+                    </a>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       </div>
     </div>
   )

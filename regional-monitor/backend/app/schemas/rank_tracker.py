@@ -270,3 +270,31 @@ class RunRankCheckResponse(BaseModel):
     skipped_unmatched: int
     elapsed_sec: int | None = None
     message: str | None = None
+
+
+# ─────────────────────────────────────────────────────────
+# 경쟁업체 스냅샷 (모달에서 키워드 클릭 시)
+# ─────────────────────────────────────────────────────────
+class CompetitionItem(BaseModel):
+    """단일 검색 결과 항목 (1~75위 중 1건)."""
+    rank: int                       # 검색 결과 내 순위 (1-base)
+    place_id: str
+    name: str
+    category: str
+    phone: str
+    virtual_phone: str
+    address: str
+    is_me: bool = False             # 호출자의 등록 place_id 와 같으면 True
+
+
+class CompetitionResponse(BaseModel):
+    """{등록동} {keyword} 검색 결과 1~75위 + 내 업체 마킹."""
+    place_pk: int
+    keyword: str
+    query: str                      # 실제 네이버에 던진 쿼리
+    my_place_id: str | None
+    my_rank: int | None             # 1~75 사이면 그 값, 75위 밖이면 None
+    out_of_range: bool              # True 면 내 업체가 75위 밖
+    total_count: int
+    items: list[CompetitionItem]
+    error: str | None = None
