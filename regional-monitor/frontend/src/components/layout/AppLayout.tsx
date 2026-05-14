@@ -45,10 +45,14 @@ export function AppLayout() {
   }, [drawerOpen])
 
   return (
-    <div className="min-h-screen bg-bg lg:flex">
-      {/* ───── 외부 공개 데모 게스트 세션 — 상단 띠 배너 (isDemo 일 때만) ───── */}
+    <div className="min-h-screen bg-bg">
+      {/* ───── 외부 공개 데모 게스트 세션 — 상단 띠 배너 (isDemo 일 때만) ─────
+          flex 컨테이너 밖에 위치해야 가로 풀폭으로 렌더된다.
+          (flex 자식이 되면 sidebar/main 옆에 끼어들어 레이아웃 깨짐) */}
       <DemoBanner />
 
+      {/* ───── 실제 레이아웃 (사이드바 + 메인) ───── */}
+      <div className="lg:flex">
       {/* ───── 모바일 전용 상단 헤더 (햄버거 + 로고) ───── */}
       <header className="lg:hidden sticky top-0 z-30 bg-white/95 backdrop-blur border-b border-bg-subtle">
         <div className="flex items-center justify-between px-4 h-14">
@@ -118,6 +122,7 @@ export function AppLayout() {
           <Outlet />
         </div>
       </main>
+      </div>
 
       {/* 로그인 모달 (전역) */}
       <LoginModal />
