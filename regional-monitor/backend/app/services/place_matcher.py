@@ -207,50 +207,72 @@ async def _search_by_phone(
     phone_070: str,
     business_name: str,
     registered_dong: str,
+    tracking_keywords: list[str] | None = None,
     client: httpx.AsyncClient | None,
 ) -> MapPlace | None:
     """070 번호로 네이버 지도 검색 → phone/virtual_phone 일치하는 플레이스 1건 반환.
 
-    검색 전략 (competition 솔루션 패턴 적용, display=75):
-      1) "{시군구} {상호}"   — 가장 효과적 (지역 한정 + 상호)
-      2) "{시도} {상호}"     — 시군구 추출 실패 또는 광역 검색
-      3) "{동} {상호}"       — 동 토큰만 있을 때 (최후 폴백)
-      4) "{상호}"            — 마지막 시도 (전국)
+    검색 전략 (카테고리 키워드 기반, display=75):
+      유저가 등록한 business_name은 브랜드명(예: "광주대형렉카")인 경우가 많아
+      네이버에서 그 이름 그대로는 0건이 나온다. 반면 tracking_keywords는
+      유저가 "순위 보고 싶은 카테고리 키워드"라서 네이버 검색에 적합.
 
-    중복 쿼리는 제거. 각 쿼리 결과 75건 중 phone 또는 virtual_phone 이
-    입력 070과 일치하는 첫 플레이스 반환. 즉시 일치 발견 시 즉시 리턴
-    (불필요한 추가 호출 방지).
+      쿼리 우선순위 (가장 좁은 검색부터 → 폴백):
+        A) "{시군구} {동} {keyword}"  — 가장 좁고 정밀 (수완동 렉카 → 12건)
+        B) "{시군구} {keyword}"        — 넓은 지역 + 카테고리 (광산구 렉카 → 75건)
+        C) "{동} {keyword}"            — 시군구 추출 실패시
+        D) "{시군구} {상호}"           — 레거시 패턴 (브랜드명이 등록된 케이스)
+        E) "{상호}"                    — 최후 폴백
+
+      복수 키워드(예: "렉카,대형렉카")는 각각 A/B/C 패턴을 모두 시도.
+      중복 쿼리는 제거. 즉시 070 일치 발견 시 리턴.
     """
     target_phone = _norm_phone(phone_070)
     if not target_phone:
         return None
 
     business = (business_name or "").strip()
-    if not business:
-        # 상호 없으면 쿼리 구성 불가
-        return None
-
     sido, sigungu, dong = _parse_registered_address(registered_dong)
 
+    # 카테고리 키워드 정리 (트래킹 키워드 우선, 없으면 빈 리스트)
+    kw_list: list[str] = []
+    for k in (tracking_keywords or []):
+        kk = (k or "").strip()
+        if kk and kk not in kw_list:
+            kw_list.append(kk)
+
     queries: list[str] = []
-    # 1) 시군구 + 상호 (competition 패턴 = 가장 효과적)
+
+    def _add(q: str) -> None:
+        q = q.strip()
+        if q and q not in queries:
+            queries.append(q)
+
+    # A) {시군구} {동} {keyword} — 가장 정밀
+    if sigungu and dong:
+        for kw in kw_list:
+            _add(f"{sigungu} {dong} {kw}")
+    # B) {시군구} {keyword} — 도시 단위
     if sigungu:
-        q = f"{sigungu} {business}"
-        if q not in queries:
-            queries.append(q)
-    # 2) 시도 + 상호 (광역 검색)
-    if sido:
-        q = f"{sido} {business}"
-        if q not in queries:
-            queries.append(q)
-    # 3) 동/리 + 상호 (시군구 추출 실패시 폴백)
+        for kw in kw_list:
+            _add(f"{sigungu} {kw}")
+    # C) {동} {keyword} — 시군구 없을 때
     if dong and not sigungu:
-        q = f"{dong} {business}"
-        if q not in queries:
-            queries.append(q)
-    # 4) 상호만 (최후 수단 — 전국 결과)
-    if business not in queries:
-        queries.append(business)
+        for kw in kw_list:
+            _add(f"{dong} {kw}")
+    # D) 레거시: {시군구} {상호} — 브랜드명 그대로 등록된 케이스도 커버
+    if business:
+        if sigungu:
+            _add(f"{sigungu} {business}")
+        if sido:
+            _add(f"{sido} {business}")
+        if dong and not sigungu:
+            _add(f"{dong} {business}")
+        # E) 상호만 — 최후 수단
+        _add(business)
+
+    if not queries:
+        return None
 
     for q in queries:
         items = await _search_once(q, client=client)
@@ -277,6 +299,7 @@ async def match_one(
     phone_070: str,
     business_name: str,
     registered_dong: str,
+    tracking_keywords: list[str] | None = None,
     client: httpx.AsyncClient | None = None,
 ) -> MatchResult:
     """단일 행 매칭 — 070을 키로 플레이스 1건 확정 + 등록동 변경 여부 체크.
@@ -288,8 +311,10 @@ async def match_one(
 
     Args:
         phone_070: 사용자 070 가상번호 (예: "070-5242-1573")
-        business_name: 상호 (검색 쿼리 보조용)
+        business_name: 상호 (검색 쿼리 보조용 — 브랜드명일 수 있음)
         registered_dong: 등록동 (변경 노출 비교 기준)
+        tracking_keywords: 카테고리 키워드 리스트 (예: ["렉카","대형렉카"]) —
+            검색 쿼리에 사용. business_name이 브랜드명일 때 필수.
 
     Returns:
         MatchResult — status / place_id / matched 1건 / dong_changed 플래그
@@ -299,6 +324,7 @@ async def match_one(
             phone_070=phone_070,
             business_name=business_name,
             registered_dong=registered_dong,
+            tracking_keywords=tracking_keywords,
             client=client,
         )
     except Exception as e:  # noqa: BLE001

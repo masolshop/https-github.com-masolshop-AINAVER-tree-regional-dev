@@ -274,6 +274,7 @@ async def _run_matching_for_ids(user_id: int, place_ids: list[int]) -> None:
                     phone_070=p.phone,
                     business_name=p.business_name or "",
                     registered_dong=p.registered_dong or "",
+                    tracking_keywords=_csv_to_keywords(p.tracking_keywords),
                 )
                 p.match_status = result.status
                 # match_confidence는 레거시 호환용. AUTO_MATCHED=100, NEEDS_MANUAL=0
