@@ -8,7 +8,7 @@ import re
 from datetime import date, timedelta
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core import get_db
@@ -24,6 +24,7 @@ from app.schemas.rank_tracker import (
     LatestRanksResponse,
     RankCheckProgress,
     RankHistoryPoint,
+    ResetAllResponse,
     RankHistoryResponse,
     RankHistorySeries,
     RankPlaceCandidate,
@@ -410,6 +411,60 @@ async def run_match(
         auto_matched=0,
         needs_manual=0,
         errors=0,
+    )
+
+
+# ─────────────────────────────────────────────────────────
+# 전체 초기화 — 사용자 본인의 데이터를 비우기 (재업로드 전)
+# ─────────────────────────────────────────────────────────
+@router.delete("/reset-all", response_model=ResetAllResponse)
+async def reset_all_data(
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> ResetAllResponse:
+    """현재 사용자의 RankTracker 데이터를 전부 삭제.
+
+    삭제 대상:
+      · 본인 user_id 의 RegisteredPlace 전체
+      · 위 places 의 PlaceRankHistory 전체 (FK CASCADE 이지만 명시적으로 한 번 더 실행)
+
+    사용 시나리오:
+      · 업로드 도중 매칭/순위 결과가 꼬여서 처음부터 다시 올리고 싶을 때
+      · 다른 사용자 데이터에는 영향 없음 (user_id 필터)
+    """
+    # 1) 본인 plac_pk 목록 확보
+    q_ids = await db.execute(
+        select(RegisteredPlace.id).where(RegisteredPlace.user_id == user.id)
+    )
+    place_ids = [row[0] for row in q_ids.all()]
+
+    deleted_history = 0
+    if place_ids:
+        # 2) PlaceRankHistory 먼저 삭제 (FK 안전)
+        res_hist = await db.execute(
+            delete(PlaceRankHistory).where(
+                PlaceRankHistory.place_pk.in_(place_ids)
+            )
+        )
+        deleted_history = int(res_hist.rowcount or 0)
+
+    # 3) RegisteredPlace 삭제
+    res_place = await db.execute(
+        delete(RegisteredPlace).where(RegisteredPlace.user_id == user.id)
+    )
+    deleted_places = int(res_place.rowcount or 0)
+
+    await db.commit()
+
+    log.info(
+        "reset-all: user_id=%s deleted_places=%d deleted_history=%d",
+        user.id, deleted_places, deleted_history,
+    )
+
+    return ResetAllResponse(
+        deleted_places=deleted_places,
+        deleted_history=deleted_history,
+        message=f"전체 초기화 완료 — 플레이스 {deleted_places}건, 순위이력 {deleted_history}건 삭제",
     )
 
 

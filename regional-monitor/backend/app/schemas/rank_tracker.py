@@ -201,6 +201,21 @@ class RankCheckProgress(BaseModel):
 
 
 # ─────────────────────────────────────────────────────────
+# 전체 초기화 (사용자 본인의 데이터 비우기)
+# ─────────────────────────────────────────────────────────
+class ResetAllResponse(BaseModel):
+    """DELETE /reset-all 응답 — 삭제된 행 수 요약.
+
+    사용자가 "재업로드하기 위해 초기화" 할 때 호출한다.
+    본인 user_id 의 RegisteredPlace + PlaceRankHistory 만 삭제하며,
+    다른 사용자의 데이터에는 영향 없음.
+    """
+    deleted_places: int
+    deleted_history: int
+    message: str
+
+
+# ─────────────────────────────────────────────────────────
 # 일별 배치 실행 (수동 트리거, 관리자)
 # ─────────────────────────────────────────────────────────
 class RunRankCheckResponse(BaseModel):

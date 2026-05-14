@@ -28,6 +28,8 @@ import {
   LineChart as LineChartIcon,
   Search,
   MapPin,
+  Trash2,
+  X,
 } from 'lucide-react'
 import clsx from 'clsx'
 
@@ -42,6 +44,7 @@ import {
   runMatch,
   getRankHistory,
   getRankProgress,
+  resetAllRankData,
   type RankUploadRow,
   type RankPlaceOut,
   type RankPlaceListOut,
@@ -76,6 +79,9 @@ export default function RankTracker() {
   const [progress, setProgress] = useState<RankCheckProgress | null>(null)
   // 매트릭스 reload 트리거 (progress 폴링이 1단계 증가시키면 RankMatrix가 reload)
   const [matrixReloadTick, setMatrixReloadTick] = useState(0)
+  // 전체 초기화 모달
+  const [resetModalOpen, setResetModalOpen] = useState(false)
+  const [resetting, setResetting] = useState(false)
 
   const showToast = useCallback((msg: string) => {
     setToast(msg)
@@ -256,6 +262,28 @@ export default function RankTracker() {
     }
   }, [fetchAll, showToast])
 
+  /* ── 전체 초기화 (재업로드 전) ── */
+  const handleResetAll = useCallback(async () => {
+    setResetting(true)
+    try {
+      const r = await resetAllRankData()
+      showToast(r.message)
+      setResetModalOpen(false)
+      // 로컬 상태 즉시 비우기
+      setList(null)
+      setDongChanged(null)
+      setProgress(null)
+      setMatrixReloadTick(0)
+      // 그 후 서버에서 새로 fetch (전부 0 으로 갱신)
+      await fetchAll()
+      await fetchProgress()
+    } catch (e) {
+      showToast('초기화 실패: ' + (e as Error).message)
+    } finally {
+      setResetting(false)
+    }
+  }, [fetchAll, fetchProgress, showToast])
+
   return (
     <div className="px-4 lg:px-8 py-6 max-w-7xl mx-auto space-y-6" data-page="solution-tool">
       <PageSeo
@@ -313,6 +341,7 @@ export default function RankTracker() {
           onRefresh={fetchAll}
           onRunMatch={handleRunMatch}
           onExport={exportResults}
+          onReset={() => setResetModalOpen(true)}
         />
       )}
 
@@ -328,6 +357,105 @@ export default function RankTracker() {
 
       {/* 4) 키워드별 30일 추이 그래프 N개 */}
       {list && list.items.length > 0 && <KeywordGraphSection list={list} />}
+
+      {/* 전체 초기화 확인 모달 */}
+      {resetModalOpen && (
+        <ResetConfirmModal
+          totalPlaces={list?.total ?? 0}
+          resetting={resetting}
+          onCancel={() => setResetModalOpen(false)}
+          onConfirm={handleResetAll}
+        />
+      )}
+    </div>
+  )
+}
+
+/* ────────────────────────────────────────────────────────────
+ * 컴포넌트: 전체 초기화 확인 모달
+ *  - 사용자가 SummaryBar "전체 초기화" 버튼 누르면 표시
+ *  - 두 번 확인 (체크박스 + 확인 버튼) 방식으로 실수 방지
+ * ──────────────────────────────────────────────────────────── */
+function ResetConfirmModal(props: {
+  totalPlaces: number
+  resetting: boolean
+  onCancel: () => void
+  onConfirm: () => void
+}) {
+  const { totalPlaces, resetting, onCancel, onConfirm } = props
+  const [agree, setAgree] = useState(false)
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4"
+      onClick={(e) => {
+        if (e.target === e.currentTarget && !resetting) onCancel()
+      }}
+    >
+      <div className="bg-white rounded-xl shadow-2xl max-w-md w-full">
+        <div className="flex items-center gap-2 px-5 py-4 border-b border-slate-200">
+          <AlertTriangle className="text-rose-600" size={20} />
+          <h3 className="text-base font-bold text-rose-900">전체 초기화</h3>
+          <button
+            onClick={onCancel}
+            disabled={resetting}
+            className="ml-auto p-1 rounded hover:bg-slate-100 disabled:opacity-50"
+          >
+            <X size={16} className="text-ink-2" />
+          </button>
+        </div>
+
+        <div className="px-5 py-4 space-y-3 text-sm">
+          <p>
+            현재 등록된 <strong className="text-rose-700">{totalPlaces}건</strong>의
+            플레이스와 모든 키워드별 순위 이력이 <strong>영구 삭제</strong>됩니다.
+          </p>
+          <ul className="text-xs text-ink-2 space-y-1 bg-slate-50 rounded-lg px-3 py-2">
+            <li>· 등록 플레이스 (070전번 / 등록동 / 상호 / 추적키워드)</li>
+            <li>· 매칭 결과 (place_id, 매칭상태, 변경노출 플래그)</li>
+            <li>· 키워드별 순위 이력 (30일 추이 그래프 데이터)</li>
+          </ul>
+          <p className="text-xs text-amber-700 bg-amber-50 rounded-lg px-3 py-2 ring-1 ring-amber-200">
+            <strong>주의:</strong> 삭제 후 복구할 수 없습니다. 초기화 후
+            새 엑셀을 다시 업로드해야 합니다.
+          </p>
+
+          <label className="flex items-start gap-2 pt-1 cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={agree}
+              onChange={(e) => setAgree(e.target.checked)}
+              disabled={resetting}
+              className="mt-0.5"
+            />
+            <span className="text-xs text-ink-1">
+              위 내용을 확인했으며, 모든 데이터를 삭제하는 데 동의합니다.
+            </span>
+          </label>
+        </div>
+
+        <div className="flex items-center gap-2 px-5 py-3 bg-slate-50 rounded-b-xl">
+          <button
+            onClick={onCancel}
+            disabled={resetting}
+            className="ml-auto text-xs font-semibold px-3 py-1.5 rounded-md bg-white hover:bg-slate-100 ring-1 ring-slate-300 disabled:opacity-50"
+          >
+            취소
+          </button>
+          <button
+            onClick={onConfirm}
+            disabled={!agree || resetting}
+            className="text-xs font-semibold px-3 py-1.5 rounded-md bg-rose-600 hover:bg-rose-700 text-white inline-flex items-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {resetting ? (
+              <Loader2 size={14} className="animate-spin" />
+            ) : (
+              <Trash2 size={14} />
+            )}
+            영구 삭제
+          </button>
+        </div>
+      </div>
     </div>
   )
 }
@@ -580,8 +708,9 @@ function SummaryBar(props: {
   onRefresh: () => void
   onRunMatch: () => void
   onExport: () => void
+  onReset: () => void
 }) {
-  const { list, loading, running, onRefresh, onRunMatch, onExport } = props
+  const { list, loading, running, onRefresh, onRunMatch, onExport, onReset } = props
 
   const Tile = ({
     label,
@@ -636,6 +765,14 @@ function SummaryBar(props: {
         >
           <Download size={14} />
           엑셀 다운로드
+        </button>
+        <button
+          onClick={onReset}
+          className="text-xs font-semibold px-3 py-1.5 rounded-md bg-rose-50 hover:bg-rose-100 text-rose-700 ring-1 ring-rose-200 inline-flex items-center gap-1"
+          title="등록된 모든 플레이스와 순위 이력을 삭제하고 처음부터 다시 업로드합니다"
+        >
+          <Trash2 size={14} />
+          전체 초기화
         </button>
       </div>
       <div className="flex flex-wrap gap-2">

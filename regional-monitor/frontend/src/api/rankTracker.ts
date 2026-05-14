@@ -198,3 +198,13 @@ export const triggerRankCheckNow = () =>
 
 export const getRankProgress = () =>
   api.get<RankCheckProgress>('/api/v1/rank-tracker/progress')
+
+/* ─────────── 전체 초기화 (재업로드 전 데이터 비우기) ─────────── */
+export interface ResetAllResponse {
+  deleted_places: number
+  deleted_history: number
+  message: string
+}
+
+export const resetAllRankData = () =>
+  api.del<ResetAllResponse>('/api/v1/rank-tracker/reset-all', { timeoutMs: 60_000 })
