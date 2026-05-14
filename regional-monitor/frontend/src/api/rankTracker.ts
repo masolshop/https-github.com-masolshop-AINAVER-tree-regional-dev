@@ -114,6 +114,20 @@ export interface DongChangedListOut {
   items: DongChangedItem[]
 }
 
+/* ─────────── 매트릭스 벌크 (등록동 × 키워드 한 방 조회) ─────────── */
+export interface LatestRankCell {
+  place_pk: number
+  keyword: string
+  rank: number | null
+  out_of_range: boolean
+  check_date: string | null
+}
+
+export interface LatestRanksResponse {
+  count: number
+  cells: LatestRankCell[]
+}
+
 /* ─────────── 순위 이력 ─────────── */
 export interface RankHistoryPoint {
   check_date: string
@@ -156,6 +170,9 @@ export const listRankPlaces = () =>
 
 export const listDongChanged = () =>
   api.get<DongChangedListOut>('/api/v1/rank-tracker/dong-changed')
+
+export const listLatestRanks = () =>
+  api.get<LatestRanksResponse>('/api/v1/rank-tracker/latest-ranks')
 
 export const runMatch = (req: RunMatchRequest = {}) =>
   api.post<RunMatchResponse>('/api/v1/rank-tracker/run-match', req)

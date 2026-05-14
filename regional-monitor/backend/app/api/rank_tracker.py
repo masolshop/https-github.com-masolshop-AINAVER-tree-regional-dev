@@ -20,6 +20,8 @@ from app.schemas.rank_tracker import (
     ConfirmCandidateRequest,
     DongChangedItem,
     DongChangedListOut,
+    LatestRankCell,
+    LatestRanksResponse,
     RankHistoryPoint,
     RankHistoryResponse,
     RankHistorySeries,
@@ -492,6 +494,83 @@ async def get_rank_history(
         registered_dong=p.registered_dong,
         series=series_list,
     )
+
+
+# ─────────────────────────────────────────────────────────
+# 매트릭스용 벌크 — 모든 (place_pk, keyword)의 최신 순위 한 방에 반환
+# ─────────────────────────────────────────────────────────
+@router.get("/latest-ranks", response_model=LatestRanksResponse)
+async def list_latest_ranks(
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> LatestRanksResponse:
+    """프론트 매트릭스용 — DB 한 번 조회로 (place_pk, keyword) 별 최신 순위 반환.
+
+    - 네이버 검색 호출 없음 (PlaceRankHistory에서 SELECT만)
+    - 매트릭스가 296×N 번 /history 호출하던 패턴을 1회 호출로 치환
+    - 아직 순위 기록이 없는 (place, keyword) 조합은 rank=None 으로 채워서 반환
+    """
+    # 1) 사용자의 등록 플레이스 + 추적 키워드 로드
+    q_places = await db.execute(
+        select(RegisteredPlace)
+        .where(
+            RegisteredPlace.user_id == user.id,
+            RegisteredPlace.match_status == "AUTO_MATCHED",
+            RegisteredPlace.place_id.is_not(None),
+            RegisteredPlace.tracking_keywords.is_not(None),
+        )
+    )
+    places = list(q_places.scalars().all())
+    if not places:
+        return LatestRanksResponse(count=0, cells=[])
+
+    place_ids = [p.id for p in places]
+
+    # 2) 해당 플레이스들의 최근 N일 히스토리 (최근 7일이면 충분)
+    today = now_kst().date()
+    since = today - timedelta(days=7)
+
+    hist_q = await db.execute(
+        select(PlaceRankHistory)
+        .where(
+            PlaceRankHistory.place_pk.in_(place_ids),
+            PlaceRankHistory.check_date >= since,
+        )
+        .order_by(PlaceRankHistory.check_date.desc())
+    )
+    histories = list(hist_q.scalars().all())
+
+    # 3) (place_pk, keyword) → 가장 최근 1건만 보관
+    latest: dict[tuple[int, str], PlaceRankHistory] = {}
+    for h in histories:
+        key = (h.place_pk, h.keyword)
+        if key not in latest:
+            latest[key] = h
+
+    # 4) 모든 (place × tracked_keyword) 조합으로 셀 채움 (기록 없으면 rank=None)
+    cells: list[LatestRankCell] = []
+    for p in places:
+        kws = _csv_to_keywords(p.tracking_keywords)
+        for kw in kws:
+            h = latest.get((p.id, kw))
+            if h is None:
+                cells.append(LatestRankCell(
+                    place_pk=p.id,
+                    keyword=kw,
+                    rank=None,
+                    out_of_range=False,
+                    check_date=None,
+                ))
+            else:
+                cells.append(LatestRankCell(
+                    place_pk=p.id,
+                    keyword=kw,
+                    rank=h.rank,
+                    out_of_range=bool(h.out_of_range),
+                    check_date=h.check_date,
+                ))
+
+    return LatestRanksResponse(count=len(cells), cells=cells)
 
 
 # ─────────────────────────────────────────────────────────

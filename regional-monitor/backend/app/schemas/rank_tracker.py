@@ -161,6 +161,28 @@ class RankHistoryResponse(BaseModel):
 
 
 # ─────────────────────────────────────────────────────────
+# 매트릭스용 벌크 엔드포인트 (등록동×키워드 한 방 조회)
+# ─────────────────────────────────────────────────────────
+class LatestRankCell(BaseModel):
+    """매트릭스 셀 1개 — (place_pk, keyword)의 최신 순위."""
+    place_pk: int
+    keyword: str
+    rank: int | None
+    out_of_range: bool = False
+    check_date: date | None = None
+
+
+class LatestRanksResponse(BaseModel):
+    """매트릭스용 전체 응답 — DB 한 번 조회로 모든 (place×keyword) 최신 순위 반환.
+
+    프론트엔드 매트릭스가 N개 플레이스에 대해 개별 /history 호출하던 것을
+    이 단일 엔드포인트로 치환 (네이버 검색 호출 없음, DB SELECT 1회).
+    """
+    count: int
+    cells: list[LatestRankCell]
+
+
+# ─────────────────────────────────────────────────────────
 # 일별 배치 실행 (수동 트리거, 관리자)
 # ─────────────────────────────────────────────────────────
 class RunRankCheckResponse(BaseModel):

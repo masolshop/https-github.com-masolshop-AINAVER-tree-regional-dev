@@ -38,12 +38,14 @@ import {
   uploadRankRows,
   listRankPlaces,
   listDongChanged,
+  listLatestRanks,
   runMatch,
   getRankHistory,
   type RankUploadRow,
   type RankPlaceOut,
   type RankPlaceListOut,
   type DongChangedListOut,
+  type LatestRanksResponse,
 } from '@/api/rankTracker'
 
 /* ────────────────────────────────────────────────────────────
@@ -559,27 +561,22 @@ function RankMatrix(props: { list: RankPlaceListOut }) {
     if (items.length === 0) return
     setLoading(true)
     try {
-      // 병렬 fetch (최대 동시성 8)
-      const queue = [...items]
+      // 벌크 엔드포인트 1회 호출 (이전: place 수만큼 /history 호출 → 429 폭주)
+      const resp: LatestRanksResponse = await listLatestRanks()
       const next: Record<string, number | null> = {}
-      const workers = Array.from({ length: Math.min(8, queue.length) }, async () => {
-        while (queue.length) {
-          const p = queue.shift()
-          if (!p) break
-          try {
-            const hist = await getRankHistory(p.id, 1)
-            for (const s of hist.series) {
-              const last = s.points[s.points.length - 1]
-              const rank = last?.rank ?? null
-              next[`${p.id}::${s.keyword}`] = rank
-            }
-          } catch (e) {
-            console.error('history fetch failed', p.id, e)
-          }
+      for (const cell of resp.cells) {
+        // out_of_range = 75위 밖. UI 표시 마킹용으로 999 사용.
+        if (cell.rank == null) {
+          next[`${cell.place_pk}::${cell.keyword}`] = null
+        } else if (cell.out_of_range) {
+          next[`${cell.place_pk}::${cell.keyword}`] = 999
+        } else {
+          next[`${cell.place_pk}::${cell.keyword}`] = cell.rank
         }
-      })
-      await Promise.all(workers)
+      }
       setRankMap(next)
+    } catch (e) {
+      console.error('latest-ranks fetch failed', e)
     } finally {
       setLoading(false)
     }
@@ -713,6 +710,10 @@ function KeywordGraphSection(props: { list: RankPlaceListOut }) {
     return Array.from(s)
   }, [items])
 
+  // 어떤 키워드 카드를 펼칠지 (lazy load) — 펼친 카드만 /history 호출.
+  // 자동 로드하면 모든 (place×keyword) 만큼 호출되어 429 폭주.
+  const [openedKw, setOpenedKw] = useState<string | null>(null)
+
   if (items.length === 0 || allKeywords.length === 0) return null
 
   return (
@@ -720,11 +721,35 @@ function KeywordGraphSection(props: { list: RankPlaceListOut }) {
       <div className="flex items-center gap-2 mb-3">
         <LineChartIcon className="text-blue-600" size={18} />
         <h2 className="text-base font-bold">4단계 · 키워드별 30일 순위 추이</h2>
+        <span className="text-xs text-ink-2">(클릭해서 펼치기)</span>
       </div>
-      <div className="space-y-6">
-        {allKeywords.map((kw) => (
-          <KeywordRankCard key={kw} keyword={kw} places={items} />
-        ))}
+      <div className="space-y-2">
+        {allKeywords.map((kw) => {
+          const tracking = items.filter((p) => p.tracking_keywords.includes(kw))
+          const open = openedKw === kw
+          return (
+            <div key={kw} className="border border-slate-200 rounded-lg overflow-hidden">
+              <button
+                onClick={() => setOpenedKw(open ? null : kw)}
+                className="w-full flex items-center gap-2 px-3 py-2 hover:bg-slate-50 text-left"
+              >
+                <LineChartIcon className="text-blue-600" size={14} />
+                <span className="font-bold text-sm">{kw}</span>
+                <span className="text-xs text-ink-2">
+                  {tracking.length}개 플레이스 추적 중
+                </span>
+                <span className="ml-auto">
+                  {open ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+                </span>
+              </button>
+              {open && (
+                <div className="border-t border-slate-200 p-3">
+                  <KeywordRankCard keyword={kw} places={items} />
+                </div>
+              )}
+            </div>
+          )
+        })}
       </div>
     </Card>
   )
@@ -753,29 +778,31 @@ function KeywordRankCard(props: { keyword: string; places: RankPlaceOut[] }) {
   useEffect(() => {
     let alive = true
     setLoading(true)
-    Promise.all(
-      tracking.map(async (p) => {
+
+    // 동시성 제한 (최대 4) — 429 방지
+    const queue = [...tracking]
+    const results: KeywordSeriesEntry[] = []
+    const worker = async () => {
+      while (queue.length) {
+        const p = queue.shift()
+        if (!p) break
         try {
           const hist = await getRankHistory(p.id, 30)
           const s = hist.series.find((x) => x.keyword === keyword)
-          return {
+          results.push({
             placePk: p.id,
             label: `${p.business_name ?? '-'} (${p.registered_dong ?? '-'})`,
             points: s?.points ?? [],
-          } as KeywordSeriesEntry
+          })
         } catch (e) {
           console.error('history failed', p.id, e)
-          return {
-            placePk: p.id,
-            label: p.business_name ?? '-',
-            points: [],
-          } as KeywordSeriesEntry
         }
-      }),
-    )
-      .then((entries) => {
+      }
+    }
+    Promise.all(Array.from({ length: Math.min(4, tracking.length) }, worker))
+      .then(() => {
         if (!alive) return
-        setSeries(entries.filter((e) => e.points.length > 0))
+        setSeries(results.filter((e) => e.points.length > 0))
       })
       .finally(() => alive && setLoading(false))
     return () => {
@@ -786,11 +813,10 @@ function KeywordRankCard(props: { keyword: string; places: RankPlaceOut[] }) {
   if (tracking.length === 0) return null
 
   return (
-    <div className="border border-slate-200 rounded-lg p-3">
+    <div>
       <div className="flex items-baseline gap-2 mb-2">
-        <h3 className="text-sm font-bold">{keyword}</h3>
         <span className="text-xs text-ink-2">
-          {tracking.length}개 플레이스 추적 중
+          {tracking.length}개 플레이스 · 최근 30일
         </span>
         {loading && (
           <Loader2 className="text-blue-500 animate-spin ml-2" size={12} />
