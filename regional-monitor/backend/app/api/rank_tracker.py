@@ -289,27 +289,45 @@ async def _run_matching_for_ids(user_id: int, place_ids: list[int]) -> None:
                     p = q.scalar_one_or_none()
                     if not p:
                         return
-                    result = await match_one(
-                        phone_070=p.phone,
-                        business_name=p.business_name or "",
-                        registered_dong=p.registered_dong or "",
-                        tracking_keywords=_csv_to_keywords(p.tracking_keywords),
-                    )
-                    p.match_status = result.status
-                    # match_confidence는 레거시 호환용. AUTO_MATCHED=100, NEEDS_MANUAL=0
-                    p.match_confidence = 100 if result.status == "AUTO_MATCHED" else 0
-                    p.matched_at = now_kst()
-                    if result.place_id:
-                        p.place_id = result.place_id
-                    p.match_candidates = (
-                        serialize_match(result.matched) if result.matched else None
-                    )
-                    p.dong_changed = bool(result.dong_changed)
-                    p.actual_dong = result.actual_dong
-                    await db.commit()
-                    if result.status == "AUTO_MATCHED" and result.place_id:
+
+                    # ★ A안+Y안: monitor가 이미 검증/추출해둔 place_id를 그대로 채택.
+                    #   네이버 호출 0회 — rank-tracker는 매칭이 본질이 아니라 순위 파악이 본질.
+                    #   monitor(노출관리 자동체크)와 rank-tracker(순위 자동체크)는 한 세트이므로
+                    #   동일한 RegisteredPlace row 의 place_id 를 신뢰한다.
+                    if p.place_id:
+                        p.match_status = "AUTO_MATCHED"
+                        p.match_confidence = 100  # 레거시 호환
+                        p.matched_at = now_kst()
+                        # UI 표시용 — monitor 가 채워둔 정보로 단일 매칭 결과 직렬화
+                        p.match_candidates = json.dumps(
+                            {
+                                "place_id": p.place_id,
+                                "name": p.business_name or "",
+                                "category": p.category or "",
+                                "phone": p.phone or "",
+                                "virtual_phone": "",
+                                "address": p.full_address or "",
+                                "reasons": ["reused_from_monitor"],
+                            },
+                            ensure_ascii=False,
+                        )
+                        # dong_changed / actual_dong 는 monitor 검증 결과를 그대로 보존
+                        await db.commit()
                         async with lock:
                             newly_auto_matched_ids.append(pid)
+                        return
+
+                    # monitor 가 아직 place_id 를 채우지 않은 행 — 자동 매칭 시도하지 않고
+                    # NEEDS_MANUAL 로 표시 (C안: "monitor 에 먼저 등록해주세요" 안내).
+                    # 프론트엔드는 NEEDS_MANUAL 행을 매트릭스에서 제외하고 안내 배너를 띄운다.
+                    p.match_status = "NEEDS_MANUAL"
+                    p.match_confidence = 0
+                    p.matched_at = now_kst()
+                    p.match_candidates = json.dumps(
+                        {"error": "needs_monitor_registration"},
+                        ensure_ascii=False,
+                    )
+                    await db.commit()
                 except Exception as e:  # noqa: BLE001
                     log.exception("matching worker failed for place_id=%s: %s", pid, e)
                     try:
