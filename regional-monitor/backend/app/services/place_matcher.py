@@ -37,7 +37,12 @@ from app.services.region_loader import lookup_region_by_dong
 log = logging.getLogger(__name__)
 
 # 매칭 시 네이버 호출당 페이스 (IP 차단 회피)
-MATCH_PACE_SEC = 0.8
+# competition 솔루션과 동일하게 0.4초 페이스 + 결과 75건으로 확대
+MATCH_PACE_SEC = 1.0
+# 검색당 가져올 결과 개수 (competition 과 동일하게 75건 = 네이버 최대치)
+MATCH_DISPLAY = 75
+# 네이버 일시 오류 시 단일 쿼리 재시도 횟수
+MATCH_RETRY = 1
 
 
 @dataclass
@@ -80,8 +85,19 @@ class MatchResult:
 # 정규화 헬퍼
 # ─────────────────────────────────────────────────────────
 _PHONE_DIGITS = re.compile(r"\D+")
-# 한국 행정동 패턴: "...동" (1~6자 한글 + 동) / "...로" 등 도로명은 매칭 안 함
-_DONG_PATTERN = re.compile(r"([가-힣]{1,6}동)(?![가-힣])")
+# 한국 행정동 패턴: "...동" (1~6자 한글 + 0~2자리 숫자 허용 + 동)
+#  - "송정1동", "압구정동", "역삼2동" 모두 매칭
+_DONG_PATTERN = re.compile(r"([가-힣]{1,6}\d{0,2}동)(?![가-힣])")
+# 시군구 토큰 패턴: "...구", "...군", "...시"  (1~5자 한글)
+_SIGUNGU_PATTERN = re.compile(r"([가-힣]{1,5}(?:구|군|시))(?![가-힣])")
+# 시도 토큰 패턴: "광주광역시", "전라남도", "서울특별시" 등 (긴 매칭 우선)
+_SIDO_PATTERN = re.compile(
+    r"([가-힣]+(?:광역시|특별시|특별자치시|특별자치도|특별도|북도|남도|도))(?![가-힣])"
+)
+# 리 토큰 (시골 주소 "○○리")
+_RI_PATTERN = re.compile(r"([가-힣]{1,5}리)(?![가-힣])")
+# 면/읍 토큰
+_MYEON_PATTERN = re.compile(r"([가-힣]{1,5}(?:면|읍))(?![가-힣])")
 
 
 def _norm_phone(p: str) -> str:
@@ -97,9 +113,95 @@ def _extract_dong_from_address(address: str) -> str | None:
     return m.group(1) if m else None
 
 
+def _parse_registered_address(registered_dong: str) -> tuple[str, str, str]:
+    """등록동 컬럼에서 시도/시군구/동 토큰을 추출.
+
+    엑셀 등록동에 들어오는 패턴은 다양하므로 모두 처리:
+      · "광주광역시 광산구 송정1동"     → ("광주광역시", "광산구", "송정1동")
+      · "광주광역시 동구 학동"          → ("광주광역시", "동구", "학동")
+      · "전라북도 고창군 아산면 계산리" → ("전라북도", "고창군", "계산리")
+      · "압구정동"                      → ("", "", "압구정동")  ← 동만 들어옴
+
+    파싱 전략:
+      1) 시도 토큰을 먼저 찾아 텍스트에서 제거 (사도/시군구 패턴 중복 매칭 회피)
+      2) 남은 텍스트에서 시군구 토큰 매칭
+      3) 동 → 리 → 면/읍 순서로 마지막 행정 단위 매칭
+      4) 시군구 추출 실패하면 lookup_region_by_dong 으로 보강
+
+    Returns:
+        (sido, sigungu, dong_or_ri) — 추출 실패 시 빈 문자열
+    """
+    text = (registered_dong or "").strip()
+    if not text:
+        return "", "", ""
+
+    sido = ""
+    sigungu = ""
+    dong = ""
+
+    # 1) 시도 토큰 (가장 긴 매칭이 우선되도록 finditer 로 모두 본 후 가장 긴 것 선택)
+    sido_matches = list(_SIDO_PATTERN.finditer(text))
+    if sido_matches:
+        # 가장 긴 매칭을 선택 ("광주광역시" > "광주"는 시도 패턴에 안 잡힘 OK)
+        best = max(sido_matches, key=lambda m: len(m.group(1)))
+        sido = best.group(1)
+
+    # 시도 토큰을 제거한 잔여 텍스트에서 시군구 검색
+    remainder = text.replace(sido, " ") if sido else text
+
+    # 2) 시군구 — "동구", "광산구", "고창군" 등
+    m_sg = _SIGUNGU_PATTERN.search(remainder)
+    if m_sg:
+        sigungu = m_sg.group(1)
+
+    # 3) 동/리/면 — 더 정밀한 단위 우선
+    #    행정동(○○동) > 리(○○리) > 면/읍(○○면)
+    m_dong = _DONG_PATTERN.search(text)
+    if m_dong:
+        dong = m_dong.group(1)
+    else:
+        m_ri = _RI_PATTERN.search(text)
+        if m_ri:
+            dong = m_ri.group(1)
+        else:
+            m_my = _MYEON_PATTERN.search(text)
+            if m_my:
+                dong = m_my.group(1)
+
+    # 4) 시군구 추출 실패 + 동만 들어온 케이스 → lookup_region_by_dong 으로 보강
+    if not sigungu and dong:
+        cands = lookup_region_by_dong(dong)
+        if len(cands) == 1:
+            sido, sigungu = cands[0]
+
+    return sido, sigungu, dong
+
+
 # ─────────────────────────────────────────────────────────
 # 후보 수집 — 070 기반 단일 매칭
 # ─────────────────────────────────────────────────────────
+async def _search_once(
+    q: str,
+    *,
+    client: httpx.AsyncClient | None,
+    retry: int = MATCH_RETRY,
+) -> list[MapPlace]:
+    """단일 쿼리 검색 + 일시 오류 시 재시도. competition 과 동일한 display=75 사용."""
+    last_err: str | None = None
+    for attempt in range(retry + 1):
+        res = await search_map(q, display=MATCH_DISPLAY, client=client)
+        if not res.error:
+            return res.items
+        last_err = res.error
+        log.warning(
+            "place_matcher search '%s' error (attempt %d/%d): %s",
+            q, attempt + 1, retry + 1, res.error,
+        )
+        await asyncio.sleep(MATCH_PACE_SEC * (1 + attempt))
+    log.warning("place_matcher search '%s' giving up: %s", q, last_err)
+    return []
+
+
 async def _search_by_phone(
     *,
     phone_070: str,
@@ -109,52 +211,59 @@ async def _search_by_phone(
 ) -> MapPlace | None:
     """070 번호로 네이버 지도 검색 → phone/virtual_phone 일치하는 플레이스 1건 반환.
 
-    검색 전략 (점수제 없이 070 매칭만 사용):
-      1) "{시도} {시군구} {등록동} {상호}" — 가장 정밀한 쿼리
-      2) "{등록동} {상호}" — region 매칭 실패 시
-      3) "{상호}" — 최후 수단
+    검색 전략 (competition 솔루션 패턴 적용, display=75):
+      1) "{시군구} {상호}"   — 가장 효과적 (지역 한정 + 상호)
+      2) "{시도} {상호}"     — 시군구 추출 실패 또는 광역 검색
+      3) "{동} {상호}"       — 동 토큰만 있을 때 (최후 폴백)
+      4) "{상호}"            — 마지막 시도 (전국)
 
-    각 쿼리 결과에서 phone 또는 virtual_phone이 입력 070과 정확히 일치하는
-    첫 플레이스를 즉시 반환한다. 즉, 070이 확실하면 단일 매칭 완료.
+    중복 쿼리는 제거. 각 쿼리 결과 75건 중 phone 또는 virtual_phone 이
+    입력 070과 일치하는 첫 플레이스 반환. 즉시 일치 발견 시 즉시 리턴
+    (불필요한 추가 호출 방지).
     """
     target_phone = _norm_phone(phone_070)
     if not target_phone:
         return None
 
     business = (business_name or "").strip()
-    dong = (registered_dong or "").strip()
+    if not business:
+        # 상호 없으면 쿼리 구성 불가
+        return None
+
+    sido, sigungu, dong = _parse_registered_address(registered_dong)
 
     queries: list[str] = []
-    # 1) 정밀 쿼리 (시도 시군구 등록동 상호)
-    regions = lookup_region_by_dong(dong) if dong else []
-    if regions and business:
-        for sido, sigungu in regions[:2]:
-            q = " ".join(filter(None, [sido, sigungu, dong, business]))
-            if q not in queries:
-                queries.append(q)
-    # 2) "등록동 상호"
-    if business and dong:
+    # 1) 시군구 + 상호 (competition 패턴 = 가장 효과적)
+    if sigungu:
+        q = f"{sigungu} {business}"
+        if q not in queries:
+            queries.append(q)
+    # 2) 시도 + 상호 (광역 검색)
+    if sido:
+        q = f"{sido} {business}"
+        if q not in queries:
+            queries.append(q)
+    # 3) 동/리 + 상호 (시군구 추출 실패시 폴백)
+    if dong and not sigungu:
         q = f"{dong} {business}"
         if q not in queries:
             queries.append(q)
-    # 3) "상호"만
-    if business:
-        if business not in queries:
-            queries.append(business)
+    # 4) 상호만 (최후 수단 — 전국 결과)
+    if business not in queries:
+        queries.append(business)
 
     for q in queries:
-        res = await search_map(q, display=15, client=client)
-        if res.error:
-            log.warning("place_matcher search '%s' error: %s", q, res.error)
-            await asyncio.sleep(MATCH_PACE_SEC)
-            continue
-        for it in res.items:
+        items = await _search_once(q, client=client)
+        for it in items:
             if not it.place_id:
                 continue
             if _norm_phone(it.phone) == target_phone:
+                log.info("place_matcher matched '%s' via query '%s' (phone)", target_phone, q)
                 return it
             if _norm_phone(it.virtual_phone) == target_phone:
+                log.info("place_matcher matched '%s' via query '%s' (virtual_phone)", target_phone, q)
                 return it
+        # 쿼리 간 페이스 (네이버 IP 차단 회피)
         await asyncio.sleep(MATCH_PACE_SEC)
 
     return None
