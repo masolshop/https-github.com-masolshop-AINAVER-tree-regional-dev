@@ -22,6 +22,7 @@ from app.schemas.rank_tracker import (
     DongChangedListOut,
     LatestRankCell,
     LatestRanksResponse,
+    RankCheckProgress,
     RankHistoryPoint,
     RankHistoryResponse,
     RankHistorySeries,
@@ -248,8 +249,13 @@ async def _run_matching_for_ids(user_id: int, place_ids: list[int]) -> None:
     정책 (070+동 단일 매칭):
       · 070 매칭 성공 → AUTO_MATCHED (등록동 다르면 dong_changed=True 플래그)
       · 070 매칭 0건 → NEEDS_MANUAL (이론상 거의 없음)
+
+    매칭 완료 후, 새로 AUTO_MATCHED 된 행에 대해 자동으로 rank check 까지 실행하여
+    업로드 직후 매트릭스에 순위가 바로 채워지도록 한다.
     """
     from app.core.database import AsyncSessionLocal
+
+    newly_auto_matched_ids: list[int] = []
 
     async with AsyncSessionLocal() as db:
         for pid in place_ids:
@@ -278,10 +284,47 @@ async def _run_matching_for_ids(user_id: int, place_ids: list[int]) -> None:
                 p.dong_changed = bool(result.dong_changed)
                 p.actual_dong = result.actual_dong
                 await db.commit()
+                if result.status == "AUTO_MATCHED" and result.place_id:
+                    newly_auto_matched_ids.append(pid)
             except Exception as e:  # noqa: BLE001
                 log.exception("matching worker failed for place_id=%s: %s", pid, e)
                 await db.rollback()
                 await asyncio.sleep(0.5)
+
+    # 매칭이 끝난 AUTO_MATCHED 행들에 대해 즉시 rank check 실행
+    if newly_auto_matched_ids:
+        try:
+            await _run_rank_check_for_ids(user_id, newly_auto_matched_ids)
+        except Exception as e:  # noqa: BLE001
+            log.exception("auto rank-check after matching failed: %s", e)
+
+
+async def _run_rank_check_for_ids(user_id: int, place_ids: list[int]) -> None:
+    """주어진 RegisteredPlace ID들에 대해 rank_checker.run_rank_check_for_places 호출.
+
+    업로드 직후 자동 트리거 + 수동 트리거 양쪽에서 재사용한다.
+    """
+    from app.core.database import AsyncSessionLocal
+
+    async with AsyncSessionLocal() as db:
+        q = await db.execute(
+            select(RegisteredPlace).where(
+                RegisteredPlace.id.in_(place_ids),
+                RegisteredPlace.user_id == user_id,
+                RegisteredPlace.match_status == "AUTO_MATCHED",
+                RegisteredPlace.place_id.is_not(None),
+                RegisteredPlace.tracking_keywords.is_not(None),
+            )
+        )
+        places = list(q.scalars().all())
+        if not places:
+            return
+        log.info(
+            "auto rank-check starting: user_id=%s places=%d",
+            user_id, len(places),
+        )
+        stats = await run_rank_check_for_places(db, places)
+        log.info("auto rank-check done: user_id=%s stats=%s", user_id, stats)
 
 
 # ─────────────────────────────────────────────────────────
@@ -571,6 +614,71 @@ async def list_latest_ranks(
                 ))
 
     return LatestRanksResponse(count=len(cells), cells=cells)
+
+
+# ─────────────────────────────────────────────────────────
+# 진행 상태 (업로드 직후 폴링용)
+# ─────────────────────────────────────────────────────────
+@router.get("/progress", response_model=RankCheckProgress)
+async def get_rank_progress(
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> RankCheckProgress:
+    """프론트 폴링용 — 현재 사용자의 매칭/순위체크 진행 상태 요약.
+
+    in_progress=True 이면 프론트는 5초 간격으로 본 엔드포인트를 다시 호출하면서
+    매트릭스를 새로고침한다. False 가 되면 폴링을 멈춘다.
+    """
+    q = await db.execute(
+        select(RegisteredPlace).where(
+            RegisteredPlace.user_id == user.id,
+            RegisteredPlace.tracking_keywords.is_not(None),
+        )
+    )
+    places = list(q.scalars().all())
+    total_places = len(places)
+    pending = sum(1 for p in places if p.match_status in (None, "PENDING_MATCH"))
+    auto = sum(1 for p in places if p.match_status == "AUTO_MATCHED")
+    needs_manual = sum(1 for p in places if p.match_status == "NEEDS_MANUAL")
+
+    # AUTO_MATCHED 행의 (place × keyword) 셀 개수 계산
+    total_cells = 0
+    auto_place_ids: list[int] = []
+    for p in places:
+        if p.match_status == "AUTO_MATCHED" and p.place_id:
+            kws = _csv_to_keywords(p.tracking_keywords)
+            total_cells += len(kws)
+            auto_place_ids.append(p.id)
+
+    # 채워진 셀 — 최근 7일 내 PlaceRankHistory 기록이 있는 (place_pk, keyword)
+    filled_cells = 0
+    if auto_place_ids:
+        today = now_kst().date()
+        since = today - timedelta(days=7)
+        hist_q = await db.execute(
+            select(PlaceRankHistory.place_pk, PlaceRankHistory.keyword)
+            .where(
+                PlaceRankHistory.place_pk.in_(auto_place_ids),
+                PlaceRankHistory.check_date >= since,
+            )
+            .distinct()
+        )
+        filled_cells = len(list(hist_q.all()))
+
+    # 진행 중 판단:
+    #   - 매칭 대기가 남아있거나
+    #   - AUTO_MATCHED 인데 아직 채워지지 않은 셀이 있는 경우
+    in_progress = (pending > 0) or (filled_cells < total_cells)
+
+    return RankCheckProgress(
+        total_places=total_places,
+        pending_match=pending,
+        auto_matched=auto,
+        needs_manual=needs_manual,
+        total_cells=total_cells,
+        filled_cells=filled_cells,
+        in_progress=in_progress,
+    )
 
 
 # ─────────────────────────────────────────────────────────

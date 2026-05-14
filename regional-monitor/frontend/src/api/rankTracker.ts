@@ -157,6 +157,17 @@ export interface RunRankCheckResponse {
   message: string | null
 }
 
+/* ─────────── 진행 상태 (업로드 후 폴링용) ─────────── */
+export interface RankCheckProgress {
+  total_places: number
+  pending_match: number
+  auto_matched: number
+  needs_manual: number
+  total_cells: number
+  filled_cells: number
+  in_progress: boolean
+}
+
 /* ─────────── API 함수 ─────────── */
 export const uploadRankRows = (rows: RankUploadRow[]) =>
   api.post<RankUploadResponse>(
@@ -184,3 +195,6 @@ export const getRankHistory = (placePk: number, days = 30) =>
 
 export const triggerRankCheckNow = () =>
   api.post<RunRankCheckResponse>('/api/v1/rank-tracker/run-rank-check', {})
+
+export const getRankProgress = () =>
+  api.get<RankCheckProgress>('/api/v1/rank-tracker/progress')

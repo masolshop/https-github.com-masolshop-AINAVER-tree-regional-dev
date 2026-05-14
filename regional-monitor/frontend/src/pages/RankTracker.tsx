@@ -41,11 +41,13 @@ import {
   listLatestRanks,
   runMatch,
   getRankHistory,
+  getRankProgress,
   type RankUploadRow,
   type RankPlaceOut,
   type RankPlaceListOut,
   type DongChangedListOut,
   type LatestRanksResponse,
+  type RankCheckProgress,
 } from '@/api/rankTracker'
 
 /* ────────────────────────────────────────────────────────────
@@ -70,6 +72,10 @@ export default function RankTracker() {
   const [uploading, setUploading] = useState(false)
   const [running, setRunning] = useState(false)
   const [toast, setToast] = useState<string | null>(null)
+  // 진행 상태 (업로드 후 자동 매칭+순위체크 폴링)
+  const [progress, setProgress] = useState<RankCheckProgress | null>(null)
+  // 매트릭스 reload 트리거 (progress 폴링이 1단계 증가시키면 RankMatrix가 reload)
+  const [matrixReloadTick, setMatrixReloadTick] = useState(0)
 
   const showToast = useCallback((msg: string) => {
     setToast(msg)
@@ -95,13 +101,39 @@ export default function RankTracker() {
     fetchAll()
   }, [fetchAll])
 
-  // 매칭 진행 중에는 5초 폴링
-  const hasPending = useMemo(() => (list?.pending ?? 0) > 0, [list])
+  // 진행 상태 fetch
+  const fetchProgress = useCallback(async () => {
+    try {
+      const p = await getRankProgress()
+      setProgress(p)
+      return p
+    } catch (e) {
+      console.error('progress fetch failed', e)
+      return null
+    }
+  }, [])
+
   useEffect(() => {
-    if (!hasPending) return
-    const t = window.setInterval(() => fetchAll(), 5000)
+    fetchProgress()
+  }, [fetchProgress])
+
+  // 업로드 후 또는 매칭 대기/순위 채워지지 않은 셀이 남아 있으면 5초 폴링
+  // - 매칭 진행 중: 목록(/places) 도 함께 갱신해서 SummaryBar 가 변함
+  // - 순위 채우기 중: 매트릭스만 reload tick 증가시켜 새 셀 채우기
+  const inProgress = progress?.in_progress ?? false
+  useEffect(() => {
+    if (!inProgress) return
+    const t = window.setInterval(async () => {
+      const p = await fetchProgress()
+      // 매칭이 아직 진행 중이면 places/dong-changed도 다시 가져옴
+      if (p && p.pending_match > 0) {
+        await fetchAll()
+      }
+      // 매트릭스 reload 트리거
+      setMatrixReloadTick((n) => n + 1)
+    }, 5000)
     return () => window.clearInterval(t)
-  }, [hasPending, fetchAll])
+  }, [inProgress, fetchProgress, fetchAll])
 
   /* ── 업로드 ── */
   const handleFile = useCallback(
@@ -147,9 +179,11 @@ export default function RankTracker() {
         }
         const resp = await uploadRankRows(payload)
         showToast(
-          `업로드 완료 — 신규 ${resp.created} · 갱신 ${resp.updated} · 오류 ${resp.errors}건. 매칭이 백그라운드에서 진행됩니다.`,
+          `업로드 완료 — 신규 ${resp.created} · 갱신 ${resp.updated} · 오류 ${resp.errors}건. 매칭+순위체크가 백그라운드에서 진행됩니다.`,
         )
         await fetchAll()
+        // 업로드 직후 진행 상태 즉시 갱신 → in_progress=true 면 자동 폴링 시작
+        await fetchProgress()
       } catch (e) {
         console.error('upload failed', e)
         showToast('업로드 실패: ' + (e as Error).message)
@@ -157,7 +191,7 @@ export default function RankTracker() {
         setUploading(false)
       }
     },
-    [fetchAll, showToast],
+    [fetchAll, fetchProgress, showToast],
   )
 
   /* ── 템플릿 다운로드 ── */
@@ -282,8 +316,15 @@ export default function RankTracker() {
         />
       )}
 
+      {/* 진행 배너 — 매칭/순위체크 백그라운드 진행 중일 때 표시 */}
+      {progress && progress.in_progress && (
+        <ProgressBanner progress={progress} />
+      )}
+
       {/* 3) 등록동 × 키워드 매트릭스 — 현재 순위 한눈에 */}
-      {list && list.items.length > 0 && <RankMatrix list={list} />}
+      {list && list.items.length > 0 && (
+        <RankMatrix list={list} reloadTick={matrixReloadTick} />
+      )}
 
       {/* 4) 키워드별 30일 추이 그래프 N개 */}
       {list && list.items.length > 0 && <KeywordGraphSection list={list} />}
@@ -375,6 +416,80 @@ function UploadCard(props: {
             e.target.value = ''
           }}
         />
+      </div>
+    </Card>
+  )
+}
+
+/* ────────────────────────────────────────────────────────────
+ * 컴포넌트: 진행 배너
+ *  - 업로드 직후 매칭 + 순위체크가 백그라운드 진행 중일 때 표시
+ *  - 매칭 진행률 / 순위 채워짐 비율 시각화
+ * ──────────────────────────────────────────────────────────── */
+function ProgressBanner(props: { progress: RankCheckProgress }) {
+  const { progress } = props
+  const matchTotal = progress.total_places
+  const matchDone = progress.auto_matched + progress.needs_manual
+  const matchPct =
+    matchTotal > 0 ? Math.min(100, Math.round((matchDone / matchTotal) * 100)) : 0
+  const cellPct =
+    progress.total_cells > 0
+      ? Math.min(100, Math.round((progress.filled_cells / progress.total_cells) * 100))
+      : 0
+  const phase =
+    progress.pending_match > 0
+      ? '매칭 진행 중'
+      : progress.filled_cells < progress.total_cells
+        ? '순위 검증 중'
+        : '완료'
+
+  return (
+    <Card className="p-4 border-blue-300 ring-1 ring-blue-200 bg-blue-50/60">
+      <div className="flex items-center gap-2 mb-3">
+        <Loader2 className="text-blue-600 animate-spin" size={18} />
+        <div className="text-sm font-bold text-blue-900">
+          업로드 후 자동 처리 중 — {phase}
+        </div>
+        <span className="ml-auto text-[11px] text-blue-800/80">
+          5초마다 자동 갱신
+        </span>
+      </div>
+
+      {/* 매칭 진행률 */}
+      <div className="mb-2">
+        <div className="flex items-center justify-between text-[11px] text-blue-900 mb-1">
+          <span className="font-semibold">① 070 매칭</span>
+          <span className="font-mono">
+            {matchDone} / {matchTotal} ({matchPct}%)
+          </span>
+        </div>
+        <div className="h-2 rounded-full bg-blue-100 overflow-hidden">
+          <div
+            className="h-full bg-blue-500 transition-all duration-500"
+            style={{ width: `${matchPct}%` }}
+          />
+        </div>
+      </div>
+
+      {/* 순위 채워짐 진행률 */}
+      <div>
+        <div className="flex items-center justify-between text-[11px] text-blue-900 mb-1">
+          <span className="font-semibold">② 네이버 순위 검증</span>
+          <span className="font-mono">
+            {progress.filled_cells} / {progress.total_cells} 셀 ({cellPct}%)
+          </span>
+        </div>
+        <div className="h-2 rounded-full bg-blue-100 overflow-hidden">
+          <div
+            className="h-full bg-emerald-500 transition-all duration-500"
+            style={{ width: `${cellPct}%` }}
+          />
+        </div>
+      </div>
+
+      <div className="mt-3 text-[11px] text-blue-800/80">
+        매칭이 끝나는 대로 매칭된 플레이스의 키워드별 순위가 네이버에서 자동 수집되어
+        아래 매트릭스에 채워집니다. 페이지를 떠나도 백그라운드에서 계속 진행됩니다.
       </div>
     </Card>
   )
@@ -540,8 +655,8 @@ function SummaryBar(props: {
  *  - cells = 현재 순위 (place×keyword 의 최신 rank)
  *  - 첫 컬럼 sticky
  * ──────────────────────────────────────────────────────────── */
-function RankMatrix(props: { list: RankPlaceListOut }) {
-  const { list } = props
+function RankMatrix(props: { list: RankPlaceListOut; reloadTick?: number }) {
+  const { list, reloadTick = 0 } = props
 
   // 매칭 완료(place_id 있음)된 행만 매트릭스에 표시
   const items = useMemo(() => list.items.filter((p) => !!p.place_id), [list])
@@ -585,6 +700,14 @@ function RankMatrix(props: { list: RankPlaceListOut }) {
   useEffect(() => {
     reload()
   }, [reload])
+
+  // 외부(페이지 폴링)에서 reloadTick 가 증가하면 매트릭스 새로고침
+  useEffect(() => {
+    if (reloadTick > 0) {
+      reload()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [reloadTick])
 
   if (items.length === 0) {
     return (

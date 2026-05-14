@@ -183,6 +183,24 @@ class LatestRanksResponse(BaseModel):
 
 
 # ─────────────────────────────────────────────────────────
+# 진행 상태 (업로드 직후 자동 매칭+순위체크 폴링용)
+# ─────────────────────────────────────────────────────────
+class RankCheckProgress(BaseModel):
+    """프론트 폴링용 — 매칭/순위체크 진행 상태 요약.
+
+    프론트는 업로드 후 이 엔드포인트를 5초 간격으로 폴링하여
+    pending_match=0 AND filled_cells==total_cells 가 되면 폴링을 멈춘다.
+    """
+    total_places: int          # 사용자 등록 플레이스 총 개수
+    pending_match: int          # 매칭 대기 중 (백그라운드 매칭 진행 중)
+    auto_matched: int           # 매칭 완료 (rank check 가능)
+    needs_manual: int           # 매칭 0건 (수동 확인 필요)
+    total_cells: int            # AUTO_MATCHED × tracking_keywords 합산
+    filled_cells: int           # PlaceRankHistory에 기록 있는 셀 개수
+    in_progress: bool           # True 면 아직 작업 중 — 프론트는 폴링 계속
+
+
+# ─────────────────────────────────────────────────────────
 # 일별 배치 실행 (수동 트리거, 관리자)
 # ─────────────────────────────────────────────────────────
 class RunRankCheckResponse(BaseModel):
