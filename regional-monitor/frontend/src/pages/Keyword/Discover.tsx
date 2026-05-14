@@ -32,6 +32,7 @@ import { Card } from '@/components/ui/Card'
 import { useBodyClass } from '@/hooks/useBodyClass'
 import PageSeo from '@/components/seo/PageSeo'
 import { keywordApi } from '@/api/keyword'
+import { demoApi } from '@/api/demo'
 import type {
   KeywordDiscoverResult,
   KeywordPlaceItem,
@@ -89,7 +90,10 @@ type TabKey = 'keyword' | 'region' | 'bulk'
 export default function KeywordDiscover() {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated)
   const openLoginModal = useAuthStore((s) => s.openLoginModal)
-  const [tab, setTab] = useState<TabKey>('keyword')
+  const isDemo = useAuthStore((s) => s.isDemo)
+  // 데모 모드는 캡처된 RegionTab 데이터(흥신소 × 강남구 압구정동, mode=both)를 사용하므로
+  // 기본 탭을 '지역+키워드(region)'로 잡아 데모 결과가 즉시 보이게 한다.
+  const [tab, setTab] = useState<TabKey>(isDemo ? 'region' : 'keyword')
   useBodyClass('solution-tool-page')
 
   return (
@@ -135,13 +139,13 @@ export default function KeywordDiscover() {
       </div>
 
       {tab === 'keyword' && (
-        <KeywordTab isAuthenticated={isAuthenticated} openLoginModal={openLoginModal} />
+        <KeywordTab isAuthenticated={isAuthenticated} openLoginModal={openLoginModal} isDemo={isDemo} />
       )}
       {tab === 'region' && (
-        <RegionTab isAuthenticated={isAuthenticated} openLoginModal={openLoginModal} />
+        <RegionTab isAuthenticated={isAuthenticated} openLoginModal={openLoginModal} isDemo={isDemo} />
       )}
       {tab === 'bulk' && (
-        <BulkRegionTab isAuthenticated={isAuthenticated} openLoginModal={openLoginModal} />
+        <BulkRegionTab isAuthenticated={isAuthenticated} openLoginModal={openLoginModal} isDemo={isDemo} />
       )}
     </div>
   )
@@ -180,11 +184,13 @@ function TabBtn({
 function KeywordTab({
   isAuthenticated,
   openLoginModal,
+  isDemo,
 }: {
   isAuthenticated: boolean
   openLoginModal: (returnTo?: string) => void
+  isDemo?: boolean
 }) {
-  const [text, setText] = useState<string>('선불폰\n심부름센터\n흥신소')
+  const [text, setText] = useState<string>(isDemo ? '흥신소' : '선불폰\n심부름센터\n흥신소')
   const [display, setDisplay] = useState<number>(10)
   const [pace, setPace] = useState<number>(500)
   const [useCache, setUseCache] = useState<boolean>(true)
@@ -445,18 +451,20 @@ interface RegionMatch {
 function RegionTab({
   isAuthenticated,
   openLoginModal,
+  isDemo,
 }: {
   isAuthenticated: boolean
   openLoginModal: (returnTo?: string) => void
+  isDemo?: boolean
 }) {
   const [regions, setRegions] = useState<RegionsResponse | null>(null)
   const [regionsErr, setRegionsErr] = useState<string>('')
 
-  const [sido, setSido] = useState<string>('')
-  const [sigungu, setSigungu] = useState<string>('')
-  const [dong, setDong] = useState<string>('')
-  const [mode, setMode] = useState<RegionMode>('sigungu')
-  const [text, setText] = useState<string>('선불폰\n흥신소')
+  const [sido, setSido] = useState<string>(isDemo ? '서울특별시' : '')
+  const [sigungu, setSigungu] = useState<string>(isDemo ? '강남구' : '')
+  const [dong, setDong] = useState<string>(isDemo ? '압구정동' : '')
+  const [mode, setMode] = useState<RegionMode>(isDemo ? 'both' : 'sigungu')
+  const [text, setText] = useState<string>(isDemo ? '흥신소' : '선불폰\n흥신소')
   const [display, setDisplay] = useState<number>(10)
   const [useCache, setUseCache] = useState<boolean>(true)
 
@@ -487,7 +495,8 @@ function RegionTab({
         if (!alive) return
         setRegions(r)
         const sidos = Object.keys(r.tree)
-        if (sidos.length && !sido) setSido(sidos[0])
+        // 데모 모드에서는 사전 셋팅된 sido(서울특별시)를 유지한다.
+        if (sidos.length && !sido && !isDemo) setSido(sidos[0])
       })
       .catch((e: unknown) => {
         if (!alive) return
@@ -497,6 +506,30 @@ function RegionTab({
       alive = false
     }
   }, [isAuthenticated])  // eslint-disable-line react-hooks/exhaustive-deps
+
+  // 데모 모드: 캡처된 RegionTab 데모 데이터(흥신소 × 강남구 압구정동 mode=both)를 자동 로드
+  useEffect(() => {
+    if (!isDemo) return
+    let alive = true
+    setLoading(true)
+    demoApi
+      .keywordDiscover()
+      .then((r) => {
+        if (!alive) return
+        setResp(r)
+        // 사전 셋팅된 지역값(서울특별시/강남구/압구정동/both)은 그대로 유지
+      })
+      .catch((e: unknown) => {
+        if (!alive) return
+        setErrMsg(e instanceof ApiError ? e.message : (e as Error).message)
+      })
+      .finally(() => {
+        if (alive) setLoading(false)
+      })
+    return () => {
+      alive = false
+    }
+  }, [isDemo])
 
   const sidos = useMemo(() => (regions ? Object.keys(regions.tree) : []), [regions])
   const sigungus = useMemo(() => {
@@ -510,6 +543,7 @@ function RegionTab({
 
   // 시도 변경 시 시군구 첫 항목으로
   useEffect(() => {
+    if (isDemo) return // 데모 모드는 사전 셋팅된 강남구를 유지
     if (!sigungus.length) {
       setSigungu('')
       return
@@ -519,6 +553,7 @@ function RegionTab({
 
   // 시군구 변경 시 동 첫 항목으로
   useEffect(() => {
+    if (isDemo) return // 데모 모드는 사전 셋팅된 압구정동을 유지
     if (!dongs.length) {
       setDong('')
       return
@@ -568,6 +603,19 @@ function RegionTab({
 
   async function runSearch() {
     setErrMsg('')
+    if (isDemo) {
+      // 데모 모드: 캡처된 데모 데이터를 다시 로드 (입력 변경 무시)
+      setLoading(true)
+      try {
+        const r = await demoApi.keywordDiscover()
+        setResp(r)
+      } catch (e) {
+        setErrMsg(e instanceof ApiError ? e.message : (e as Error).message || '분석 실패')
+      } finally {
+        setLoading(false)
+      }
+      return
+    }
     if (!isAuthenticated) {
       openLoginModal('/keyword')
       return
@@ -612,6 +660,18 @@ function RegionTab({
 
   return (
     <div className="space-y-5">
+      {isDemo && (
+        <div className="rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900 flex items-start gap-2">
+          <Sparkles size={16} className="mt-0.5 shrink-0 text-amber-600" />
+          <div>
+            <div className="font-semibold">데모 모드</div>
+            <div className="text-xs mt-0.5">
+              <span className="font-mono">서울특별시 · 강남구 · 압구정동 · 흥신소</span> 키워드의 실제 네이버 1페이지 캡처 데이터를 보여줍니다.
+              입력/지역 선택은 비활성화되어 있어요.
+            </div>
+          </div>
+        </div>
+      )}
       <Card className="p-5">
         {/* 자유 검색 — "서초동" 입력 시 시·구·동 자동 매칭 */}
         <div className="mb-4 relative">
@@ -629,9 +689,13 @@ function RegionTab({
               }}
               onFocus={() => setShowSuggest(true)}
               onBlur={() => setTimeout(() => setShowSuggest(false), 200)}
-              placeholder="시군구 또는 동/리명을 입력하세요"
-              className="w-full border-2 border-slate-300 hover:border-brand-400 focus:border-brand-500 focus:ring-2 focus:ring-brand-100 rounded-lg px-3 py-2.5 text-sm focus:outline-none transition-colors"
-              disabled={!regions}
+              placeholder={isDemo ? '데모 모드 — 검색 비활성화' : '시군구 또는 동/리명을 입력하세요'}
+              className={clsx(
+                'w-full border-2 border-slate-300 hover:border-brand-400 focus:border-brand-500 focus:ring-2 focus:ring-brand-100 rounded-lg px-3 py-2.5 text-sm focus:outline-none transition-colors',
+                isDemo && 'bg-slate-100 cursor-not-allowed',
+              )}
+              disabled={!regions || isDemo}
+              readOnly={isDemo}
             />
           </label>
           {showSuggest && matches.length > 0 && (
@@ -679,9 +743,13 @@ function RegionTab({
             <select
               value={sido}
               onChange={(e) => setSido(e.target.value)}
-              className="w-full border border-line rounded-lg px-2 py-2 text-sm"
-              disabled={!regions}
+              className={clsx(
+                'w-full border border-line rounded-lg px-2 py-2 text-sm',
+                isDemo && 'bg-slate-100 cursor-not-allowed',
+              )}
+              disabled={!regions || isDemo}
             >
+              {isDemo && !sidos.includes(sido) && <option value={sido}>{sido}</option>}
               {sidos.map((s) => (
                 <option key={s} value={s}>
                   {s}
@@ -694,9 +762,13 @@ function RegionTab({
             <select
               value={sigungu}
               onChange={(e) => setSigungu(e.target.value)}
-              className="w-full border border-line rounded-lg px-2 py-2 text-sm"
-              disabled={!sigungus.length}
+              className={clsx(
+                'w-full border border-line rounded-lg px-2 py-2 text-sm',
+                isDemo && 'bg-slate-100 cursor-not-allowed',
+              )}
+              disabled={!sigungus.length || isDemo}
             >
+              {isDemo && !sigungus.includes(sigungu) && <option value={sigungu}>{sigungu}</option>}
               {sigungus.map((s) => (
                 <option key={s || '__empty__'} value={s}>
                   {s || '(시군구 없음 — 세종)'}
@@ -709,9 +781,13 @@ function RegionTab({
             <select
               value={dong}
               onChange={(e) => setDong(e.target.value)}
-              className="w-full border border-line rounded-lg px-2 py-2 text-sm"
-              disabled={!dongs.length}
+              className={clsx(
+                'w-full border border-line rounded-lg px-2 py-2 text-sm',
+                isDemo && 'bg-slate-100 cursor-not-allowed',
+              )}
+              disabled={!dongs.length || isDemo}
             >
+              {isDemo && !dongs.includes(dong) && <option value={dong}>{dong}</option>}
               {dongs.map((d) => (
                 <option key={d} value={d}>
                   {d}
@@ -756,12 +832,16 @@ function RegionTab({
             onChange={(e) => setText(e.target.value)}
             rows={3}
             placeholder="키워드를 한 줄에 하나씩 입력 (최대 10개)"
-            className="flex-1 border border-line rounded-lg px-3 py-2 text-sm font-mono focus:border-brand-400 focus:outline-none"
+            className={clsx(
+              'flex-1 border border-line rounded-lg px-3 py-2 text-sm font-mono focus:border-brand-400 focus:outline-none',
+              isDemo && 'bg-slate-100 cursor-not-allowed',
+            )}
+            readOnly={isDemo}
           />
           <div className="flex flex-row lg:flex-col gap-2 lg:w-44">
             <button
               onClick={runSearch}
-              disabled={loading || !keywords.length || !sido}
+              disabled={loading || (!isDemo && (!keywords.length || !sido))}
               className="flex-1 inline-flex items-center justify-center gap-1.5 bg-brand-600 hover:bg-brand-700 disabled:bg-slate-300 text-white font-semibold rounded-lg px-4 py-2 text-sm transition-colors"
             >
               {loading ? (
@@ -947,9 +1027,11 @@ function RegionResultCard({ r }: { r: RegionDiscoverItem }) {
 function BulkRegionTab({
   isAuthenticated,
   openLoginModal,
+  isDemo: _isDemo,
 }: {
   isAuthenticated: boolean
   openLoginModal: (returnTo?: string) => void
+  isDemo?: boolean
 }) {
   const [regions, setRegions] = useState<RegionsResponse | null>(null)
   const [scope, setScope] = useState<'sido' | 'nationwide' | 'sigungu'>('sido')

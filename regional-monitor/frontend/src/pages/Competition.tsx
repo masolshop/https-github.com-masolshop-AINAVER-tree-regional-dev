@@ -21,6 +21,7 @@ import {
   ExternalLink,
   MapPin,
   Crosshair,
+  Sparkles,
   X,
 } from 'lucide-react'
 import { Card } from '@/components/ui/Card'
@@ -28,6 +29,7 @@ import { useBodyClass } from '@/hooks/useBodyClass'
 import PageSeo from '@/components/seo/PageSeo'
 import { keywordApi } from '@/api/keyword'
 import { competitionApi } from '@/api/competition'
+import { demoApi } from '@/api/demo'
 import type { RegionsResponse } from '@/api/keyword'
 import type {
   CompetitionGrade,
@@ -114,17 +116,18 @@ function safeFilename(s: string): string {
 export default function Competition() {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated)
   const openLoginModal = useAuthStore((s) => s.openLoginModal)
+  const isDemo = useAuthStore((s) => s.isDemo)
   useBodyClass('solution-tool-page')
 
   const [regions, setRegions] = useState<RegionsResponse | null>(null)
 
   // (SEO 메타태그는 return 내부에서 PageSeo로 주입 — 아래 참조)
 
-  // 공통 입력
+  // 공통 입력 — 데모 모드는 시군구 단위(강남구) 고정
   const [keyword, setKeyword] = useState('흥신소')
-  const [scope, setScope] = useState<'sido' | 'sigungu'>('sido')
+  const [scope, setScope] = useState<'sido' | 'sigungu'>(isDemo ? 'sigungu' : 'sido')
   const [sido, setSido] = useState('서울특별시')
-  const [sigungu, setSigungu] = useState('')
+  const [sigungu, setSigungu] = useState(isDemo ? '강남구' : '')
   const [paceMs, setPaceMs] = useState(400)
   const [concurrency, setConcurrency] = useState(5)
 
@@ -151,10 +154,35 @@ export default function Competition() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isAuthenticated])
 
-  // 시도 변경 시 시군구 초기화
+  // 시도 변경 시 시군구 초기화 (데모 모드는 사전 셋팅된 강남구 유지)
   useEffect(() => {
+    if (isDemo) return
     setSigungu('')
-  }, [sido])
+  }, [sido, isDemo])
+
+  // 데모 모드: 캡처된 정밀 스캔 결과(흥신소 × 강남구)를 직접 setJob() 으로 주입
+  useEffect(() => {
+    if (!isDemo) return
+    let alive = true
+    setStarting(true)
+    demoApi
+      .competition()
+      .then((r) => {
+        if (!alive) return
+        setJob(r)
+        setJobId(null) // 폴링 비활성화
+      })
+      .catch((e) => {
+        if (!alive) return
+        setErrMsg(e instanceof ApiError ? e.message : (e as Error).message || '데모 데이터 로드 실패')
+      })
+      .finally(() => {
+        if (alive) setStarting(false)
+      })
+    return () => {
+      alive = false
+    }
+  }, [isDemo])
 
   // job 폴링
   useEffect(() => {
@@ -207,6 +235,21 @@ export default function Competition() {
 
   // ── 정밀 시작 ─────────────────────────────────────
   const startPrecise = async () => {
+    if (isDemo) {
+      // 데모 모드: 캡처된 데이터를 다시 로드
+      setErrMsg(null)
+      setStarting(true)
+      try {
+        const r = await demoApi.competition()
+        setJob(r)
+        setJobId(null)
+      } catch (e) {
+        setErrMsg(e instanceof ApiError ? e.message : (e as Error).message || '데모 데이터 로드 실패')
+      } finally {
+        setStarting(false)
+      }
+      return
+    }
     if (!isAuthenticated) {
       openLoginModal('/competition')
       return
@@ -335,6 +378,18 @@ export default function Competition() {
           '타지역닷컴',
         ]}
       />
+      {isDemo && (
+        <div className="rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900 flex items-start gap-2">
+          <Sparkles size={16} className="mt-0.5 shrink-0 text-amber-600" />
+          <div>
+            <div className="font-semibold">데모 모드</div>
+            <div className="text-xs mt-0.5">
+              <span className="font-mono">서울특별시 · 강남구 · 흥신소</span> 키워드의 실제 네이버 지도 정밀 스캔 캡처 데이터를 보여줍니다.
+              입력은 비활성화되어 있어요.
+            </div>
+          </div>
+        </div>
+      )}
       {/* 헤더 */}
       <div>
         <h1 className="text-xl lg:text-2xl font-bold flex items-center gap-2">
@@ -369,11 +424,13 @@ export default function Competition() {
             <button
               type="button"
               onClick={() => setScope('sido')}
+              disabled={isDemo}
               className={clsx(
                 'px-3 py-1.5 rounded-md border text-sm',
                 scope === 'sido'
                   ? 'bg-blue-50 text-blue-700 border-blue-300'
                   : 'bg-white text-ink-1 border-slate-300',
+                isDemo && 'opacity-60 cursor-not-allowed',
               )}
             >
               시·도 단위
@@ -381,11 +438,13 @@ export default function Competition() {
             <button
               type="button"
               onClick={() => setScope('sigungu')}
+              disabled={isDemo}
               className={clsx(
                 'px-3 py-1.5 rounded-md border text-sm',
                 scope === 'sigungu'
                   ? 'bg-blue-50 text-blue-700 border-blue-300'
                   : 'bg-white text-ink-1 border-slate-300',
+                isDemo && 'opacity-60 cursor-not-allowed',
               )}
             >
               시·군·구 단위
@@ -400,9 +459,14 @@ export default function Competition() {
             <select
               value={sido}
               onChange={(e) => setSido(e.target.value)}
-              className="w-full px-3 py-2 rounded-md border border-slate-300 text-sm bg-white"
+              disabled={isDemo}
+              className={clsx(
+                'w-full px-3 py-2 rounded-md border border-slate-300 text-sm bg-white',
+                isDemo && 'bg-slate-100 cursor-not-allowed',
+              )}
             >
               <option value="">— 선택 —</option>
+              {isDemo && !sidos.includes(sido) && <option value={sido}>{sido}</option>}
               {sidos.map((s) => (
                 <option key={s} value={s}>{s}</option>
               ))}
@@ -414,10 +478,14 @@ export default function Competition() {
               <select
                 value={sigungu}
                 onChange={(e) => setSigungu(e.target.value)}
-                disabled={!sido}
-                className="w-full px-3 py-2 rounded-md border border-slate-300 text-sm bg-white disabled:bg-slate-100"
+                disabled={!sido || isDemo}
+                className={clsx(
+                  'w-full px-3 py-2 rounded-md border border-slate-300 text-sm bg-white disabled:bg-slate-100',
+                  isDemo && 'cursor-not-allowed',
+                )}
               >
                 <option value="">— 선택 —</option>
+                {isDemo && !sigungus.includes(sigungu) && <option value={sigungu}>{sigungu}</option>}
                 {sigungus.map((s) => (
                   <option key={s || '_'} value={s}>{s || '(세종시)'}</option>
                 ))}
@@ -431,7 +499,11 @@ export default function Competition() {
               value={keyword}
               onChange={(e) => setKeyword(e.target.value)}
               placeholder="예: 흥신소, 심부름센터, 선불폰"
-              className="w-full px-3 py-2 rounded-md border border-slate-300 text-sm"
+              readOnly={isDemo}
+              className={clsx(
+                'w-full px-3 py-2 rounded-md border border-slate-300 text-sm',
+                isDemo && 'bg-slate-100 cursor-not-allowed',
+              )}
             />
           </div>
         </div>

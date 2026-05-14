@@ -1,0 +1,2017 @@
+{
+  "captured_at": "2026-05-15T08:41:43.807568+09:00",
+  "keyword": "흥신소",
+  "analyze": {
+    "keyword": "흥신소",
+    "normalized": "흥신소",
+    "stats": {
+      "matched": 31,
+      "total": 1875,
+      "weight_matched": 21352.0,
+      "total_weight": 508854.0,
+      "elapsed_ms": 124
+    },
+    "dna": {
+      "main": [
+        {
+          "token": "이혼",
+          "df": 4,
+          "weight": 5430.0,
+          "share": 0.2543087298613713
+        },
+        {
+          "token": "흥신소심부름",
+          "df": 5,
+          "weight": 5195.0,
+          "share": 0.24330273510678158
+        },
+        {
+          "token": "외도불륜",
+          "df": 4,
+          "weight": 4122.0,
+          "share": 0.19304983139752716
+        },
+        {
+          "token": "탐정",
+          "df": 6,
+          "weight": 3525.0,
+          "share": 0.165089921318846
+        },
+        {
+          "token": "증거",
+          "df": 5,
+          "weight": 3514.0,
+          "share": 0.16457474709629075
+        },
+        {
+          "token": "심부름센터",
+          "df": 9,
+          "weight": 2976.0,
+          "share": 0.1393780442113151
+        },
+        {
+          "token": "외도",
+          "df": 2,
+          "weight": 2773.0,
+          "share": 0.12987073810415886
+        },
+        {
+          "token": "흥신소사람찾",
+          "df": 5,
+          "weight": 2541.0,
+          "share": 0.11900524541026601
+        },
+        {
+          "token": "불륜외도",
+          "df": 3,
+          "weight": 2434.0,
+          "share": 0.11399400524541027
+        },
+        {
+          "token": "센터사",
+          "df": 2,
+          "weight": 2307.0,
+          "share": 0.10804608467590858
+        },
+        {
+          "token": "흥신소탐정사",
+          "df": 3,
+          "weight": 2148.0,
+          "share": 0.1005994754589734
+        },
+        {
+          "token": "증거수집",
+          "df": 4,
+          "weight": 1711.0,
+          "share": 0.08013300861745973
+        },
+        {
+          "token": "탐정사무소",
+          "df": 2,
+          "weight": 1709.0,
+          "share": 0.08003934057699513
+        },
+        {
+          "token": "경찰출신",
+          "df": 3,
+          "weight": 1431.0,
+          "share": 0.06701948295241664
+        },
+        {
+          "token": "흥신소불륜",
+          "df": 3,
+          "weight": 857.0,
+          "share": 0.0401367553390783
+        }
+      ],
+      "action": [
+        {
+          "token": "찾기",
+          "df": 5,
+          "weight": 4965.0,
+          "share": 0.2325309104533533
+        },
+        {
+          "token": "사람찾기",
+          "df": 5,
+          "weight": 3580.0,
+          "share": 0.16766579243162233
+        },
+        {
+          "token": "조사",
+          "df": 3,
+          "weight": 1406.0,
+          "share": 0.06584863244660921
+        },
+        {
+          "token": "추적",
+          "df": 2,
+          "weight": 2.0,
+          "share": 9.366804046459348e-05
+        }
+      ],
+      "material": [],
+      "place": [],
+      "brand": [],
+      "tag": [
+        {
+          "token": "센터",
+          "df": 3,
+          "weight": 2888.0,
+          "share": 0.13525665043087298
+        },
+        {
+          "token": "최저가",
+          "df": 2,
+          "weight": 1436.0,
+          "share": 0.06725365305357812
+        },
+        {
+          "token": "전문",
+          "df": 2,
+          "weight": 2.0,
+          "share": 9.366804046459348e-05
+        }
+      ]
+    },
+    "golden": [
+      {
+        "combo": "흥신소 찾기",
+        "main": "흥신소",
+        "modifier": "찾기",
+        "modifier_category": "action",
+        "weight": 4965.0
+      },
+      {
+        "combo": "흥신소 사람찾기",
+        "main": "흥신소",
+        "modifier": "사람찾기",
+        "modifier_category": "action",
+        "weight": 3580.0
+      },
+      {
+        "combo": "흥신소 조사",
+        "main": "흥신소",
+        "modifier": "조사",
+        "modifier_category": "action",
+        "weight": 1406.0
+      },
+      {
+        "combo": "흥신소 미행",
+        "main": "흥신소",
+        "modifier": "미행",
+        "modifier_category": "action",
+        "weight": 200.0
+      },
+      {
+        "combo": "흥신소 추적",
+        "main": "흥신소",
+        "modifier": "추적",
+        "modifier_category": "action",
+        "weight": 2.0
+      },
+      {
+        "combo": "흥신소 상담",
+        "main": "흥신소",
+        "modifier": "상담",
+        "modifier_category": "action",
+        "weight": 1.0
+      }
+    ],
+    "examples": [
+      {
+        "name": "흥신소",
+        "weight": 3276.0,
+        "tokens": [
+          "흥신소"
+        ]
+      },
+      {
+        "name": "탐정,이혼,외도,불륜,사람찾기 흥신소",
+        "weight": 2772.0,
+        "tokens": [
+          "탐정",
+          "이혼",
+          "외도",
+          "불륜",
+          "사람찾기",
+          "흥신소"
+        ]
+      },
+      {
+        "name": "무궁화흥신소 사설조사흥신소",
+        "weight": 2613.0,
+        "tokens": [
+          "흥신소",
+          "사설조사",
+          "흥신소"
+        ]
+      },
+      {
+        "name": "1급흥신소심부름센터탐정사무소사람찾기불륜외도이혼소송증거",
+        "weight": 2432.0,
+        "tokens": [
+          "1급",
+          "흥신소심부름",
+          "센터",
+          "탐정사무소사",
+          "찾기",
+          "불륜외도",
+          "이혼",
+          "증거"
+        ]
+      },
+      {
+        "name": "24시흥신소심부름센터사람찾기외도불륜",
+        "weight": 1807.0,
+        "tokens": [
+          "24시",
+          "흥신소심부름",
+          "센터사",
+          "찾기",
+          "외도불륜"
+        ]
+      },
+      {
+        "name": "로얄흥신소사람찾기탐정사무소외도불륜심부름센터증거수집",
+        "weight": 1708.0,
+        "tokens": [
+          "흥신소사람찾",
+          "탐정사무소",
+          "외도불륜",
+          "심부름센터",
+          "증거수집"
+        ]
+      },
+      {
+        "name": "토마토흥신소탐정사",
+        "weight": 1247.0,
+        "tokens": [
+          "흥신소탐정사"
+        ]
+      },
+      {
+        "name": "제일흥신소탐정사무소",
+        "weight": 900.0,
+        "tokens": [
+          "제일",
+          "흥신소탐정사"
+        ]
+      },
+      {
+        "name": "경찰출신최저가흥신소사람찾기",
+        "weight": 830.0,
+        "tokens": [
+          "경찰출신",
+          "최저가",
+          "흥신소사람찾"
+        ]
+      },
+      {
+        "name": "제트흥신소불륜증거조사심부름센터",
+        "weight": 656.0,
+        "tokens": [
+          "흥신소불륜",
+          "증거",
+          "조사",
+          "심부름센터"
+        ]
+      },
+      {
+        "name": "흥신소외도불륜사람찾기심부름센터최저가",
+        "weight": 606.0,
+        "tokens": [
+          "흥신소",
+          "외도불륜",
+          "사람찾기",
+          "심부름센터",
+          "최저가"
+        ]
+      },
+      {
+        "name": "경찰출신탐정흥신소사무소사람찾기불륜증거조사",
+        "weight": 600.0,
+        "tokens": [
+          "경찰출신",
+          "탐정",
+          "흥신소",
+          "사무소사람찾",
+          "불륜증거",
+          "조사"
+        ]
+      },
+      {
+        "name": "퍼펙트흥신소심부름센터사람찾기",
+        "weight": 500.0,
+        "tokens": [
+          "흥신소심부름",
+          "센터사",
+          "찾기"
+        ]
+      },
+      {
+        "name": "으뜸흥신소심부름센터",
+        "weight": 455.0,
+        "tokens": [
+          "흥신소심부름",
+          "센터"
+        ]
+      },
+      {
+        "name": "신뢰정직정확비밀보장윤앤김흥신소",
+        "weight": 362.0,
+        "tokens": [
+          "정확",
+          "비밀보장",
+          "흥신소"
+        ]
+      },
+      {
+        "name": "검찰출신흥신소이혼외도사람재산증거찾기",
+        "weight": 225.0,
+        "tokens": [
+          "찰출신",
+          "흥신소",
+          "이혼",
+          "외도사람",
+          "증거",
+          "찾기"
+        ]
+      },
+      {
+        "name": "한국흥신소불륜증거미행사람찾기비밀보장",
+        "weight": 200.0,
+        "tokens": [
+          "한국",
+          "흥신소불륜",
+          "증거",
+          "미행",
+          "사람찾기",
+          "비밀보장"
+        ]
+      },
+      {
+        "name": "명품흥신소,민간조사,심부름센타,탐정",
+        "weight": 150.0,
+        "tokens": [
+          "명품",
+          "흥신소",
+          "조사",
+          "센타",
+          "탐정"
+        ]
+      },
+      {
+        "name": "25시흥신소사람찾기사설탐정사무소심부름센터",
+        "weight": 1.0,
+        "tokens": [
+          "25시",
+          "흥신소사람찾",
+          "기사",
+          "설탐정사무소",
+          "심부름센터"
+        ]
+      },
+      {
+        "name": "로얄흥신소사람찾기탐정사무소외도불륜심부름센터증거수집",
+        "weight": 1.0,
+        "tokens": [
+          "흥신소사람찾",
+          "탐정사무소",
+          "외도불륜",
+          "심부름센터",
+          "증거수집"
+        ]
+      },
+      {
+        "name": "흥신소외도불륜증거수집사설탐정심부름센터",
+        "weight": 1.0,
+        "tokens": [
+          "흥신소",
+          "외도불륜증거",
+          "수집",
+          "탐정",
+          "심부름센터"
+        ]
+      },
+      {
+        "name": "순양사설탐정사무소심부름센터아이폰안드로이드추적흥신소",
+        "weight": 1.0,
+        "tokens": [
+          "양사",
+          "설탐정사무소",
+          "심부름센터",
+          "아이폰",
+          "이드",
+          "추적",
+          "흥신소"
+        ]
+      },
+      {
+        "name": "순양사설탐정사무소심부름센터아이폰추적흥신소사람찾기",
+        "weight": 1.0,
+        "tokens": [
+          "양사",
+          "설탐정사무소",
+          "심부름센터",
+          "아이폰",
+          "추적",
+          "흥신소사람찾"
+        ]
+      },
+      {
+        "name": "비밀보장경찰출신탐정후불제심부름사람찾기불륜이혼상담흥신소",
+        "weight": 1.0,
+        "tokens": [
+          "비밀보장",
+          "경찰출신",
+          "탐정",
+          "후불",
+          "사람찾기불륜",
+          "이혼",
+          "상담",
+          "흥신소"
+        ]
+      },
+      {
+        "name": "흥신소탐정사무소심부름센터불륜외도사람찾기증거수집후불가능",
+        "weight": 1.0,
+        "tokens": [
+          "흥신소탐정사",
+          "무소심부름센",
+          "불륜외도",
+          "사람찾기",
+          "증거수집",
+          "후불",
+          "가능"
+        ]
+      },
+      {
+        "name": "사설탐정사무소심부름센터외도불륜증거사람찾기흥신소",
+        "weight": 1.0,
+        "tokens": [
+          "사설탐정사무",
+          "소심부름센터",
+          "외도불륜증거",
+          "사람찾기흥신"
+        ]
+      },
+      {
+        "name": "사설탐정사무소심부름센터외도불륜증거사람찾기흥신소",
+        "weight": 1.0,
+        "tokens": [
+          "사설탐정사무",
+          "소심부름센터",
+          "외도불륜증거",
+          "사람찾기흥신"
+        ]
+      },
+      {
+        "name": "행복찾기사설탐정사무소25시흥신소불륜외도사람찾기심부름센터",
+        "weight": 1.0,
+        "tokens": [
+          "행복",
+          "찾기",
+          "사설탐정사무",
+          "25시",
+          "흥신소불륜",
+          "외도사람",
+          "찾기",
+          "심부름센터"
+        ]
+      },
+      {
+        "name": "명품 사설탐정 흥신소 사람찾기 상간녀 불륜외도 증거수집전문",
+        "weight": 1.0,
+        "tokens": [
+          "명품",
+          "탐정",
+          "흥신소",
+          "사람찾기",
+          "불륜외도",
+          "증거수집",
+          "전문"
+        ]
+      },
+      {
+        "name": "25시사설탐정사무소불륜외도증거흥신소심부름센터전문",
+        "weight": 1.0,
+        "tokens": [
+          "25시",
+          "사설탐정사무",
+          "소불륜",
+          "외도",
+          "증거",
+          "흥신소심부름",
+          "센터",
+          "전문"
+        ]
+      }
+    ]
+  },
+  "graph": {
+    "keyword": "흥신소",
+    "normalized": "흥신소",
+    "nodes": [
+      {
+        "id": "흥신소",
+        "category": "main",
+        "weight": 21352.0,
+        "df": 31,
+        "size": 28.0,
+        "is_center": true
+      },
+      {
+        "id": "이혼",
+        "category": "main",
+        "weight": 5430.0,
+        "df": 4,
+        "size": 14.120129043720354,
+        "is_center": false
+      },
+      {
+        "id": "흥신소심부름",
+        "category": "main",
+        "weight": 5195.0,
+        "df": 5,
+        "size": 13.811203579837521,
+        "is_center": false
+      },
+      {
+        "id": "찾기",
+        "category": "action",
+        "weight": 4965.0,
+        "df": 5,
+        "size": 13.502008509678438,
+        "is_center": false
+      },
+      {
+        "id": "외도불륜",
+        "category": "main",
+        "weight": 4122.0,
+        "df": 4,
+        "size": 12.302482181074732,
+        "is_center": false
+      },
+      {
+        "id": "사람찾기",
+        "category": "action",
+        "weight": 3580.0,
+        "df": 5,
+        "size": 11.465163813325649,
+        "is_center": false
+      },
+      {
+        "id": "탐정",
+        "category": "main",
+        "weight": 3525.0,
+        "df": 6,
+        "size": 11.37675253813562,
+        "is_center": false
+      },
+      {
+        "id": "증거",
+        "category": "main",
+        "weight": 3514.0,
+        "df": 5,
+        "size": 11.358987706811375,
+        "is_center": false
+      },
+      {
+        "id": "심부름센터",
+        "category": "main",
+        "weight": 2976.0,
+        "df": 9,
+        "size": 10.453343324586207,
+        "is_center": false
+      },
+      {
+        "id": "센터",
+        "category": "tag",
+        "weight": 2888.0,
+        "df": 3,
+        "size": 10.297631472227213,
+        "is_center": false
+      },
+      {
+        "id": "외도",
+        "category": "main",
+        "weight": 2773.0,
+        "df": 2,
+        "size": 10.090523211095674,
+        "is_center": false
+      },
+      {
+        "id": "불륜",
+        "category": "main",
+        "weight": 2772.0,
+        "df": 1,
+        "size": 10.08870362344927,
+        "is_center": false
+      },
+      {
+        "id": "사설조사",
+        "category": "main",
+        "weight": 2613.0,
+        "df": 1,
+        "size": 9.795090564957592,
+        "is_center": false
+      },
+      {
+        "id": "흥신소사람찾",
+        "category": "main",
+        "weight": 2541.0,
+        "df": 5,
+        "size": 9.659198331209922,
+        "is_center": false
+      },
+      {
+        "id": "불륜외도",
+        "category": "main",
+        "weight": 2434.0,
+        "df": 3,
+        "size": 9.453639516736486,
+        "is_center": false
+      },
+      {
+        "id": "1급",
+        "category": "tag",
+        "weight": 2432.0,
+        "df": 1,
+        "size": 9.4497547253184,
+        "is_center": false
+      },
+      {
+        "id": "탐정사무소사",
+        "category": "main",
+        "weight": 2432.0,
+        "df": 1,
+        "size": 9.4497547253184,
+        "is_center": false
+      },
+      {
+        "id": "센터사",
+        "category": "main",
+        "weight": 2307.0,
+        "df": 2,
+        "size": 9.203701993541095,
+        "is_center": false
+      },
+      {
+        "id": "흥신소탐정사",
+        "category": "main",
+        "weight": 2148.0,
+        "df": 3,
+        "size": 8.88087770211003,
+        "is_center": false
+      },
+      {
+        "id": "24시",
+        "category": "tag",
+        "weight": 1807.0,
+        "df": 1,
+        "size": 8.145501485780478,
+        "is_center": false
+      },
+      {
+        "id": "증거수집",
+        "category": "main",
+        "weight": 1711.0,
+        "df": 4,
+        "size": 8.0,
+        "is_center": false
+      },
+      {
+        "id": "탐정사무소",
+        "category": "main",
+        "weight": 1709.0,
+        "df": 2,
+        "size": 8.0,
+        "is_center": false
+      },
+      {
+        "id": "최저가",
+        "category": "tag",
+        "weight": 1436.0,
+        "df": 2,
+        "size": 8.0,
+        "is_center": false
+      },
+      {
+        "id": "경찰출신",
+        "category": "main",
+        "weight": 1431.0,
+        "df": 3,
+        "size": 8.0,
+        "is_center": false
+      },
+      {
+        "id": "조사",
+        "category": "action",
+        "weight": 1406.0,
+        "df": 3,
+        "size": 8.0,
+        "is_center": false
+      },
+      {
+        "id": "제일",
+        "category": "main",
+        "weight": 900.0,
+        "df": 1,
+        "size": 8.0,
+        "is_center": false
+      },
+      {
+        "id": "흥신소불륜",
+        "category": "main",
+        "weight": 857.0,
+        "df": 3,
+        "size": 8.0,
+        "is_center": false
+      },
+      {
+        "id": "사무소사람찾",
+        "category": "main",
+        "weight": 600.0,
+        "df": 1,
+        "size": 8.0,
+        "is_center": false
+      },
+      {
+        "id": "불륜증거",
+        "category": "main",
+        "weight": 600.0,
+        "df": 1,
+        "size": 8.0,
+        "is_center": false
+      },
+      {
+        "id": "비밀보장",
+        "category": "main",
+        "weight": 563.0,
+        "df": 3,
+        "size": 8.0,
+        "is_center": false
+      },
+      {
+        "id": "정확",
+        "category": "tag",
+        "weight": 362.0,
+        "df": 1,
+        "size": 8.0,
+        "is_center": false
+      },
+      {
+        "id": "외도사람",
+        "category": "main",
+        "weight": 226.0,
+        "df": 2,
+        "size": 8.0,
+        "is_center": false
+      },
+      {
+        "id": "찰출신",
+        "category": "main",
+        "weight": 225.0,
+        "df": 1,
+        "size": 8.0,
+        "is_center": false
+      },
+      {
+        "id": "미행",
+        "category": "action",
+        "weight": 200.0,
+        "df": 1,
+        "size": 8.0,
+        "is_center": false
+      },
+      {
+        "id": "한국",
+        "category": "main",
+        "weight": 200.0,
+        "df": 1,
+        "size": 8.0,
+        "is_center": false
+      },
+      {
+        "id": "명품",
+        "category": "main",
+        "weight": 151.0,
+        "df": 2,
+        "size": 8.0,
+        "is_center": false
+      },
+      {
+        "id": "센타",
+        "category": "main",
+        "weight": 150.0,
+        "df": 1,
+        "size": 8.0,
+        "is_center": false
+      },
+      {
+        "id": "사설탐정사무",
+        "category": "main",
+        "weight": 5.0,
+        "df": 5,
+        "size": 8.0,
+        "is_center": false
+      },
+      {
+        "id": "외도불륜증거",
+        "category": "main",
+        "weight": 4.0,
+        "df": 4,
+        "size": 8.0,
+        "is_center": false
+      },
+      {
+        "id": "설탐정사무소",
+        "category": "main",
+        "weight": 3.0,
+        "df": 3,
+        "size": 8.0,
+        "is_center": false
+      }
+    ],
+    "edges": [
+      {
+        "source": "이혼",
+        "target": "흥신소",
+        "weight": 5430.0,
+        "df": 4
+      },
+      {
+        "source": "흥신소",
+        "target": "흥신소심부름",
+        "weight": 5195.0,
+        "df": 5
+      },
+      {
+        "source": "찾기",
+        "target": "흥신소",
+        "weight": 4965.0,
+        "df": 5
+      },
+      {
+        "source": "찾기",
+        "target": "흥신소심부름",
+        "weight": 4739.0,
+        "df": 3
+      },
+      {
+        "source": "외도불륜",
+        "target": "흥신소",
+        "weight": 4122.0,
+        "df": 4
+      },
+      {
+        "source": "사람찾기",
+        "target": "흥신소",
+        "weight": 3580.0,
+        "df": 5
+      },
+      {
+        "source": "탐정",
+        "target": "흥신소",
+        "weight": 3525.0,
+        "df": 6
+      },
+      {
+        "source": "증거",
+        "target": "흥신소",
+        "weight": 3514.0,
+        "df": 5
+      },
+      {
+        "source": "심부름센터",
+        "target": "흥신소",
+        "weight": 2976.0,
+        "df": 9
+      },
+      {
+        "source": "센터",
+        "target": "흥신소",
+        "weight": 2888.0,
+        "df": 3
+      },
+      {
+        "source": "센터",
+        "target": "흥신소심부름",
+        "weight": 2888.0,
+        "df": 3
+      },
+      {
+        "source": "이혼",
+        "target": "탐정",
+        "weight": 2773.0,
+        "df": 2
+      },
+      {
+        "source": "외도",
+        "target": "흥신소",
+        "weight": 2773.0,
+        "df": 2
+      },
+      {
+        "source": "사람찾기",
+        "target": "탐정",
+        "weight": 2773.0,
+        "df": 2
+      },
+      {
+        "source": "외도",
+        "target": "이혼",
+        "weight": 2772.0,
+        "df": 1
+      },
+      {
+        "source": "사람찾기",
+        "target": "이혼",
+        "weight": 2772.0,
+        "df": 1
+      },
+      {
+        "source": "불륜",
+        "target": "이혼",
+        "weight": 2772.0,
+        "df": 1
+      },
+      {
+        "source": "사람찾기",
+        "target": "외도",
+        "weight": 2772.0,
+        "df": 1
+      },
+      {
+        "source": "외도",
+        "target": "탐정",
+        "weight": 2772.0,
+        "df": 1
+      },
+      {
+        "source": "불륜",
+        "target": "외도",
+        "weight": 2772.0,
+        "df": 1
+      },
+      {
+        "source": "불륜",
+        "target": "흥신소",
+        "weight": 2772.0,
+        "df": 1
+      },
+      {
+        "source": "불륜",
+        "target": "사람찾기",
+        "weight": 2772.0,
+        "df": 1
+      },
+      {
+        "source": "불륜",
+        "target": "탐정",
+        "weight": 2772.0,
+        "df": 1
+      },
+      {
+        "source": "이혼",
+        "target": "증거",
+        "weight": 2657.0,
+        "df": 2
+      },
+      {
+        "source": "증거",
+        "target": "찾기",
+        "weight": 2657.0,
+        "df": 2
+      },
+      {
+        "source": "이혼",
+        "target": "찾기",
+        "weight": 2657.0,
+        "df": 2
+      },
+      {
+        "source": "사설조사",
+        "target": "흥신소",
+        "weight": 2613.0,
+        "df": 1
+      },
+      {
+        "source": "흥신소",
+        "target": "흥신소사람찾",
+        "weight": 2541.0,
+        "df": 5
+      },
+      {
+        "source": "불륜외도",
+        "target": "흥신소",
+        "weight": 2434.0,
+        "df": 3
+      },
+      {
+        "source": "증거",
+        "target": "흥신소심부름",
+        "weight": 2433.0,
+        "df": 2
+      },
+      {
+        "source": "센터",
+        "target": "증거",
+        "weight": 2433.0,
+        "df": 2
+      },
+      {
+        "source": "1급",
+        "target": "증거",
+        "weight": 2432.0,
+        "df": 1
+      },
+      {
+        "source": "1급",
+        "target": "이혼",
+        "weight": 2432.0,
+        "df": 1
+      },
+      {
+        "source": "1급",
+        "target": "흥신소",
+        "weight": 2432.0,
+        "df": 1
+      },
+      {
+        "source": "1급",
+        "target": "탐정사무소사",
+        "weight": 2432.0,
+        "df": 1
+      },
+      {
+        "source": "1급",
+        "target": "불륜외도",
+        "weight": 2432.0,
+        "df": 1
+      },
+      {
+        "source": "1급",
+        "target": "흥신소심부름",
+        "weight": 2432.0,
+        "df": 1
+      },
+      {
+        "source": "1급",
+        "target": "찾기",
+        "weight": 2432.0,
+        "df": 1
+      },
+      {
+        "source": "1급",
+        "target": "센터",
+        "weight": 2432.0,
+        "df": 1
+      },
+      {
+        "source": "증거",
+        "target": "탐정사무소사",
+        "weight": 2432.0,
+        "df": 1
+      },
+      {
+        "source": "불륜외도",
+        "target": "증거",
+        "weight": 2432.0,
+        "df": 1
+      },
+      {
+        "source": "이혼",
+        "target": "탐정사무소사",
+        "weight": 2432.0,
+        "df": 1
+      },
+      {
+        "source": "불륜외도",
+        "target": "이혼",
+        "weight": 2432.0,
+        "df": 1
+      },
+      {
+        "source": "이혼",
+        "target": "흥신소심부름",
+        "weight": 2432.0,
+        "df": 1
+      },
+      {
+        "source": "센터",
+        "target": "이혼",
+        "weight": 2432.0,
+        "df": 1
+      },
+      {
+        "source": "탐정사무소사",
+        "target": "흥신소",
+        "weight": 2432.0,
+        "df": 1
+      },
+      {
+        "source": "불륜외도",
+        "target": "탐정사무소사",
+        "weight": 2432.0,
+        "df": 1
+      },
+      {
+        "source": "탐정사무소사",
+        "target": "흥신소심부름",
+        "weight": 2432.0,
+        "df": 1
+      },
+      {
+        "source": "찾기",
+        "target": "탐정사무소사",
+        "weight": 2432.0,
+        "df": 1
+      },
+      {
+        "source": "센터",
+        "target": "탐정사무소사",
+        "weight": 2432.0,
+        "df": 1
+      },
+      {
+        "source": "불륜외도",
+        "target": "흥신소심부름",
+        "weight": 2432.0,
+        "df": 1
+      },
+      {
+        "source": "불륜외도",
+        "target": "찾기",
+        "weight": 2432.0,
+        "df": 1
+      },
+      {
+        "source": "불륜외도",
+        "target": "센터",
+        "weight": 2432.0,
+        "df": 1
+      },
+      {
+        "source": "센터",
+        "target": "찾기",
+        "weight": 2432.0,
+        "df": 1
+      },
+      {
+        "source": "심부름센터",
+        "target": "외도불륜",
+        "weight": 2315.0,
+        "df": 3
+      },
+      {
+        "source": "센터사",
+        "target": "흥신소",
+        "weight": 2307.0,
+        "df": 2
+      },
+      {
+        "source": "센터사",
+        "target": "흥신소심부름",
+        "weight": 2307.0,
+        "df": 2
+      },
+      {
+        "source": "센터사",
+        "target": "찾기",
+        "weight": 2307.0,
+        "df": 2
+      },
+      {
+        "source": "흥신소",
+        "target": "흥신소탐정사",
+        "weight": 2148.0,
+        "df": 3
+      },
+      {
+        "source": "24시",
+        "target": "흥신소",
+        "weight": 1807.0,
+        "df": 1
+      },
+      {
+        "source": "외도불륜",
+        "target": "흥신소심부름",
+        "weight": 1807.0,
+        "df": 1
+      },
+      {
+        "source": "24시",
+        "target": "외도불륜",
+        "weight": 1807.0,
+        "df": 1
+      },
+      {
+        "source": "센터사",
+        "target": "외도불륜",
+        "weight": 1807.0,
+        "df": 1
+      },
+      {
+        "source": "외도불륜",
+        "target": "찾기",
+        "weight": 1807.0,
+        "df": 1
+      },
+      {
+        "source": "24시",
+        "target": "흥신소심부름",
+        "weight": 1807.0,
+        "df": 1
+      },
+      {
+        "source": "24시",
+        "target": "센터사",
+        "weight": 1807.0,
+        "df": 1
+      },
+      {
+        "source": "24시",
+        "target": "찾기",
+        "weight": 1807.0,
+        "df": 1
+      },
+      {
+        "source": "증거수집",
+        "target": "흥신소",
+        "weight": 1711.0,
+        "df": 4
+      },
+      {
+        "source": "심부름센터",
+        "target": "흥신소사람찾",
+        "weight": 1711.0,
+        "df": 4
+      },
+      {
+        "source": "증거수집",
+        "target": "흥신소사람찾",
+        "weight": 1709.0,
+        "df": 2
+      },
+      {
+        "source": "외도불륜",
+        "target": "증거수집",
+        "weight": 1709.0,
+        "df": 2
+      },
+      {
+        "source": "증거수집",
+        "target": "탐정사무소",
+        "weight": 1709.0,
+        "df": 2
+      },
+      {
+        "source": "심부름센터",
+        "target": "증거수집",
+        "weight": 1709.0,
+        "df": 2
+      },
+      {
+        "source": "외도불륜",
+        "target": "흥신소사람찾",
+        "weight": 1709.0,
+        "df": 2
+      },
+      {
+        "source": "탐정사무소",
+        "target": "흥신소사람찾",
+        "weight": 1709.0,
+        "df": 2
+      },
+      {
+        "source": "탐정사무소",
+        "target": "흥신소",
+        "weight": 1709.0,
+        "df": 2
+      },
+      {
+        "source": "외도불륜",
+        "target": "탐정사무소",
+        "weight": 1709.0,
+        "df": 2
+      },
+      {
+        "source": "심부름센터",
+        "target": "탐정사무소",
+        "weight": 1709.0,
+        "df": 2
+      },
+      {
+        "source": "최저가",
+        "target": "흥신소",
+        "weight": 1436.0,
+        "df": 2
+      },
+      {
+        "source": "경찰출신",
+        "target": "흥신소",
+        "weight": 1431.0,
+        "df": 3
+      },
+      {
+        "source": "조사",
+        "target": "흥신소",
+        "weight": 1406.0,
+        "df": 3
+      },
+      {
+        "source": "제일",
+        "target": "흥신소",
+        "weight": 900.0,
+        "df": 1
+      },
+      {
+        "source": "제일",
+        "target": "흥신소탐정사",
+        "weight": 900.0,
+        "df": 1
+      },
+      {
+        "source": "흥신소",
+        "target": "흥신소불륜",
+        "weight": 857.0,
+        "df": 3
+      },
+      {
+        "source": "증거",
+        "target": "흥신소불륜",
+        "weight": 856.0,
+        "df": 2
+      },
+      {
+        "source": "경찰출신",
+        "target": "흥신소사람찾",
+        "weight": 830.0,
+        "df": 1
+      },
+      {
+        "source": "최저가",
+        "target": "흥신소사람찾",
+        "weight": 830.0,
+        "df": 1
+      },
+      {
+        "source": "경찰출신",
+        "target": "최저가",
+        "weight": 830.0,
+        "df": 1
+      },
+      {
+        "source": "조사",
+        "target": "탐정",
+        "weight": 750.0,
+        "df": 2
+      },
+      {
+        "source": "심부름센터",
+        "target": "흥신소불륜",
+        "weight": 657.0,
+        "df": 2
+      },
+      {
+        "source": "조사",
+        "target": "증거",
+        "weight": 656.0,
+        "df": 1
+      },
+      {
+        "source": "심부름센터",
+        "target": "증거",
+        "weight": 656.0,
+        "df": 1
+      },
+      {
+        "source": "조사",
+        "target": "흥신소불륜",
+        "weight": 656.0,
+        "df": 1
+      },
+      {
+        "source": "심부름센터",
+        "target": "조사",
+        "weight": 656.0,
+        "df": 1
+      },
+      {
+        "source": "외도불륜",
+        "target": "최저가",
+        "weight": 606.0,
+        "df": 1
+      },
+      {
+        "source": "사람찾기",
+        "target": "외도불륜",
+        "weight": 606.0,
+        "df": 1
+      },
+      {
+        "source": "사람찾기",
+        "target": "최저가",
+        "weight": 606.0,
+        "df": 1
+      },
+      {
+        "source": "심부름센터",
+        "target": "최저가",
+        "weight": 606.0,
+        "df": 1
+      },
+      {
+        "source": "사람찾기",
+        "target": "심부름센터",
+        "weight": 606.0,
+        "df": 1
+      },
+      {
+        "source": "경찰출신",
+        "target": "탐정",
+        "weight": 601.0,
+        "df": 2
+      },
+      {
+        "source": "사무소사람찾",
+        "target": "흥신소",
+        "weight": 600.0,
+        "df": 1
+      },
+      {
+        "source": "불륜증거",
+        "target": "흥신소",
+        "weight": 600.0,
+        "df": 1
+      },
+      {
+        "source": "경찰출신",
+        "target": "사무소사람찾",
+        "weight": 600.0,
+        "df": 1
+      },
+      {
+        "source": "경찰출신",
+        "target": "불륜증거",
+        "weight": 600.0,
+        "df": 1
+      },
+      {
+        "source": "경찰출신",
+        "target": "조사",
+        "weight": 600.0,
+        "df": 1
+      },
+      {
+        "source": "불륜증거",
+        "target": "사무소사람찾",
+        "weight": 600.0,
+        "df": 1
+      },
+      {
+        "source": "사무소사람찾",
+        "target": "조사",
+        "weight": 600.0,
+        "df": 1
+      },
+      {
+        "source": "사무소사람찾",
+        "target": "탐정",
+        "weight": 600.0,
+        "df": 1
+      },
+      {
+        "source": "불륜증거",
+        "target": "조사",
+        "weight": 600.0,
+        "df": 1
+      },
+      {
+        "source": "불륜증거",
+        "target": "탐정",
+        "weight": 600.0,
+        "df": 1
+      },
+      {
+        "source": "비밀보장",
+        "target": "흥신소",
+        "weight": 563.0,
+        "df": 3
+      },
+      {
+        "source": "비밀보장",
+        "target": "정확",
+        "weight": 362.0,
+        "df": 1
+      },
+      {
+        "source": "정확",
+        "target": "흥신소",
+        "weight": 362.0,
+        "df": 1
+      },
+      {
+        "source": "외도사람",
+        "target": "흥신소",
+        "weight": 226.0,
+        "df": 2
+      },
+      {
+        "source": "외도사람",
+        "target": "찾기",
+        "weight": 226.0,
+        "df": 2
+      },
+      {
+        "source": "증거",
+        "target": "찰출신",
+        "weight": 225.0,
+        "df": 1
+      },
+      {
+        "source": "외도사람",
+        "target": "증거",
+        "weight": 225.0,
+        "df": 1
+      },
+      {
+        "source": "이혼",
+        "target": "찰출신",
+        "weight": 225.0,
+        "df": 1
+      },
+      {
+        "source": "외도사람",
+        "target": "이혼",
+        "weight": 225.0,
+        "df": 1
+      },
+      {
+        "source": "찰출신",
+        "target": "흥신소",
+        "weight": 225.0,
+        "df": 1
+      },
+      {
+        "source": "찰출신",
+        "target": "찾기",
+        "weight": 225.0,
+        "df": 1
+      },
+      {
+        "source": "외도사람",
+        "target": "찰출신",
+        "weight": 225.0,
+        "df": 1
+      },
+      {
+        "source": "미행",
+        "target": "증거",
+        "weight": 200.0,
+        "df": 1
+      },
+      {
+        "source": "미행",
+        "target": "흥신소",
+        "weight": 200.0,
+        "df": 1
+      },
+      {
+        "source": "미행",
+        "target": "한국",
+        "weight": 200.0,
+        "df": 1
+      },
+      {
+        "source": "미행",
+        "target": "흥신소불륜",
+        "weight": 200.0,
+        "df": 1
+      },
+      {
+        "source": "미행",
+        "target": "비밀보장",
+        "weight": 200.0,
+        "df": 1
+      },
+      {
+        "source": "미행",
+        "target": "사람찾기",
+        "weight": 200.0,
+        "df": 1
+      },
+      {
+        "source": "증거",
+        "target": "한국",
+        "weight": 200.0,
+        "df": 1
+      },
+      {
+        "source": "비밀보장",
+        "target": "증거",
+        "weight": 200.0,
+        "df": 1
+      },
+      {
+        "source": "사람찾기",
+        "target": "증거",
+        "weight": 200.0,
+        "df": 1
+      },
+      {
+        "source": "한국",
+        "target": "흥신소",
+        "weight": 200.0,
+        "df": 1
+      },
+      {
+        "source": "한국",
+        "target": "흥신소불륜",
+        "weight": 200.0,
+        "df": 1
+      },
+      {
+        "source": "비밀보장",
+        "target": "한국",
+        "weight": 200.0,
+        "df": 1
+      },
+      {
+        "source": "사람찾기",
+        "target": "한국",
+        "weight": 200.0,
+        "df": 1
+      },
+      {
+        "source": "비밀보장",
+        "target": "흥신소불륜",
+        "weight": 200.0,
+        "df": 1
+      },
+      {
+        "source": "사람찾기",
+        "target": "흥신소불륜",
+        "weight": 200.0,
+        "df": 1
+      },
+      {
+        "source": "비밀보장",
+        "target": "사람찾기",
+        "weight": 200.0,
+        "df": 1
+      },
+      {
+        "source": "명품",
+        "target": "흥신소",
+        "weight": 151.0,
+        "df": 2
+      },
+      {
+        "source": "명품",
+        "target": "탐정",
+        "weight": 151.0,
+        "df": 2
+      },
+      {
+        "source": "센타",
+        "target": "흥신소",
+        "weight": 150.0,
+        "df": 1
+      },
+      {
+        "source": "센타",
+        "target": "조사",
+        "weight": 150.0,
+        "df": 1
+      },
+      {
+        "source": "센타",
+        "target": "탐정",
+        "weight": 150.0,
+        "df": 1
+      },
+      {
+        "source": "명품",
+        "target": "센타",
+        "weight": 150.0,
+        "df": 1
+      },
+      {
+        "source": "명품",
+        "target": "조사",
+        "weight": 150.0,
+        "df": 1
+      },
+      {
+        "source": "사설탐정사무",
+        "target": "흥신소",
+        "weight": 5.0,
+        "df": 5
+      },
+      {
+        "source": "외도불륜증거",
+        "target": "흥신소",
+        "weight": 4.0,
+        "df": 4
+      },
+      {
+        "source": "설탐정사무소",
+        "target": "흥신소",
+        "weight": 3.0,
+        "df": 3
+      },
+      {
+        "source": "설탐정사무소",
+        "target": "심부름센터",
+        "weight": 3.0,
+        "df": 3
+      },
+      {
+        "source": "사설탐정사무",
+        "target": "외도불륜증거",
+        "weight": 3.0,
+        "df": 3
+      },
+      {
+        "source": "설탐정사무소",
+        "target": "흥신소사람찾",
+        "weight": 2.0,
+        "df": 2
+      },
+      {
+        "source": "불륜외도",
+        "target": "증거수집",
+        "weight": 2.0,
+        "df": 2
+      },
+      {
+        "source": "사람찾기",
+        "target": "증거수집",
+        "weight": 2.0,
+        "df": 2
+      },
+      {
+        "source": "불륜외도",
+        "target": "사람찾기",
+        "weight": 2.0,
+        "df": 2
+      },
+      {
+        "source": "외도불륜증거",
+        "target": "탐정",
+        "weight": 1.0,
+        "df": 1
+      },
+      {
+        "source": "심부름센터",
+        "target": "외도불륜증거",
+        "weight": 1.0,
+        "df": 1
+      },
+      {
+        "source": "심부름센터",
+        "target": "탐정",
+        "weight": 1.0,
+        "df": 1
+      },
+      {
+        "source": "경찰출신",
+        "target": "이혼",
+        "weight": 1.0,
+        "df": 1
+      },
+      {
+        "source": "비밀보장",
+        "target": "이혼",
+        "weight": 1.0,
+        "df": 1
+      },
+      {
+        "source": "경찰출신",
+        "target": "비밀보장",
+        "weight": 1.0,
+        "df": 1
+      },
+      {
+        "source": "비밀보장",
+        "target": "탐정",
+        "weight": 1.0,
+        "df": 1
+      },
+      {
+        "source": "증거수집",
+        "target": "흥신소탐정사",
+        "weight": 1.0,
+        "df": 1
+      },
+      {
+        "source": "불륜외도",
+        "target": "흥신소탐정사",
+        "weight": 1.0,
+        "df": 1
+      },
+      {
+        "source": "사람찾기",
+        "target": "흥신소탐정사",
+        "weight": 1.0,
+        "df": 1
+      },
+      {
+        "source": "사설탐정사무",
+        "target": "흥신소불륜",
+        "weight": 1.0,
+        "df": 1
+      },
+      {
+        "source": "사설탐정사무",
+        "target": "찾기",
+        "weight": 1.0,
+        "df": 1
+      },
+      {
+        "source": "사설탐정사무",
+        "target": "외도사람",
+        "weight": 1.0,
+        "df": 1
+      },
+      {
+        "source": "사설탐정사무",
+        "target": "심부름센터",
+        "weight": 1.0,
+        "df": 1
+      },
+      {
+        "source": "찾기",
+        "target": "흥신소불륜",
+        "weight": 1.0,
+        "df": 1
+      },
+      {
+        "source": "외도사람",
+        "target": "흥신소불륜",
+        "weight": 1.0,
+        "df": 1
+      },
+      {
+        "source": "심부름센터",
+        "target": "찾기",
+        "weight": 1.0,
+        "df": 1
+      },
+      {
+        "source": "심부름센터",
+        "target": "외도사람",
+        "weight": 1.0,
+        "df": 1
+      },
+      {
+        "source": "불륜외도",
+        "target": "탐정",
+        "weight": 1.0,
+        "df": 1
+      },
+      {
+        "source": "명품",
+        "target": "불륜외도",
+        "weight": 1.0,
+        "df": 1
+      },
+      {
+        "source": "증거수집",
+        "target": "탐정",
+        "weight": 1.0,
+        "df": 1
+      },
+      {
+        "source": "명품",
+        "target": "증거수집",
+        "weight": 1.0,
+        "df": 1
+      },
+      {
+        "source": "명품",
+        "target": "사람찾기",
+        "weight": 1.0,
+        "df": 1
+      },
+      {
+        "source": "외도",
+        "target": "증거",
+        "weight": 1.0,
+        "df": 1
+      },
+      {
+        "source": "사설탐정사무",
+        "target": "증거",
+        "weight": 1.0,
+        "df": 1
+      },
+      {
+        "source": "사설탐정사무",
+        "target": "외도",
+        "weight": 1.0,
+        "df": 1
+      },
+      {
+        "source": "외도",
+        "target": "흥신소심부름",
+        "weight": 1.0,
+        "df": 1
+      },
+      {
+        "source": "센터",
+        "target": "외도",
+        "weight": 1.0,
+        "df": 1
+      },
+      {
+        "source": "사설탐정사무",
+        "target": "흥신소심부름",
+        "weight": 1.0,
+        "df": 1
+      },
+      {
+        "source": "사설탐정사무",
+        "target": "센터",
+        "weight": 1.0,
+        "df": 1
+      }
+    ],
+    "stats": {
+      "matched": 31,
+      "node_count": 40,
+      "edge_count": 184,
+      "elapsed_ms": 3
+    }
+  },
+  "recommend": {
+    "seed": "흥신소",
+    "normalized": "흥신소",
+    "candidates": [
+      {
+        "combo": "흥신소 찾기",
+        "modifier": "찾기",
+        "modifier_category": "action",
+        "market_weight": 4965.0,
+        "market_df": 5,
+        "competition_weight": 11690.0,
+        "competition_count": 20,
+        "opportunity": 478.94,
+        "status": "saturated",
+        "status_label": "포화"
+      },
+      {
+        "combo": "흥신소 사람찾기",
+        "modifier": "사람찾기",
+        "modifier_category": "action",
+        "market_weight": 3580.0,
+        "market_df": 5,
+        "competition_weight": 11465.0,
+        "competition_count": 19,
+        "opportunity": 345.99,
+        "status": "saturated",
+        "status_label": "포화"
+      },
+      {
+        "combo": "흥신소 조사",
+        "modifier": "조사",
+        "modifier_category": "action",
+        "market_weight": 1406.0,
+        "market_df": 3,
+        "competition_weight": 4019.0,
+        "competition_count": 4,
+        "opportunity": 151.2,
+        "status": "moderate",
+        "status_label": "중간"
+      }
+    ],
+    "stats": {
+      "seed_matched": 31,
+      "candidate_count": 3,
+      "elapsed_ms": 3
+    }
+  }
+}

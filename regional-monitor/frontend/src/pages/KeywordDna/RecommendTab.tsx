@@ -10,7 +10,7 @@
  *   - moderate (중간): 3-5건
  *   - saturated (포화): 6건+
  */
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import clsx from 'clsx'
 import {
   Lightbulb,
@@ -26,6 +26,7 @@ import {
   type RecommendResult,
   type OppStatus,
 } from '@/api/keywordDna'
+import { demoApi } from '@/api/demo'
 import { ApiError } from '@/api/client'
 import { useAuthStore } from '@/store/auth'
 import {
@@ -60,6 +61,7 @@ const STATUS_DESC: Record<OppStatus, string> = {
 
 export default function RecommendTab() {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated)
+  const isDemo = useAuthStore((s) => s.isDemo)
   const openLoginModal = useAuthStore((s) => s.openLoginModal)
 
   const [seed, setSeed] = useState('하수구')
@@ -70,9 +72,41 @@ export default function RecommendTab() {
   const [errMsg, setErrMsg] = useState<string | null>(null)
   const [statusFilter, setStatusFilter] = useState<'all' | OppStatus>('all')
 
+  // 데모: 마운트 시 캡처된 흥신소 추천 자동 로드
+  useEffect(() => {
+    if (!isAuthenticated || !isDemo) return
+    if (result) return
+    setLoading(true)
+    setErrMsg(null)
+    demoApi
+      .keywordDna()
+      .then((r) => {
+        setSeed(r.keyword || '흥신소')
+        setResult(r.recommend)
+      })
+      .catch((e: any) =>
+        setErrMsg(e instanceof ApiError ? e.message : (e?.message || '데모 데이터 로드 실패')),
+      )
+      .finally(() => setLoading(false))
+  }, [isAuthenticated, isDemo, result])
+
   const submit = async (kw?: string) => {
     if (!isAuthenticated) {
       openLoginModal()
+      return
+    }
+    if (isDemo) {
+      setLoading(true)
+      setErrMsg(null)
+      try {
+        const r = await demoApi.keywordDna()
+        setSeed(r.keyword || '흥신소')
+        setResult(r.recommend)
+      } catch (e: any) {
+        setErrMsg(e instanceof ApiError ? e.message : (e?.message || '데모 데이터 로드 실패'))
+      } finally {
+        setLoading(false)
+      }
       return
     }
     const target = (kw ?? seed).trim()
@@ -150,6 +184,13 @@ export default function RecommendTab() {
           </div>
         </div>
 
+        {isDemo && (
+          <div className="mb-3 px-3 py-2 rounded-md bg-amber-50 border border-amber-200 text-xs text-amber-800">
+            🎬 외부 공개 데모 — seed <b>"흥신소"</b>의 실제 캡처 추천 결과를 보여드립니다.
+            실시간 분석은 회원가입 후 이용 가능합니다.
+          </div>
+        )}
+
         <div className="flex flex-wrap gap-2 items-stretch">
           <input
             type="text"
@@ -157,8 +198,10 @@ export default function RecommendTab() {
             onChange={(e) => setSeed(e.target.value)}
             onKeyDown={(e) => { if (e.key === 'Enter') submit() }}
             placeholder="seed 키워드 (예: 하수구, 흥신소, 누수)"
-            className="flex-1 min-w-[220px] px-3 py-2.5 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className={`flex-1 min-w-[220px] px-3 py-2.5 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${isDemo ? 'bg-slate-100 cursor-not-allowed' : ''}`}
             maxLength={30}
+            readOnly={isDemo}
+            title={isDemo ? '데모 키워드는 변경할 수 없습니다' : undefined}
           />
           <button
             onClick={() => submit()}
@@ -170,7 +213,8 @@ export default function RecommendTab() {
           <select
             value={top}
             onChange={(e) => setTop(Number(e.target.value))}
-            className="px-3 py-2.5 text-xs border border-slate-300 rounded-lg bg-white"
+            disabled={isDemo}
+            className="px-3 py-2.5 text-xs border border-slate-300 rounded-lg bg-white disabled:bg-slate-100 disabled:cursor-not-allowed"
           >
             <option value={10}>상위 10개</option>
             <option value={20}>상위 20개</option>
@@ -180,7 +224,8 @@ export default function RecommendTab() {
           <select
             value={minDf}
             onChange={(e) => setMinDf(Number(e.target.value))}
-            className="px-3 py-2.5 text-xs border border-slate-300 rounded-lg bg-white"
+            disabled={isDemo}
+            className="px-3 py-2.5 text-xs border border-slate-300 rounded-lg bg-white disabled:bg-slate-100 disabled:cursor-not-allowed"
           >
             <option value={1}>모분포 1회 이상</option>
             <option value={3}>모분포 3회 이상</option>

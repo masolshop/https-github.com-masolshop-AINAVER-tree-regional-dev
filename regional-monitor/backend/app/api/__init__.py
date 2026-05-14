@@ -9,6 +9,7 @@ from .backup import router as backup_router
 from .events import router as events_router
 from .extract import router as extract_router
 from .competition import router as competition_router
+from .demo import router as demo_router
 from .keyword import router as keyword_router
 from .keyword_dna import router as keyword_dna_router
 from .places import router as places_router
@@ -34,5 +35,6 @@ api_router.include_router(competition_router)
 api_router.include_router(keyword_dna_router)
 api_router.include_router(rank_tracker_router)
 api_router.include_router(sitemap_router)
+api_router.include_router(demo_router)
 
 __all__ = ["api_router"]

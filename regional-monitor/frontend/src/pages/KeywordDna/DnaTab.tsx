@@ -18,6 +18,7 @@ import {
   type DnaResult,
   type RecommendedItem,
 } from '@/api/keywordDna'
+import { demoApi } from '@/api/demo'
 import { ApiError } from '@/api/client'
 import { useAuthStore } from '@/store/auth'
 import {
@@ -36,6 +37,7 @@ import {
 
 export default function DnaTab() {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated)
+  const isDemo = useAuthStore((s) => s.isDemo)
   const openLoginModal = useAuthStore((s) => s.openLoginModal)
 
   const [keyword, setKeyword] = useState('흥신소')
@@ -58,9 +60,42 @@ export default function DnaTab() {
       .catch(() => setRecommended([]))
   }, [isAuthenticated])
 
+  // 데모: 마운트 시 캡처된 흥신소 DNA 자동 로드
+  useEffect(() => {
+    if (!isAuthenticated || !isDemo) return
+    if (result) return
+    setLoading(true)
+    setErrMsg(null)
+    demoApi
+      .keywordDna()
+      .then((r) => {
+        setKeyword(r.keyword || '흥신소')
+        setResult(r.analyze)
+      })
+      .catch((e: any) =>
+        setErrMsg(e instanceof ApiError ? e.message : (e?.message || '데모 데이터 로드 실패')),
+      )
+      .finally(() => setLoading(false))
+  }, [isAuthenticated, isDemo, result])
+
   const submit = async (kw?: string) => {
     if (!isAuthenticated) {
       openLoginModal()
+      return
+    }
+    if (isDemo) {
+      // 데모는 입력 무시하고 캡처 데이터 재로드
+      setLoading(true)
+      setErrMsg(null)
+      try {
+        const r = await demoApi.keywordDna()
+        setKeyword(r.keyword || '흥신소')
+        setResult(r.analyze)
+      } catch (e: any) {
+        setErrMsg(e instanceof ApiError ? e.message : (e?.message || '데모 데이터 로드 실패'))
+      } finally {
+        setLoading(false)
+      }
       return
     }
     const target = (kw ?? keyword).trim()
@@ -153,6 +188,13 @@ export default function DnaTab() {
           </div>
         </div>
 
+        {isDemo && (
+          <div className="mb-3 px-3 py-2 rounded-md bg-amber-50 border border-amber-200 text-xs text-amber-800">
+            🎬 외부 공개 데모 — 키워드 <b>"흥신소"</b>의 실제 캡처 결과를 보여드립니다.
+            실시간 분석은 회원가입 후 이용 가능합니다.
+          </div>
+        )}
+
         <div className="flex flex-wrap gap-2 items-stretch">
           <div className="relative flex-1 min-w-[260px]">
             <SearchIcon size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
@@ -162,8 +204,13 @@ export default function DnaTab() {
               onChange={(e) => setKeyword(e.target.value)}
               onKeyDown={(e) => { if (e.key === 'Enter') submit() }}
               placeholder="예: 흥신소, 하수구, 누수, 보일러"
-              className="w-full pl-9 pr-3 py-2.5 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              className={clsx(
+                'w-full pl-9 pr-3 py-2.5 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500',
+                isDemo && 'bg-slate-100 cursor-not-allowed',
+              )}
               maxLength={30}
+              readOnly={isDemo}
+              title={isDemo ? '데모 키워드는 변경할 수 없습니다' : undefined}
             />
           </div>
           <button
@@ -176,7 +223,8 @@ export default function DnaTab() {
           <select
             value={topPerCat}
             onChange={(e) => setTopPerCat(Number(e.target.value))}
-            className="px-3 py-2.5 text-xs border border-slate-300 rounded-lg bg-white"
+            disabled={isDemo}
+            className="px-3 py-2.5 text-xs border border-slate-300 rounded-lg bg-white disabled:bg-slate-100 disabled:cursor-not-allowed"
           >
             <option value={8}>카테고리당 8개</option>
             <option value={15}>카테고리당 15개</option>
@@ -185,7 +233,8 @@ export default function DnaTab() {
           <select
             value={minDf}
             onChange={(e) => setMinDf(Number(e.target.value))}
-            className="px-3 py-2.5 text-xs border border-slate-300 rounded-lg bg-white"
+            disabled={isDemo}
+            className="px-3 py-2.5 text-xs border border-slate-300 rounded-lg bg-white disabled:bg-slate-100 disabled:cursor-not-allowed"
           >
             <option value={1}>1회 이상</option>
             <option value={2}>2회 이상</option>

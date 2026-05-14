@@ -138,11 +138,17 @@ def _to_int(v: Any) -> int | None:
         return None
 
 
+# 네이버 Apollo cache 의 플레이스 결과 키 prefix.
+# 2025-Q2 까지는 "PlaceSummary:<id>" 였으나, 2026-05 무렵부터
+# "PlaceListBusinessesItem:<id>" 로 변경됨. 둘 다 지원.
+_PLACE_KEY_PREFIXES = ("PlaceSummary:", "PlaceListBusinessesItem:")
+
+
 def _items_from_apollo(state: dict[str, Any]) -> list[PlaceItem]:
     out: list[PlaceItem] = []
     rank = 0
     for key, val in state.items():
-        if not key.startswith("PlaceSummary:"):
+        if not any(key.startswith(p) for p in _PLACE_KEY_PREFIXES):
             continue
         if not isinstance(val, dict):
             continue
@@ -194,7 +200,7 @@ async def _fetch_html(client: httpx.AsyncClient, keyword: str) -> tuple[list[Pla
 
     items = _items_from_apollo(state)
     if not items:
-        return [], "no PlaceSummary entries (no place section on 1st page)"
+        return [], "no place entries (no place section on 1st page)"
     return items, None
 
 
