@@ -40,6 +40,8 @@ from app.schemas.rank_tracker import (
     RunMatchRequest,
     RunMatchResponse,
     RunRankCheckResponse,
+    ManualRankCheckRequest,
+    ManualRankCheckResponse,
     UpdateKeywordsRequest,
     UpdateKeywordsResponse,
 )
@@ -341,18 +343,22 @@ async def _run_matching_for_ids(user_id: int, place_ids: list[int]) -> None:
 
     await asyncio.gather(*(worker(pid) for pid in place_ids))
 
-    # 매칭이 끝난 AUTO_MATCHED 행들에 대해 즉시 rank check 실행
+    # 타지역 환경에서는 자동 순위 추적이 의미가 없어 비활성화.
+    # 사용자가 명시적으로 POST /run-rank-check 를 호출해야 순위 검증이 실행된다.
+    # (참고) newly_auto_matched_ids 는 통계/로그용으로만 보관.
     if newly_auto_matched_ids:
-        try:
-            await _run_rank_check_for_ids(user_id, newly_auto_matched_ids)
-        except Exception as e:  # noqa: BLE001
-            log.exception("auto rank-check after matching failed: %s", e)
+        log.info(
+            "auto rank-check skipped (manual-only policy) for %d places: %s",
+            len(newly_auto_matched_ids),
+            newly_auto_matched_ids,
+        )
 
 
 async def _run_rank_check_for_ids(user_id: int, place_ids: list[int]) -> None:
     """주어진 RegisteredPlace ID들에 대해 rank_checker.run_rank_check_for_places 호출.
 
-    업로드 직후 자동 트리거 + 수동 트리거 양쪽에서 재사용한다.
+    [정책] 타지역 환경에서는 자동 순위 추적이 의미가 없어 자동 트리거를 모두 비활성화함.
+    이 함수는 오직 수동 트리거 (POST /run-rank-check, POST /run-rank-check-ids) 에서만 호출된다.
     """
     from app.core.database import AsyncSessionLocal
 
@@ -566,9 +572,9 @@ async def update_place_keywords(
         )
         auto_matched = True
         await db.commit()
-        # 즉시 백그라운드 rank check
-        background_tasks.add_task(_run_rank_check_for_ids, user.id, [p.id])
-        rank_check_enqueued = True
+        # 자동 rank check 비활성화 (타지역 정책: 수동 검증만).
+        # 사용자가 매트릭스의 "지금 검증" 또는 POST /run-rank-check 로 명시적으로 트리거해야 함.
+        rank_check_enqueued = False
     else:
         # monitor 가 아직 검증 전 — 매칭 대기 큐로
         p.match_status = "PENDING_MATCH"
@@ -832,8 +838,8 @@ async def confirm_place_id(
 
     await db.commit()
 
-    # 즉시 rank check 트리거 (백그라운드)
-    background_tasks.add_task(_run_rank_check_for_ids, user.id, [place_pk])
+    # 자동 rank check 비활성화 (타지역 정책: 수동 검증만).
+    # 사용자가 매트릭스에서 명시적으로 "지금 검증"을 눌러야 순위가 채워진다.
 
     return ConfirmPlaceIdResponse(
         place_pk=place_pk,
@@ -845,9 +851,9 @@ async def confirm_place_id(
         phone_match=phone_match,
         forced=(not phone_match and req.force),
         message=(
-            "매칭이 확정되었습니다. 곧 순위가 채워집니다."
+            "매칭이 확정되었습니다. '지금 검증'을 눌러 순위를 확인하세요."
             if phone_match else
-            "전화번호 불일치를 우회하여 강제 매칭했습니다. 결과를 확인해주세요."
+            "전화번호 불일치를 우회하여 강제 매칭했습니다. '지금 검증'으로 결과를 확인하세요."
         ),
     )
 
@@ -1199,4 +1205,57 @@ async def trigger_rank_check_now(
         started=started,
         skipped_unmatched=0,
         message=f"{started}개 대상으로 백그라운드 실행 시작",
+    )
+
+
+# ─────────────────────────────────────────────────────────
+# 사용자별 수동 검증 트리거 (타지역 정책 — 자동 트리거 비활성, 수동 전용)
+# ─────────────────────────────────────────────────────────
+@router.post("/manual-rank-check", response_model=ManualRankCheckResponse)
+async def trigger_manual_rank_check(
+    req: ManualRankCheckRequest,
+    background_tasks: BackgroundTasks,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> ManualRankCheckResponse:
+    """사용자가 매트릭스/키워드 등록 카드에서 '지금 검증' 클릭 시 호출.
+
+    타지역 정책상 자동 rank check 트리거를 모두 비활성화했기 때문에,
+    사용자는 이 엔드포인트로 명시적으로 검증을 시작해야 한다.
+
+    · req.place_ids 비어있음 → 본인의 AUTO_MATCHED + 키워드 보유 행 전체 검증
+    · req.place_ids 지정 → 그 중 자격 조건 만족하는 행만 검증
+    """
+    # 자격 조건: 본인 소유 + AUTO_MATCHED/CONFIRMED + place_id 보유 + 키워드 1개 이상
+    base_where = [
+        RegisteredPlace.user_id == user.id,
+        RegisteredPlace.match_status.in_(("AUTO_MATCHED", "CONFIRMED")),
+        RegisteredPlace.place_id.is_not(None),
+        RegisteredPlace.tracking_keywords.is_not(None),
+    ]
+    if req.place_ids:
+        base_where.append(RegisteredPlace.id.in_(req.place_ids))
+
+    q = await db.execute(select(RegisteredPlace).where(*base_where))
+    eligible = list(q.scalars().all())
+    eligible_ids = [p.id for p in eligible]
+    started = len(eligible_ids)
+
+    # 요청된 ID 중 자격 미달인 것
+    if req.place_ids:
+        skipped = len([pk for pk in req.place_ids if pk not in eligible_ids])
+    else:
+        skipped = 0
+
+    if started > 0:
+        background_tasks.add_task(_run_rank_check_for_ids, user.id, eligible_ids)
+
+    return ManualRankCheckResponse(
+        started=started,
+        skipped=skipped,
+        message=(
+            f"{started}개 업체에 대해 순위 검증을 시작했습니다. 잠시 후 매트릭스에 반영됩니다."
+            if started > 0
+            else "검증 가능한 업체가 없습니다. (매칭 완료 + 키워드 등록 후 다시 시도)"
+        ),
     )

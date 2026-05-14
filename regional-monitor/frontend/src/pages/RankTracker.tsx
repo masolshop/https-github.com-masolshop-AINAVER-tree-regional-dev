@@ -52,6 +52,7 @@ import {
   resetAllRankData,
   getCompetition,
   updateKeywords,
+  triggerManualRankCheck,
   type RankPlaceOut,
   type RankPlaceListOut,
   type DongChangedListOut,
@@ -156,7 +157,8 @@ export default function RankTracker() {
       try {
         const resp = await updateKeywords(placePk, keywords)
         if (resp.auto_matched) {
-          showToast('키워드 등록 완료 — 순위 자동체크가 백그라운드에서 시작됩니다.')
+          // 타지역 정책: 자동 순위 추적 비활성. 사용자가 "지금 검증"으로 명시 트리거해야 함.
+          showToast('키워드 등록 완료 — 매트릭스의 "지금 검증" 버튼으로 순위를 확인하세요.')
         } else if (keywords.length === 0) {
           showToast('추적 키워드 해제 완료')
         } else {
@@ -167,6 +169,38 @@ export default function RankTracker() {
       } catch (e) {
         console.error('update keywords failed', e)
         showToast('키워드 등록 실패: ' + (e as Error).message)
+      }
+    },
+    [fetchAll, fetchProgress, showToast],
+  )
+
+  /* ── 수동 순위 검증 트리거 (타지역 정책 — 자동 트리거 모두 비활성화) ── */
+  const [manualChecking, setManualChecking] = useState(false)
+  const handleManualRankCheck = useCallback(
+    async (placeIds: number[] = []) => {
+      setManualChecking(true)
+      try {
+        const resp = await triggerManualRankCheck(placeIds)
+        if (resp.started > 0) {
+          showToast(
+            resp.message ??
+              `${resp.started}개 업체 순위 검증을 시작했습니다. 잠시 후 매트릭스에 반영됩니다.`,
+          )
+          // 폴링 시작을 위해 progress 한 번 fetch
+          await fetchProgress()
+          // 매트릭스가 새 결과를 받도록 reload tick 증가
+          window.setTimeout(() => {
+            setMatrixReloadTick((n) => n + 1)
+            fetchAll()
+          }, 4000)
+        } else {
+          showToast(resp.message ?? '검증 가능한 업체가 없습니다.')
+        }
+      } catch (e) {
+        console.error('manual rank check failed', e)
+        showToast('수동 검증 실패: ' + (e as Error).message)
+      } finally {
+        setManualChecking(false)
       }
     },
     [fetchAll, fetchProgress, showToast],
@@ -312,6 +346,8 @@ export default function RankTracker() {
           list={list}
           reloadTick={matrixReloadTick}
           onRowClick={(p) => setDetailPlace(p)}
+          onManualCheck={handleManualRankCheck}
+          manualChecking={manualChecking}
         />
       )}
 
@@ -958,8 +994,10 @@ function RankMatrix(props: {
   list: RankPlaceListOut
   reloadTick?: number
   onRowClick?: (place: RankPlaceOut) => void
+  onManualCheck?: (placeIds: number[]) => void | Promise<void>
+  manualChecking?: boolean
 }) {
-  const { list, reloadTick = 0, onRowClick } = props
+  const { list, reloadTick = 0, onRowClick, onManualCheck, manualChecking = false } = props
 
   // 매칭 완료(place_id 있음)된 행만 매트릭스에 표시
   const items = useMemo(() => list.items.filter((p) => !!p.place_id), [list])
@@ -1049,14 +1087,43 @@ function RankMatrix(props: {
         {loading && (
           <Loader2 className="text-blue-500 animate-spin ml-2" size={14} />
         )}
-        <button
-          onClick={reload}
-          disabled={loading}
-          className="ml-auto text-xs font-semibold px-2 py-1 rounded-md bg-slate-100 hover:bg-slate-200 inline-flex items-center gap-1 disabled:opacity-50"
-        >
-          <RefreshCw size={12} className={loading ? 'animate-spin' : ''} />
-          새로고침
-        </button>
+        <div className="ml-auto flex items-center gap-2">
+          {onManualCheck && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation()
+                const ids = items.filter((p) => p.tracking_keywords.length > 0).map((p) => p.id)
+                onManualCheck(ids)
+              }}
+              disabled={manualChecking || items.length === 0}
+              className="text-xs font-semibold px-3 py-1.5 rounded-md bg-blue-600 text-white hover:bg-blue-700 inline-flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
+              title="타지역 정책상 자동 순위 추적이 비활성화되어 있습니다. 이 버튼으로 명시적으로 순위 검증을 시작하세요."
+            >
+              {manualChecking ? (
+                <Loader2 size={12} className="animate-spin" />
+              ) : (
+                <Search size={12} />
+              )}
+              {manualChecking ? '검증 중...' : '지금 검증'}
+            </button>
+          )}
+          <button
+            onClick={reload}
+            disabled={loading}
+            className="text-xs font-semibold px-2 py-1 rounded-md bg-slate-100 hover:bg-slate-200 inline-flex items-center gap-1 disabled:opacity-50"
+          >
+            <RefreshCw size={12} className={loading ? 'animate-spin' : ''} />
+            새로고침
+          </button>
+        </div>
+      </div>
+      {/* 정책 안내 배너 — 자동 추적 비활성, 수동 검증 안내 */}
+      <div className="px-4 py-2 bg-amber-50 border-b border-amber-100 text-[11px] text-amber-800 flex items-center gap-2">
+        <AlertTriangle size={12} className="flex-shrink-0" />
+        <span>
+          타지역 환경에서는 <b>자동 순위 추적이 비활성화</b>되어 있습니다.
+          순위를 확인하려면 우측 상단 <b>"지금 검증"</b> 버튼을 눌러주세요.
+        </span>
       </div>
       <div className="overflow-x-auto">
         <table className="w-full text-xs border-collapse">

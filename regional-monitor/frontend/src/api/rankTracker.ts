@@ -176,11 +176,23 @@ export interface RankHistoryResponse {
   series: RankHistorySeries[]
 }
 
-/* ─────────── 일일 배치 트리거 ─────────── */
+/* ─────────── 일일 배치 트리거 (관리자) ─────────── */
 export interface RunRankCheckResponse {
   started: number
   skipped_unmatched: number
   elapsed_sec: number | null
+  message: string | null
+}
+
+/* ─────────── 사용자 수동 검증 (타지역 정책 — 자동 트리거 비활성) ─────────── */
+export interface ManualRankCheckRequest {
+  /** 비어있으면 본인의 모든 자격 행 검증 */
+  place_ids?: number[]
+}
+
+export interface ManualRankCheckResponse {
+  started: number
+  skipped: number
   message: string | null
 }
 
@@ -222,6 +234,16 @@ export const getRankHistory = (placePk: number, days = 30) =>
 
 export const triggerRankCheckNow = () =>
   api.post<RunRankCheckResponse>('/api/v1/rank-tracker/run-rank-check', {})
+
+/** 사용자 수동 검증 — 타지역 정책상 자동 트리거가 없으므로 사용자가 명시적으로 호출.
+ *  placeIds 비어있으면 본인의 모든 자격 행 검증.
+ */
+export const triggerManualRankCheck = (placeIds: number[] = []) =>
+  api.post<ManualRankCheckResponse>(
+    '/api/v1/rank-tracker/manual-rank-check',
+    { place_ids: placeIds },
+    { timeoutMs: 30_000 },
+  )
 
 export const getRankProgress = () =>
   api.get<RankCheckProgress>('/api/v1/rank-tracker/progress')

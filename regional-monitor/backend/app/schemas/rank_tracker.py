@@ -312,6 +312,28 @@ class RunRankCheckResponse(BaseModel):
 
 
 # ─────────────────────────────────────────────────────────
+# 사용자별 수동 검증 (특정 행 ID 지정)
+# ─────────────────────────────────────────────────────────
+class ManualRankCheckRequest(BaseModel):
+    """사용자가 매트릭스에서 '지금 검증' 클릭 시 — 본인의 특정 place_pk 들만 즉시 순위 체크.
+
+    place_ids 가 비어있으면 본인의 모든 AUTO_MATCHED + 키워드 보유 행이 대상.
+    타지역 정책상 자동 트리거가 모두 비활성화되어, 사용자는 명시적으로 이 엔드포인트를 호출해야 함.
+    """
+    place_ids: list[int] = Field(
+        default_factory=list,
+        description="검증할 RegisteredPlace.id 배열. 비어있으면 본인 전체.",
+    )
+
+
+class ManualRankCheckResponse(BaseModel):
+    """수동 검증 트리거 응답."""
+    started: int                # 백그라운드 작업 큐에 들어간 행 수
+    skipped: int                # 자격 미달로 스킵된 행 수 (매칭 안됨/키워드 없음)
+    message: str | None = None
+
+
+# ─────────────────────────────────────────────────────────
 # 경쟁업체 스냅샷 (모달에서 키워드 클릭 시)
 # ─────────────────────────────────────────────────────────
 class CompetitionItem(BaseModel):
