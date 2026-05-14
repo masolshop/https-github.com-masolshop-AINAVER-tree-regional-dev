@@ -202,6 +202,7 @@ async def login_with_password(
 @limiter.limit("30/minute")
 async def login_demo(
     request: Request,
+    response: Response,
     body: DemoLoginRequest,
     db: AsyncSession = Depends(get_db),
 ) -> DemoLoginResponse:
