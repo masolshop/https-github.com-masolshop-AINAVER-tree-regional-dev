@@ -29,9 +29,9 @@ import sys
 from datetime import date, timedelta
 from pathlib import Path
 
-# scripts/ 디렉터리에서 실행되면 backend/ 를 sys.path 에 추가
+# scripts/ 는 regional-monitor/scripts/ 에 있으므로 backend/ 는 형제 디렉터리
 _here = Path(__file__).resolve()
-_backend = _here.parent.parent  # backend/
+_backend = _here.parent.parent / "backend"  # regional-monitor/backend/
 if str(_backend) not in sys.path:
     sys.path.insert(0, str(_backend))
 
