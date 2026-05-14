@@ -43,10 +43,10 @@ class Settings(BaseSettings):
     # ── 외부 공개 데모 토큰 ──
     # /api/v1/auth/demo-login?t=... 의 t 값과 일치해야 데모 JWT 발급.
     # 빈 문자열이면 데모 로그인 자체 비활성 (운영 환경에서 노출 사고 시 즉시 회전 가능).
-    # 시드 스크립트로 demo_guest@tajiyeok.com 계정 생성 후 이 값 설정 → 백엔드 재시작.
+    # 시드 스크립트로 demo_guest@taziyuk.com 계정 생성 후 이 값 설정 → 백엔드 재시작.
     DEMO_ACCESS_TOKEN: str = ""
     # 데모 계정 이메일 (시드 스크립트와 demo-login 엔드포인트가 공유)
-    DEMO_ACCOUNT_EMAIL: str = "demo_guest@tajiyeok.com"
+    DEMO_ACCOUNT_EMAIL: str = "demo_guest@taziyuk.com"
 
     # ── 검증 정책 (Tab 3 설정 기본값) ──
     DONG_THRESHOLD: int = 70          # 0~100

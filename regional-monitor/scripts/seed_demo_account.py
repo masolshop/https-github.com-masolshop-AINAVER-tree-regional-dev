@@ -13,7 +13,7 @@ idempotent:
   · DEMO_ACCESS_TOKEN 환경변수와 무관 — 시드만 담당
 
 데모 계정 정보:
-  email      : demo_guest@tajiyeok.com  (settings.DEMO_ACCOUNT_EMAIL)
+  email      : demo_guest@taziyuk.com  (settings.DEMO_ACCOUNT_EMAIL)
   name       : "🎁 외부 공개 데모"
   is_demo    : True
   is_profile_complete : True (인증/모달 우회)
@@ -377,7 +377,7 @@ async def main() -> None:
         print("[seed] 다음 단계:")
         print("[seed]   1) 환경변수 DEMO_ACCESS_TOKEN=<랜덤 문자열> 설정")
         print("[seed]   2) sudo systemctl restart regionwatch-backend")
-        print("[seed]   3) 공유 링크: https://www.tajiyeok.com/demo?t=<token>")
+        print("[seed]   3) 공유 링크: https://www.taziyuk.com/demo?t=<token>")
 
 
 if __name__ == "__main__":
