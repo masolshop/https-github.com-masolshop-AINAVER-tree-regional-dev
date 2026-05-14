@@ -37,14 +37,21 @@ class RegisteredPlace(Base):
     # ─────────────────────────────────────────────────────────
     # 추적 키워드(쉼표 구분, 최대 5개). 예: "흥신소,심부름센터"
     tracking_keywords: Mapped[str | None] = mapped_column(Text, nullable=True)
-    # 매칭 신뢰도 0~100 (place_matcher 산출)
+    # 매칭 신뢰도 — 레거시 호환용 (070+동 정책에서는 100/0만 사용). 신규 코드는 무시.
     match_confidence: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    # AUTO_MATCHED / REVIEW_NEEDED / NOT_FOUND / CONFIRMED / PENDING_MATCH
+    # AUTO_MATCHED / NEEDS_MANUAL / PENDING_MATCH
+    # (레거시: REVIEW_NEEDED, NOT_FOUND, CONFIRMED → 백필 시 AUTO_MATCHED 또는 NEEDS_MANUAL 로 정규화)
     match_status: Mapped[str | None] = mapped_column(String(20), nullable=True)
-    # 후보 N개 JSON(REVIEW_NEEDED일 때만 채움)
+    # 매칭된 플레이스 1건 JSON (단일 매칭 정책 — 더 이상 다중 후보 저장 안 함)
     match_candidates: Mapped[str | None] = mapped_column(Text, nullable=True)
     # 매칭 시도/완료 타임스탬프
     matched_at: Mapped[datetime | None] = mapped_column(KSTDateTime, nullable=True)
+    # 변경 노출 플래그 — True 이면 등록동과 실제 노출동이 다른 케이스 (대시보드 배너용)
+    dong_changed: Mapped[bool] = mapped_column(
+        Boolean, default=False, nullable=False, server_default="0"
+    )
+    # 실제 노출되고 있는 동명 (dong_changed=True일 때만 의미 있음)
+    actual_dong: Mapped[str | None] = mapped_column(String(120), nullable=True)
 
     # 현재 검증 상태 (마지막 daily_health_check 결과 캐시)
     # OK / PHONE_MISMATCH / DONG_MISMATCH / NAME_MISMATCH / REGION_MISMATCH / DEAD / PENDING

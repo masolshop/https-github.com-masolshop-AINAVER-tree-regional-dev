@@ -373,10 +373,13 @@ async def _ensure_rank_tracker_columns() -> None:
 
     registered_places 확장:
       · tracking_keywords TEXT          — 쉼표 구분 키워드 목록
-      · match_confidence  INTEGER       — 0~100
-      · match_status      VARCHAR(20)   — AUTO_MATCHED/REVIEW_NEEDED/NOT_FOUND/CONFIRMED/PENDING_MATCH
-      · match_candidates  TEXT          — REVIEW_NEEDED일 때 후보 JSON
+      · match_confidence  INTEGER       — (레거시) 0~100 점수. 070+동 정책에선 100 또는 0만 사용.
+      · match_status      VARCHAR(20)   — AUTO_MATCHED / NEEDS_MANUAL / PENDING_MATCH
+                                          (레거시 REVIEW_NEEDED, NOT_FOUND, CONFIRMED는 자동 백필)
+      · match_candidates  TEXT          — 매칭된 단일 플레이스 JSON
       · matched_at        TIMESTAMP
+      · dong_changed      BOOLEAN       — 변경 노출 플래그 (등록동 ≠ 실제 노출동)
+      · actual_dong       VARCHAR(120)  — 실제 노출동명 (dong_changed=True일 때만)
 
     신규 테이블 place_rank_history는 Base.metadata.create_all에서 자동 생성.
     인덱스만 별도 보장.
@@ -409,6 +412,16 @@ async def _ensure_rank_tracker_columns() -> None:
                 await conn.execute(text(
                     "ALTER TABLE registered_places ADD COLUMN matched_at TIMESTAMP"
                 ))
+            # 070+동 정책: 변경 노출 플래그 & 실제 노출동 컬럼 추가
+            if "dong_changed" not in existing_cols:
+                await conn.execute(text(
+                    "ALTER TABLE registered_places ADD COLUMN dong_changed "
+                    "BOOLEAN NOT NULL DEFAULT 0"
+                ))
+            if "actual_dong" not in existing_cols:
+                await conn.execute(text(
+                    "ALTER TABLE registered_places ADD COLUMN actual_dong VARCHAR(120)"
+                ))
             await conn.execute(text(
                 "CREATE INDEX IF NOT EXISTS ix_user_match_status "
                 "ON registered_places(user_id, match_status)"
@@ -421,6 +434,18 @@ async def _ensure_rank_tracker_columns() -> None:
             await conn.execute(text(
                 "CREATE INDEX IF NOT EXISTS ix_rank_history_keyword_date "
                 "ON place_rank_history(keyword, check_date)"
+            ))
+            # ── 레거시 match_status 백필 (070+동 정책으로 단순화) ──
+            # CONFIRMED → AUTO_MATCHED (이미 사용자가 확정한 행은 그대로 유지)
+            # REVIEW_NEEDED → NEEDS_MANUAL (점수제 폐기, 사용자 개입 필요분만 보존)
+            # NOT_FOUND → NEEDS_MANUAL
+            await conn.execute(text(
+                "UPDATE registered_places SET match_status = 'AUTO_MATCHED' "
+                "WHERE match_status = 'CONFIRMED'"
+            ))
+            await conn.execute(text(
+                "UPDATE registered_places SET match_status = 'NEEDS_MANUAL' "
+                "WHERE match_status IN ('REVIEW_NEEDED', 'NOT_FOUND')"
             ))
         else:
             await conn.execute(text(
@@ -443,6 +468,15 @@ async def _ensure_rank_tracker_columns() -> None:
                 "ALTER TABLE registered_places ADD COLUMN IF NOT EXISTS "
                 "matched_at TIMESTAMPTZ"
             ))
+            # 070+동 정책: 변경 노출 플래그 & 실제 노출동
+            await conn.execute(text(
+                "ALTER TABLE registered_places ADD COLUMN IF NOT EXISTS "
+                "dong_changed BOOLEAN NOT NULL DEFAULT FALSE"
+            ))
+            await conn.execute(text(
+                "ALTER TABLE registered_places ADD COLUMN IF NOT EXISTS "
+                "actual_dong VARCHAR(120)"
+            ))
             await conn.execute(text(
                 "CREATE INDEX IF NOT EXISTS ix_user_match_status "
                 "ON registered_places(user_id, match_status)"
@@ -454,4 +488,13 @@ async def _ensure_rank_tracker_columns() -> None:
             await conn.execute(text(
                 "CREATE INDEX IF NOT EXISTS ix_rank_history_keyword_date "
                 "ON place_rank_history(keyword, check_date)"
+            ))
+            # ── 레거시 match_status 백필 ──
+            await conn.execute(text(
+                "UPDATE registered_places SET match_status = 'AUTO_MATCHED' "
+                "WHERE match_status = 'CONFIRMED'"
+            ))
+            await conn.execute(text(
+                "UPDATE registered_places SET match_status = 'NEEDS_MANUAL' "
+                "WHERE match_status IN ('REVIEW_NEEDED', 'NOT_FOUND')"
             ))

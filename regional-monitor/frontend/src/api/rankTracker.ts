@@ -1,13 +1,19 @@
 /**
  * 타지역 순위 자동체크 솔루션 (솔루션 #5) API 클라이언트.
  *
+ * 정책 (070+동 단일 매칭):
+ *  · AUTO_MATCHED   — 070 매칭 완료 (자동 확정). dong_changed=true 이면 등록동≠실제 노출동
+ *  · NEEDS_MANUAL   — 070 검색 결과 0건 등 예외 (이론상 거의 없음)
+ *  · PENDING_MATCH  — 매칭 대기
+ *
  * 백엔드:
  *   POST /api/v1/rank-tracker/upload
  *   GET  /api/v1/rank-tracker/places
+ *   GET  /api/v1/rank-tracker/dong-changed       (변경 노출 배너용)
  *   POST /api/v1/rank-tracker/run-match
- *   POST /api/v1/rank-tracker/places/{pk}/confirm-candidate
  *   GET  /api/v1/rank-tracker/history/{pk}?days=30
- *   POST /api/v1/rank-tracker/run-rank-check  (admin)
+ *   POST /api/v1/rank-tracker/run-rank-check     (admin)
+ *   POST /api/v1/rank-tracker/places/{pk}/confirm-candidate  [DEPRECATED → 410]
  */
 import { api } from './client'
 
@@ -39,9 +45,7 @@ export interface RankUploadResponse {
 /* ─────────── 매칭 목록 ─────────── */
 export type MatchStatus =
   | 'AUTO_MATCHED'
-  | 'CONFIRMED'
-  | 'REVIEW_NEEDED'
-  | 'NOT_FOUND'
+  | 'NEEDS_MANUAL'
   | 'PENDING_MATCH'
   | null
 
@@ -52,7 +56,6 @@ export interface RankPlaceCandidate {
   phone: string
   virtual_phone: string
   address: string
-  score: number
   reasons: string[]
 }
 
@@ -64,18 +67,21 @@ export interface RankPlaceOut {
   place_id: string | null
   tracking_keywords: string[]
   match_status: MatchStatus
-  match_confidence: number | null
   matched_at: string | null
-  candidates: RankPlaceCandidate[]
+  /** 매칭된 단일 플레이스 (070 일치 1건). 070+동 정책에선 후보 목록이 아니라 단일 매칭. */
+  matched: RankPlaceCandidate | null
+  /** 변경 노출 플래그 — true 이면 등록동과 실제 노출동이 다름 */
+  dong_changed: boolean
+  actual_dong: string | null
 }
 
 export interface RankPlaceListOut {
   total: number
   auto_matched: number
-  review_needed: number
-  not_found: number
+  needs_manual: number
   pending: number
-  confirmed: number
+  /** 변경 노출 건수 — 대시보드 배너 표시 트리거 */
+  dong_changed_count: number
   items: RankPlaceOut[]
 }
 
@@ -88,14 +94,24 @@ export interface RunMatchResponse {
   requested: number
   processed: number
   auto_matched: number
-  review_needed: number
-  not_found: number
+  needs_manual: number
   errors: number
 }
 
-/* ─────────── 후보 확정 ─────────── */
-export interface ConfirmCandidateRequest {
-  place_id: string
+/* ─────────── 변경 노출 배너 ─────────── */
+export interface DongChangedItem {
+  id: number
+  phone: string
+  business_name: string | null
+  registered_dong: string | null
+  actual_dong: string | null
+  place_id: string | null
+  address: string | null
+}
+
+export interface DongChangedListOut {
+  count: number
+  items: DongChangedItem[]
 }
 
 /* ─────────── 순위 이력 ─────────── */
@@ -138,14 +154,11 @@ export const uploadRankRows = (rows: RankUploadRow[]) =>
 export const listRankPlaces = () =>
   api.get<RankPlaceListOut>('/api/v1/rank-tracker/places')
 
+export const listDongChanged = () =>
+  api.get<DongChangedListOut>('/api/v1/rank-tracker/dong-changed')
+
 export const runMatch = (req: RunMatchRequest = {}) =>
   api.post<RunMatchResponse>('/api/v1/rank-tracker/run-match', req)
-
-export const confirmCandidate = (placePk: number, req: ConfirmCandidateRequest) =>
-  api.post<{ status: string }>(
-    `/api/v1/rank-tracker/places/${placePk}/confirm-candidate`,
-    req,
-  )
 
 export const getRankHistory = (placePk: number, days = 30) =>
   api.get<RankHistoryResponse>(

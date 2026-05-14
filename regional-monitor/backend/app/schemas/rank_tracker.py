@@ -56,16 +56,16 @@ class RankUploadResponse(BaseModel):
 
 
 # ─────────────────────────────────────────────────────────
-# 매칭 결과 조회
+# 매칭 결과 조회 (070+동 단일 매칭 정책)
 # ─────────────────────────────────────────────────────────
 class RankPlaceCandidate(BaseModel):
+    """매칭된 단일 플레이스 (예전 명칭 호환 — 실제로는 단일 매칭)."""
     place_id: str
     name: str
     category: str
     phone: str
     virtual_phone: str
     address: str
-    score: int
     reasons: list[str] = Field(default_factory=list)
 
 
@@ -76,10 +76,13 @@ class RankPlaceOut(BaseModel):
     business_name: str | None
     place_id: str | None
     tracking_keywords: list[str] = Field(default_factory=list)
-    match_status: str | None
-    match_confidence: int | None
+    match_status: str | None       # AUTO_MATCHED / NEEDS_MANUAL / PENDING_MATCH
     matched_at: datetime | None
-    candidates: list[RankPlaceCandidate] = Field(default_factory=list)
+    # 매칭된 단일 플레이스 (070 일치 1건)
+    matched: RankPlaceCandidate | None = None
+    # 변경 노출 플래그 — True 이면 등록동과 실제 노출동이 다름
+    dong_changed: bool = False
+    actual_dong: str | None = None
 
     model_config = {"from_attributes": True}
 
@@ -87,10 +90,9 @@ class RankPlaceOut(BaseModel):
 class RankPlaceListOut(BaseModel):
     total: int
     auto_matched: int
-    review_needed: int
-    not_found: int
+    needs_manual: int
     pending: int
-    confirmed: int
+    dong_changed_count: int = 0
     items: list[RankPlaceOut]
 
 
@@ -106,13 +108,33 @@ class RunMatchResponse(BaseModel):
     requested: int
     processed: int
     auto_matched: int
-    review_needed: int
-    not_found: int
+    needs_manual: int
     errors: int
 
 
 class ConfirmCandidateRequest(BaseModel):
-    place_id: str = Field(..., description="확정할 네이버 place_id")
+    """[DEPRECATED] 070+동 정책 도입 후 사용 안 함. 호환용으로만 유지."""
+    place_id: str = Field(..., description="(deprecated) 확정할 네이버 place_id")
+
+
+# ─────────────────────────────────────────────────────────
+# 변경 노출 배너용 응답 (대시보드 상단)
+# ─────────────────────────────────────────────────────────
+class DongChangedItem(BaseModel):
+    """변경 노출 1건 — 등록동과 실제 노출동이 다른 케이스."""
+    id: int
+    phone: str
+    business_name: str | None
+    registered_dong: str | None
+    actual_dong: str | None
+    place_id: str | None
+    address: str | None = None
+
+
+class DongChangedListOut(BaseModel):
+    """변경 노출 N건 — 대시보드 상단 배너에 표시할 데이터."""
+    count: int
+    items: list[DongChangedItem]
 
 
 # ─────────────────────────────────────────────────────────

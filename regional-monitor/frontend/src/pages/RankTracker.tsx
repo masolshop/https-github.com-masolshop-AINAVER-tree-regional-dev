@@ -1,13 +1,17 @@
 /**
  * 타지역 순위 자동체크 솔루션 (솔루션 #5) — 풀 구현 페이지.
  *
+ * 정책 (070+동 단일 매칭, 자동 확정):
+ *  · 070 가상번호 = 본인 번호이므로 시스템이 자동으로 place_id 확정.
+ *  · 사용자 개입은 "070 일치하지만 등록동≠실제 노출동(변경 노출)" 케이스만.
+ *  · UI = 변경 노출 배너 + 등록동×키워드 매트릭스 1개 + 키워드별 30일 추이 그래프 N개.
+ *
  * 구성:
  *  1) Excel 업로드 카드 (드래그&드롭 + 파일선택 + 템플릿 다운로드)
- *  2) 매칭 결과 요약 + 매칭 재실행 버튼
- *  3) 매칭 결과 테이블 (자동매칭/검토필요/미발견 그룹)
- *  4) REVIEW_NEEDED 행의 후보 선택 모달
- *  5) 순위 추이 차트 (선택한 행 — 30일, 키워드별 SVG 라인차트, Y축 반전)
- *  6) Excel 다운로드 (요약 시트 + 상세 시트)
+ *  2) 변경 노출 배너 (등록동≠실제 노출동인 케이스 N건 알림)
+ *  3) 매칭 결과 요약 + 매칭 재실행 + 엑셀 다운로드
+ *  4) 등록동 × 키워드 매트릭스 (현재 순위 한눈에)
+ *  5) 키워드별 30일 순위 추이 SVG 라인차트 (Y축 반전)
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
@@ -18,12 +22,12 @@ import {
   RefreshCw,
   CheckCircle2,
   AlertTriangle,
-  XCircle,
   Loader2,
   ChevronDown,
   ChevronUp,
   LineChart as LineChartIcon,
   Search,
+  MapPin,
 } from 'lucide-react'
 import clsx from 'clsx'
 
@@ -33,43 +37,22 @@ import PageSeo from '@/components/seo/PageSeo'
 import {
   uploadRankRows,
   listRankPlaces,
+  listDongChanged,
   runMatch,
-  confirmCandidate,
   getRankHistory,
   type RankUploadRow,
   type RankPlaceOut,
   type RankPlaceListOut,
-  type RankPlaceCandidate,
-  type RankHistoryResponse,
-  type MatchStatus,
+  type DongChangedListOut,
 } from '@/api/rankTracker'
 
 /* ────────────────────────────────────────────────────────────
- * 유틸: 파일명 / 날짜
+ * 유틸: 날짜
  * ──────────────────────────────────────────────────────────── */
 function todayKst(): string {
   const d = new Date()
   const kst = new Date(d.getTime() + 9 * 60 * 60 * 1000)
   return kst.toISOString().slice(0, 10)
-}
-
-/* ────────────────────────────────────────────────────────────
- * 매칭 상태 메타
- * ──────────────────────────────────────────────────────────── */
-const STATUS_META: Record<
-  string,
-  { label: string; color: string; icon: typeof CheckCircle2 }
-> = {
-  AUTO_MATCHED:  { label: '자동매칭',   color: 'emerald', icon: CheckCircle2 },
-  CONFIRMED:     { label: '확정',       color: 'blue',    icon: CheckCircle2 },
-  REVIEW_NEEDED: { label: '검토필요',   color: 'amber',   icon: AlertTriangle },
-  NOT_FOUND:     { label: '미발견',     color: 'rose',    icon: XCircle },
-  PENDING_MATCH: { label: '매칭대기',   color: 'slate',   icon: Loader2 },
-}
-
-function statusMeta(s: MatchStatus): { label: string; color: string; icon: typeof CheckCircle2 } {
-  if (!s) return STATUS_META.PENDING_MATCH
-  return STATUS_META[s] ?? STATUS_META.PENDING_MATCH
 }
 
 /* ────────────────────────────────────────────────────────────
@@ -80,15 +63,11 @@ export default function RankTracker() {
 
   // 데이터
   const [list, setList] = useState<RankPlaceListOut | null>(null)
+  const [dongChanged, setDongChanged] = useState<DongChangedListOut | null>(null)
   const [loadingList, setLoadingList] = useState(false)
   const [uploading, setUploading] = useState(false)
   const [running, setRunning] = useState(false)
   const [toast, setToast] = useState<string | null>(null)
-
-  // UI
-  const [reviewTarget, setReviewTarget] = useState<RankPlaceOut | null>(null)
-  const [chartTarget, setChartTarget] = useState<RankPlaceOut | null>(null)
-  const [expandedGroup, setExpandedGroup] = useState<string | null>('REVIEW_NEEDED')
 
   const showToast = useCallback((msg: string) => {
     setToast(msg)
@@ -96,13 +75,14 @@ export default function RankTracker() {
   }, [])
 
   /* ── 목록 fetch ── */
-  const fetchList = useCallback(async () => {
+  const fetchAll = useCallback(async () => {
     setLoadingList(true)
     try {
-      const r = await listRankPlaces()
-      setList(r)
+      const [r1, r2] = await Promise.all([listRankPlaces(), listDongChanged()])
+      setList(r1)
+      setDongChanged(r2)
     } catch (e) {
-      console.error('listRankPlaces failed', e)
+      console.error('fetch failed', e)
       showToast('목록 조회 실패')
     } finally {
       setLoadingList(false)
@@ -110,19 +90,16 @@ export default function RankTracker() {
   }, [showToast])
 
   useEffect(() => {
-    fetchList()
-  }, [fetchList])
+    fetchAll()
+  }, [fetchAll])
 
   // 매칭 진행 중에는 5초 폴링
-  const hasPending = useMemo(
-    () => (list?.pending ?? 0) > 0,
-    [list],
-  )
+  const hasPending = useMemo(() => (list?.pending ?? 0) > 0, [list])
   useEffect(() => {
     if (!hasPending) return
-    const t = window.setInterval(() => fetchList(), 5000)
+    const t = window.setInterval(() => fetchAll(), 5000)
     return () => window.clearInterval(t)
-  }, [hasPending, fetchList])
+  }, [hasPending, fetchAll])
 
   /* ── 업로드 ── */
   const handleFile = useCallback(
@@ -133,12 +110,10 @@ export default function RankTracker() {
         const rows = await parseXlsxFile(file)
         const payload: RankUploadRow[] = rows
           .map((row: Record<string, unknown>) => {
-            // 한글/영문 헤더 모두 허용
-            const phone =
-              String(row['070전번'] ?? row['phone'] ?? row['전화번호'] ?? row['070'] ?? '').trim()
-            const dong = String(
-              row['등록동'] ?? row['dong'] ?? row['동'] ?? '',
+            const phone = String(
+              row['070전번'] ?? row['phone'] ?? row['전화번호'] ?? row['070'] ?? '',
             ).trim()
+            const dong = String(row['등록동'] ?? row['dong'] ?? row['동'] ?? '').trim()
             const biz = String(
               row['상호'] ?? row['business_name'] ?? row['업체명'] ?? '',
             ).trim()
@@ -150,19 +125,29 @@ export default function RankTracker() {
               .map((k) => k.trim())
               .filter(Boolean)
               .slice(0, 5)
-            return { phone, registered_dong: dong, business_name: biz, tracking_keywords: keywords }
+            return {
+              phone,
+              registered_dong: dong,
+              business_name: biz,
+              tracking_keywords: keywords,
+            }
           })
-          .filter((r) => r.phone && r.registered_dong && r.business_name && r.tracking_keywords.length)
+          .filter(
+            (r) =>
+              r.phone && r.registered_dong && r.business_name && r.tracking_keywords.length,
+          )
 
         if (payload.length === 0) {
-          showToast('업로드 가능한 행이 없습니다. (070전번/등록동/상호/추적키워드 컬럼 확인)')
+          showToast(
+            '업로드 가능한 행이 없습니다. (070전번/등록동/상호/추적키워드 컬럼 확인)',
+          )
           return
         }
         const resp = await uploadRankRows(payload)
         showToast(
           `업로드 완료 — 신규 ${resp.created} · 갱신 ${resp.updated} · 오류 ${resp.errors}건. 매칭이 백그라운드에서 진행됩니다.`,
         )
-        await fetchList()
+        await fetchAll()
       } catch (e) {
         console.error('upload failed', e)
         showToast('업로드 실패: ' + (e as Error).message)
@@ -170,7 +155,7 @@ export default function RankTracker() {
         setUploading(false)
       }
     },
-    [fetchList, showToast],
+    [fetchAll, showToast],
   )
 
   /* ── 템플릿 다운로드 ── */
@@ -207,38 +192,17 @@ export default function RankTracker() {
       '070전번': p.phone,
       등록동: p.registered_dong ?? '',
       추적키워드: p.tracking_keywords.join(', '),
-      매칭상태: statusMeta(p.match_status).label,
-      신뢰도: p.match_confidence ?? '',
+      매칭상태: p.match_status ?? 'PENDING_MATCH',
+      변경노출: p.dong_changed ? 'Y' : 'N',
+      실제노출동: p.actual_dong ?? '',
+      매칭상호: p.matched?.name ?? '',
+      매칭주소: p.matched?.address ?? '',
       place_id: p.place_id ?? '',
       매칭일시: p.matched_at ?? '',
     }))
 
-    const detail: Record<string, unknown>[] = []
-    for (const p of list.items) {
-      if (p.candidates.length === 0) continue
-      p.candidates.forEach((c, i) => {
-        detail.push({
-          상호_원본: p.business_name ?? '',
-          '070전번': p.phone,
-          등록동: p.registered_dong ?? '',
-          후보순번: i + 1,
-          후보상호: c.name,
-          카테고리: c.category,
-          후보전화: c.phone,
-          가상번호: c.virtual_phone,
-          후보주소: c.address,
-          점수: c.score,
-          매칭근거: c.reasons.join(', '),
-          place_id: c.place_id,
-        })
-      })
-    }
-
     const wb = XLSX.utils.book_new()
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(summary), '매칭요약')
-    if (detail.length) {
-      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(detail), '후보상세')
-    }
     XLSX.writeFile(wb, `타지역_순위자동체크_결과_${todayKst()}.xlsx`)
   }, [list])
 
@@ -248,28 +212,13 @@ export default function RankTracker() {
     try {
       const r = await runMatch({})
       showToast(`${r.requested}건 매칭 백그라운드 실행`)
-      await fetchList()
+      await fetchAll()
     } catch (e) {
       showToast('매칭 실행 실패: ' + (e as Error).message)
     } finally {
       setRunning(false)
     }
-  }, [fetchList, showToast])
-
-  /* ── 후보 확정 ── */
-  const handleConfirm = useCallback(
-    async (place: RankPlaceOut, candidate: RankPlaceCandidate) => {
-      try {
-        await confirmCandidate(place.id, { place_id: candidate.place_id })
-        showToast(`${candidate.name} 으로 확정되었습니다.`)
-        setReviewTarget(null)
-        await fetchList()
-      } catch (e) {
-        showToast('확정 실패: ' + (e as Error).message)
-      }
-    },
-    [fetchList, showToast],
-  )
+  }, [fetchAll, showToast])
 
   return (
     <div className="px-4 lg:px-8 py-6 max-w-7xl mx-auto space-y-6" data-page="solution-tool">
@@ -295,7 +244,8 @@ export default function RankTracker() {
         </h1>
         <p className="text-sm text-ink-2 mt-1">
           <strong>070전번 · 등록동 · 상호 · 추적키워드</strong> 4컬럼 엑셀 한 번 업로드 →
-          네이버 플레이스 자동 매칭 + 매일 자동체크로 동별 노출 순위를 시계열 그래프로 추적합니다.
+          네이버 플레이스 <strong>자동 확정 매칭</strong> + 매일 자동체크로 동별 노출
+          순위를 시계열 그래프로 추적합니다.
         </p>
       </div>
 
@@ -304,6 +254,11 @@ export default function RankTracker() {
         <div className="fixed top-4 right-4 z-50 px-4 py-3 rounded-lg bg-slate-900 text-white text-sm shadow-lg">
           {toast}
         </div>
+      )}
+
+      {/* 0) 변경 노출 배너 — 등록동≠실제 노출동 케이스 알림 */}
+      {dongChanged && dongChanged.count > 0 && (
+        <DongChangedBanner data={dongChanged} />
       )}
 
       {/* 1) 업로드 카드 */}
@@ -319,79 +274,17 @@ export default function RankTracker() {
           list={list}
           loading={loadingList}
           running={running}
-          onRefresh={fetchList}
+          onRefresh={fetchAll}
           onRunMatch={handleRunMatch}
           onExport={exportResults}
         />
       )}
 
-      {/* 3) 결과 그룹 테이블 */}
-      {list && list.items.length > 0 && (
-        <div className="space-y-3">
-          <GroupSection
-            title="검토필요"
-            status="REVIEW_NEEDED"
-            items={list.items.filter((p) => p.match_status === 'REVIEW_NEEDED')}
-            expanded={expandedGroup === 'REVIEW_NEEDED'}
-            onToggle={() =>
-              setExpandedGroup(expandedGroup === 'REVIEW_NEEDED' ? null : 'REVIEW_NEEDED')
-            }
-            onReview={(p) => setReviewTarget(p)}
-            onChart={(p) => setChartTarget(p)}
-          />
-          <GroupSection
-            title="자동매칭 · 확정"
-            status="AUTO_MATCHED"
-            items={list.items.filter(
-              (p) => p.match_status === 'AUTO_MATCHED' || p.match_status === 'CONFIRMED',
-            )}
-            expanded={expandedGroup === 'AUTO_MATCHED'}
-            onToggle={() =>
-              setExpandedGroup(expandedGroup === 'AUTO_MATCHED' ? null : 'AUTO_MATCHED')
-            }
-            onReview={(p) => setReviewTarget(p)}
-            onChart={(p) => setChartTarget(p)}
-          />
-          <GroupSection
-            title="미발견"
-            status="NOT_FOUND"
-            items={list.items.filter((p) => p.match_status === 'NOT_FOUND')}
-            expanded={expandedGroup === 'NOT_FOUND'}
-            onToggle={() =>
-              setExpandedGroup(expandedGroup === 'NOT_FOUND' ? null : 'NOT_FOUND')
-            }
-            onReview={(p) => setReviewTarget(p)}
-            onChart={(p) => setChartTarget(p)}
-          />
-          <GroupSection
-            title="매칭 대기"
-            status="PENDING_MATCH"
-            items={list.items.filter(
-              (p) => p.match_status === 'PENDING_MATCH' || p.match_status == null,
-            )}
-            expanded={expandedGroup === 'PENDING_MATCH'}
-            onToggle={() =>
-              setExpandedGroup(expandedGroup === 'PENDING_MATCH' ? null : 'PENDING_MATCH')
-            }
-            onReview={(p) => setReviewTarget(p)}
-            onChart={(p) => setChartTarget(p)}
-          />
-        </div>
-      )}
+      {/* 3) 등록동 × 키워드 매트릭스 — 현재 순위 한눈에 */}
+      {list && list.items.length > 0 && <RankMatrix list={list} />}
 
-      {/* 4) 후보 선택 모달 */}
-      {reviewTarget && (
-        <CandidateModal
-          place={reviewTarget}
-          onClose={() => setReviewTarget(null)}
-          onConfirm={handleConfirm}
-        />
-      )}
-
-      {/* 5) 순위 추이 모달 */}
-      {chartTarget && (
-        <RankChartModal place={chartTarget} onClose={() => setChartTarget(null)} />
-      )}
+      {/* 4) 키워드별 30일 추이 그래프 N개 */}
+      {list && list.items.length > 0 && <KeywordGraphSection list={list} />}
     </div>
   )
 }
@@ -442,7 +335,9 @@ function UploadCard(props: {
         onClick={() => inputRef.current?.click()}
         className={clsx(
           'rounded-lg border-2 border-dashed p-8 text-center cursor-pointer transition-colors',
-          drag ? 'border-blue-500 bg-blue-50' : 'border-slate-300 hover:border-blue-400 hover:bg-slate-50',
+          drag
+            ? 'border-blue-500 bg-blue-50'
+            : 'border-slate-300 hover:border-blue-400 hover:bg-slate-50',
           uploading && 'opacity-60 pointer-events-none',
         )}
       >
@@ -458,8 +353,12 @@ function UploadCard(props: {
               엑셀 파일을 여기로 드래그하거나 클릭하세요
             </p>
             <p className="text-xs text-ink-2">
-              컬럼: <code className="px-1 bg-slate-100 rounded">070전번 | 등록동 | 상호 | 추적키워드</code>
-              <br />추적키워드는 쉼표(,)로 최대 5개
+              컬럼:{' '}
+              <code className="px-1 bg-slate-100 rounded">
+                070전번 | 등록동 | 상호 | 추적키워드
+              </code>
+              <br />
+              추적키워드는 쉼표(,)로 최대 5개
             </p>
           </div>
         )}
@@ -480,7 +379,82 @@ function UploadCard(props: {
 }
 
 /* ────────────────────────────────────────────────────────────
+ * 컴포넌트: 변경 노출 배너
+ *  - 등록동≠실제 노출동인 케이스 알림
+ *  - 클릭하면 펼쳐서 상호/등록동/실제노출동/place_id 표시
+ * ──────────────────────────────────────────────────────────── */
+function DongChangedBanner(props: { data: DongChangedListOut }) {
+  const { data } = props
+  const [open, setOpen] = useState(false)
+
+  return (
+    <Card className="p-0 overflow-hidden border-amber-300 ring-1 ring-amber-200">
+      <button
+        onClick={() => setOpen(!open)}
+        className="w-full flex items-center gap-3 px-4 py-3 bg-amber-50 hover:bg-amber-100 text-left"
+      >
+        <AlertTriangle className="text-amber-600 shrink-0" size={20} />
+        <div className="flex-1 min-w-0">
+          <div className="text-sm font-bold text-amber-900">
+            변경 노출 발견 {data.count}건
+          </div>
+          <div className="text-xs text-amber-800/80">
+            등록하신 동(洞)과 실제 네이버 플레이스 노출 동이 다른 케이스입니다. 클릭하여
+            상세를 확인하세요.
+          </div>
+        </div>
+        {open ? (
+          <ChevronUp className="text-amber-700 shrink-0" size={18} />
+        ) : (
+          <ChevronDown className="text-amber-700 shrink-0" size={18} />
+        )}
+      </button>
+      {open && (
+        <div className="border-t border-amber-200 overflow-x-auto">
+          <table className="w-full text-xs">
+            <thead className="bg-amber-50/60">
+              <tr className="text-amber-900">
+                <th className="px-3 py-2 text-left font-semibold">상호</th>
+                <th className="px-3 py-2 text-left font-semibold">070전번</th>
+                <th className="px-3 py-2 text-left font-semibold">등록동</th>
+                <th className="px-3 py-2 text-left font-semibold">실제 노출동</th>
+                <th className="px-3 py-2 text-left font-semibold">주소</th>
+                <th className="px-3 py-2 text-left font-semibold">place_id</th>
+              </tr>
+            </thead>
+            <tbody>
+              {data.items.map((it) => (
+                <tr key={it.id} className="border-t border-amber-100 hover:bg-amber-50/40">
+                  <td className="px-3 py-2 font-semibold">{it.business_name || '-'}</td>
+                  <td className="px-3 py-2 font-mono">{it.phone}</td>
+                  <td className="px-3 py-2">
+                    <span className="px-1.5 py-0.5 rounded bg-slate-100 text-slate-700">
+                      {it.registered_dong || '-'}
+                    </span>
+                  </td>
+                  <td className="px-3 py-2">
+                    <span className="px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 font-semibold inline-flex items-center gap-1">
+                      <MapPin size={11} />
+                      {it.actual_dong || '-'}
+                    </span>
+                  </td>
+                  <td className="px-3 py-2 text-ink-2">{it.address || '-'}</td>
+                  <td className="px-3 py-2 font-mono text-[11px] text-ink-2">
+                    {it.place_id || '-'}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </Card>
+  )
+}
+
+/* ────────────────────────────────────────────────────────────
  * 컴포넌트: 요약 바
+ *  - 자동매칭 / 매칭대기 / 수동확인필요 / 변경노출 4개 타일
  * ──────────────────────────────────────────────────────────── */
 function SummaryBar(props: {
   list: RankPlaceListOut
@@ -501,7 +475,12 @@ function SummaryBar(props: {
     value: number
     color: string
   }) => (
-    <div className={clsx('flex-1 px-3 py-2 rounded-lg ring-1', `bg-${color}-50 ring-${color}-200`)}>
+    <div
+      className={clsx(
+        'flex-1 px-3 py-2 rounded-lg ring-1',
+        `bg-${color}-50 ring-${color}-200`,
+      )}
+    >
       <div className="text-[11px] font-semibold text-ink-2">{label}</div>
       <div className={clsx('text-lg font-bold', `text-${color}-700`)}>{value}</div>
     </div>
@@ -527,7 +506,11 @@ function SummaryBar(props: {
           disabled={running}
           className="text-xs font-semibold px-3 py-1.5 rounded-md bg-blue-600 hover:bg-blue-700 text-white inline-flex items-center gap-1 disabled:opacity-50"
         >
-          {running ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
+          {running ? (
+            <Loader2 size={14} className="animate-spin" />
+          ) : (
+            <RefreshCw size={14} />
+          )}
           매칭 재실행
         </button>
         <button
@@ -540,277 +523,309 @@ function SummaryBar(props: {
       </div>
       <div className="flex flex-wrap gap-2">
         <Tile label="자동매칭" value={list.auto_matched} color="emerald" />
-        <Tile label="확정" value={list.confirmed} color="blue" />
-        <Tile label="검토필요" value={list.review_needed} color="amber" />
-        <Tile label="미발견" value={list.not_found} color="rose" />
         <Tile label="매칭대기" value={list.pending} color="slate" />
+        <Tile label="수동확인필요" value={list.needs_manual} color="amber" />
+        <Tile label="변경노출" value={list.dong_changed_count} color="orange" />
       </div>
     </Card>
   )
 }
 
 /* ────────────────────────────────────────────────────────────
- * 컴포넌트: 그룹 섹션
+ * 컴포넌트: 등록동 × 키워드 매트릭스
+ *  - rows = 등록 플레이스 (상호 + 등록동)
+ *  - cols = 모든 추적 키워드 (unique)
+ *  - cells = 현재 순위 (place×keyword 의 최신 rank)
+ *  - 첫 컬럼 sticky
  * ──────────────────────────────────────────────────────────── */
-function GroupSection(props: {
-  title: string
-  status: string
-  items: RankPlaceOut[]
-  expanded: boolean
-  onToggle: () => void
-  onReview: (p: RankPlaceOut) => void
-  onChart: (p: RankPlaceOut) => void
-}) {
-  const { title, status, items, expanded, onToggle, onReview, onChart } = props
-  if (items.length === 0) return null
-  const m = statusMeta(status as MatchStatus)
-  const Icon = m.icon
+function RankMatrix(props: { list: RankPlaceListOut }) {
+  const { list } = props
+
+  // 매칭 완료(place_id 있음)된 행만 매트릭스에 표시
+  const items = useMemo(() => list.items.filter((p) => !!p.place_id), [list])
+
+  // 모든 키워드 union
+  const allKeywords = useMemo(() => {
+    const s = new Set<string>()
+    items.forEach((p) => p.tracking_keywords.forEach((k) => s.add(k)))
+    return Array.from(s)
+  }, [items])
+
+  // (placePk × keyword) → 최신 rank cache
+  const [rankMap, setRankMap] = useState<Record<string, number | null>>({})
+  const [loading, setLoading] = useState(false)
+
+  const reload = useCallback(async () => {
+    if (items.length === 0) return
+    setLoading(true)
+    try {
+      // 병렬 fetch (최대 동시성 8)
+      const queue = [...items]
+      const next: Record<string, number | null> = {}
+      const workers = Array.from({ length: Math.min(8, queue.length) }, async () => {
+        while (queue.length) {
+          const p = queue.shift()
+          if (!p) break
+          try {
+            const hist = await getRankHistory(p.id, 1)
+            for (const s of hist.series) {
+              const last = s.points[s.points.length - 1]
+              const rank = last?.rank ?? null
+              next[`${p.id}::${s.keyword}`] = rank
+            }
+          } catch (e) {
+            console.error('history fetch failed', p.id, e)
+          }
+        }
+      })
+      await Promise.all(workers)
+      setRankMap(next)
+    } finally {
+      setLoading(false)
+    }
+  }, [items])
+
+  useEffect(() => {
+    reload()
+  }, [reload])
+
+  if (items.length === 0) {
+    return (
+      <Card className="p-6 text-center text-sm text-ink-2">
+        매칭 완료된 플레이스가 없습니다. 엑셀을 업로드하고 매칭이 끝날 때까지 잠시
+        기다려 주세요.
+      </Card>
+    )
+  }
+
+  const rankCell = (rank: number | null | undefined) => {
+    if (rank == null) return <span className="text-ink-2 text-xs">—</span>
+    if (rank > 75)
+      return <span className="text-rose-600 font-semibold text-xs">75위 밖</span>
+    const tone =
+      rank <= 3
+        ? 'bg-emerald-100 text-emerald-800'
+        : rank <= 10
+          ? 'bg-blue-100 text-blue-800'
+          : rank <= 30
+            ? 'bg-slate-100 text-slate-800'
+            : 'bg-amber-100 text-amber-800'
+    return (
+      <span className={clsx('inline-block px-2 py-0.5 rounded font-bold text-xs', tone)}>
+        {rank}위
+      </span>
+    )
+  }
 
   return (
     <Card className="p-0 overflow-hidden">
-      <button
-        onClick={onToggle}
-        className="w-full flex items-center gap-2 px-4 py-3 hover:bg-slate-50 text-left"
-      >
-        <Icon className={`text-${m.color}-600`} size={18} />
-        <span className="font-bold text-sm">{title}</span>
-        <span className={clsx('text-xs px-2 py-0.5 rounded-full', `bg-${m.color}-100 text-${m.color}-700`)}>
-          {items.length}건
-        </span>
-        <span className="ml-auto">
-          {expanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
-        </span>
-      </button>
-      {expanded && (
-        <div className="border-t border-slate-200 overflow-x-auto">
-          <table className="w-full text-xs">
-            <thead className="bg-slate-50">
-              <tr className="text-ink-2">
-                <th className="px-3 py-2 text-left font-semibold">상호</th>
-                <th className="px-3 py-2 text-left font-semibold">070전번</th>
-                <th className="px-3 py-2 text-left font-semibold">등록동</th>
-                <th className="px-3 py-2 text-left font-semibold">추적키워드</th>
-                <th className="px-3 py-2 text-left font-semibold">신뢰도</th>
-                <th className="px-3 py-2 text-left font-semibold">place_id</th>
-                <th className="px-3 py-2 text-right font-semibold">액션</th>
-              </tr>
-            </thead>
-            <tbody>
-              {items.map((p) => (
-                <tr key={p.id} className="border-t border-slate-100 hover:bg-blue-50/30">
-                  <td className="px-3 py-2 font-semibold">{p.business_name || '-'}</td>
-                  <td className="px-3 py-2 font-mono">{p.phone}</td>
-                  <td className="px-3 py-2">{p.registered_dong || '-'}</td>
-                  <td className="px-3 py-2 text-ink-2">{p.tracking_keywords.join(', ')}</td>
-                  <td className="px-3 py-2">
-                    {p.match_confidence != null ? `${p.match_confidence}점` : '-'}
-                  </td>
-                  <td className="px-3 py-2 font-mono text-[11px] text-ink-2">{p.place_id || '-'}</td>
-                  <td className="px-3 py-2 text-right whitespace-nowrap">
-                    {(status === 'REVIEW_NEEDED' || p.candidates.length > 0) && (
-                      <button
-                        onClick={() => onReview(p)}
-                        className="text-xs px-2 py-1 rounded bg-amber-100 hover:bg-amber-200 text-amber-800 mr-1"
-                      >
-                        후보 보기
-                      </button>
-                    )}
-                    {p.place_id && (
-                      <button
-                        onClick={() => onChart(p)}
-                        className="text-xs px-2 py-1 rounded bg-blue-100 hover:bg-blue-200 text-blue-800 inline-flex items-center gap-1"
-                      >
-                        <LineChartIcon size={12} />
-                        추이
-                      </button>
-                    )}
-                  </td>
-                </tr>
+      <div className="px-4 py-3 border-b border-slate-200 flex items-center gap-2">
+        <CheckCircle2 className="text-blue-600" size={18} />
+        <h2 className="text-base font-bold">3단계 · 등록동 × 키워드 매트릭스</h2>
+        <span className="text-xs text-ink-2">(현재 최신 순위)</span>
+        {loading && (
+          <Loader2 className="text-blue-500 animate-spin ml-2" size={14} />
+        )}
+        <button
+          onClick={reload}
+          disabled={loading}
+          className="ml-auto text-xs font-semibold px-2 py-1 rounded-md bg-slate-100 hover:bg-slate-200 inline-flex items-center gap-1 disabled:opacity-50"
+        >
+          <RefreshCw size={12} className={loading ? 'animate-spin' : ''} />
+          새로고침
+        </button>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full text-xs border-collapse">
+          <thead className="bg-slate-50">
+            <tr className="text-ink-2">
+              <th className="px-3 py-2 text-left font-semibold sticky left-0 bg-slate-50 z-10 min-w-[180px]">
+                상호 / 등록동
+              </th>
+              {allKeywords.map((kw) => (
+                <th
+                  key={kw}
+                  className="px-3 py-2 text-center font-semibold whitespace-nowrap"
+                >
+                  {kw}
+                </th>
               ))}
-            </tbody>
-          </table>
-        </div>
-      )}
+            </tr>
+          </thead>
+          <tbody>
+            {items.map((p) => (
+              <tr key={p.id} className="border-t border-slate-100 hover:bg-blue-50/30">
+                <td className="px-3 py-2 sticky left-0 bg-white z-10 border-r border-slate-100">
+                  <div className="font-semibold">{p.business_name || '-'}</div>
+                  <div className="text-[11px] text-ink-2 flex items-center gap-1 mt-0.5">
+                    <span className="px-1 rounded bg-slate-100">
+                      {p.registered_dong || '-'}
+                    </span>
+                    {p.dong_changed && p.actual_dong && (
+                      <span className="px-1 rounded bg-amber-100 text-amber-800 inline-flex items-center gap-0.5">
+                        <MapPin size={10} />
+                        실제 {p.actual_dong}
+                      </span>
+                    )}
+                  </div>
+                </td>
+                {allKeywords.map((kw) => {
+                  const tracked = p.tracking_keywords.includes(kw)
+                  if (!tracked) {
+                    return (
+                      <td
+                        key={kw}
+                        className="px-3 py-2 text-center text-ink-2 text-[11px]"
+                      >
+                        ·
+                      </td>
+                    )
+                  }
+                  const r = rankMap[`${p.id}::${kw}`]
+                  return (
+                    <td key={kw} className="px-3 py-2 text-center">
+                      {rankCell(r)}
+                    </td>
+                  )
+                })}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </Card>
   )
 }
 
 /* ────────────────────────────────────────────────────────────
- * 컴포넌트: 후보 선택 모달
+ * 컴포넌트: 키워드별 추이 그래프 섹션
+ *  - 모든 키워드별로 1개씩 카드
+ *  - 각 카드 안에 해당 키워드를 추적하는 모든 플레이스의 30일 라인을 겹쳐서 그림
  * ──────────────────────────────────────────────────────────── */
-function CandidateModal(props: {
-  place: RankPlaceOut
-  onClose: () => void
-  onConfirm: (p: RankPlaceOut, c: RankPlaceCandidate) => void
-}) {
-  const { place, onClose, onConfirm } = props
+function KeywordGraphSection(props: { list: RankPlaceListOut }) {
+  const { list } = props
+
+  const items = useMemo(() => list.items.filter((p) => !!p.place_id), [list])
+
+  const allKeywords = useMemo(() => {
+    const s = new Set<string>()
+    items.forEach((p) => p.tracking_keywords.forEach((k) => s.add(k)))
+    return Array.from(s)
+  }, [items])
+
+  if (items.length === 0 || allKeywords.length === 0) return null
+
   return (
-    <div className="fixed inset-0 z-40 bg-black/40 flex items-center justify-center p-4" onClick={onClose}>
-      <div
-        className="bg-white rounded-xl shadow-xl max-w-3xl w-full max-h-[85vh] overflow-y-auto"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="px-5 py-4 border-b border-slate-200 flex items-center justify-between">
-          <div>
-            <h3 className="text-base font-bold">{place.business_name}</h3>
-            <p className="text-xs text-ink-2">
-              {place.phone} · {place.registered_dong} · 후보 {place.candidates.length}건
-            </p>
-          </div>
-          <button onClick={onClose} className="text-ink-2 hover:text-ink-1 text-2xl leading-none">
-            ×
-          </button>
-        </div>
-        <div className="p-5 space-y-2">
-          {place.candidates.length === 0 ? (
-            <p className="text-sm text-ink-2 text-center py-8">후보가 없습니다.</p>
-          ) : (
-            place.candidates.map((c) => (
-              <div
-                key={c.place_id}
-                className={clsx(
-                  'p-3 rounded-lg border flex items-start justify-between gap-3',
-                  c.place_id === place.place_id
-                    ? 'border-emerald-300 bg-emerald-50'
-                    : 'border-slate-200 hover:border-blue-300',
-                )}
-              >
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-baseline gap-2">
-                    <span className="font-bold text-sm">{c.name}</span>
-                    <span className="text-xs text-ink-2">{c.category}</span>
-                    <span className="ml-auto text-xs font-bold text-blue-700">{c.score}점</span>
-                  </div>
-                  <div className="text-xs text-ink-2 mt-1">
-                    {c.phone || c.virtual_phone} · {c.address}
-                  </div>
-                  {c.reasons.length > 0 && (
-                    <div className="flex flex-wrap gap-1 mt-1">
-                      {c.reasons.map((r) => (
-                        <span
-                          key={r}
-                          className="text-[10px] px-1.5 py-0.5 rounded bg-blue-100 text-blue-700"
-                        >
-                          {r}
-                        </span>
-                      ))}
-                    </div>
-                  )}
-                  <div className="text-[10px] font-mono text-ink-2 mt-1">place_id: {c.place_id}</div>
-                </div>
-                <button
-                  onClick={() => onConfirm(place, c)}
-                  className={clsx(
-                    'shrink-0 text-xs font-semibold px-3 py-1.5 rounded',
-                    c.place_id === place.place_id
-                      ? 'bg-emerald-600 text-white'
-                      : 'bg-blue-600 hover:bg-blue-700 text-white',
-                  )}
-                >
-                  {c.place_id === place.place_id ? '✓ 확정됨' : '이걸로 확정'}
-                </button>
-              </div>
-            ))
-          )}
-        </div>
+    <Card className="p-4">
+      <div className="flex items-center gap-2 mb-3">
+        <LineChartIcon className="text-blue-600" size={18} />
+        <h2 className="text-base font-bold">4단계 · 키워드별 30일 순위 추이</h2>
       </div>
-    </div>
+      <div className="space-y-6">
+        {allKeywords.map((kw) => (
+          <KeywordRankCard key={kw} keyword={kw} places={items} />
+        ))}
+      </div>
+    </Card>
   )
 }
 
 /* ────────────────────────────────────────────────────────────
- * 컴포넌트: 순위 추이 차트 모달 (SVG 라인차트, Y축 반전)
+ * 컴포넌트: 단일 키워드 카드
+ *  - 키워드를 추적하는 모든 플레이스의 30일 라인 차트
  * ──────────────────────────────────────────────────────────── */
-function RankChartModal(props: { place: RankPlaceOut; onClose: () => void }) {
-  const { place, onClose } = props
-  const [days, setDays] = useState(30)
-  const [data, setData] = useState<RankHistoryResponse | null>(null)
+interface KeywordSeriesEntry {
+  placePk: number
+  label: string
+  points: { check_date: string; rank: number | null; out_of_range: boolean }[]
+}
+
+function KeywordRankCard(props: { keyword: string; places: RankPlaceOut[] }) {
+  const { keyword, places } = props
+  const tracking = useMemo(
+    () => places.filter((p) => p.tracking_keywords.includes(keyword)),
+    [places, keyword],
+  )
+
+  const [series, setSeries] = useState<KeywordSeriesEntry[]>([])
   const [loading, setLoading] = useState(false)
 
   useEffect(() => {
     let alive = true
     setLoading(true)
-    getRankHistory(place.id, days)
-      .then((r) => {
-        if (alive) setData(r)
+    Promise.all(
+      tracking.map(async (p) => {
+        try {
+          const hist = await getRankHistory(p.id, 30)
+          const s = hist.series.find((x) => x.keyword === keyword)
+          return {
+            placePk: p.id,
+            label: `${p.business_name ?? '-'} (${p.registered_dong ?? '-'})`,
+            points: s?.points ?? [],
+          } as KeywordSeriesEntry
+        } catch (e) {
+          console.error('history failed', p.id, e)
+          return {
+            placePk: p.id,
+            label: p.business_name ?? '-',
+            points: [],
+          } as KeywordSeriesEntry
+        }
+      }),
+    )
+      .then((entries) => {
+        if (!alive) return
+        setSeries(entries.filter((e) => e.points.length > 0))
       })
-      .catch((e) => console.error('history fetch failed', e))
       .finally(() => alive && setLoading(false))
     return () => {
       alive = false
     }
-  }, [place.id, days])
+  }, [tracking, keyword])
+
+  if (tracking.length === 0) return null
 
   return (
-    <div className="fixed inset-0 z-40 bg-black/40 flex items-center justify-center p-4" onClick={onClose}>
-      <div
-        className="bg-white rounded-xl shadow-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="px-5 py-4 border-b border-slate-200 flex items-center justify-between flex-wrap gap-2">
-          <div>
-            <h3 className="text-base font-bold flex items-center gap-2">
-              <LineChartIcon size={18} className="text-blue-600" />
-              {place.business_name} · 순위 추이
-            </h3>
-            <p className="text-xs text-ink-2">
-              {place.registered_dong} · place_id {place.place_id}
-            </p>
-          </div>
-          <div className="flex items-center gap-2">
-            {[7, 14, 30, 90].map((d) => (
-              <button
-                key={d}
-                onClick={() => setDays(d)}
-                className={clsx(
-                  'text-xs font-semibold px-2 py-1 rounded',
-                  days === d ? 'bg-blue-600 text-white' : 'bg-slate-100 text-ink-1 hover:bg-slate-200',
-                )}
-              >
-                {d}일
-              </button>
-            ))}
-            <button onClick={onClose} className="text-ink-2 hover:text-ink-1 text-2xl leading-none ml-2">
-              ×
-            </button>
-          </div>
-        </div>
-        <div className="p-5">
-          {loading ? (
-            <div className="flex items-center justify-center py-16 text-ink-2">
-              <Loader2 className="animate-spin mr-2" size={20} />
-              불러오는 중…
-            </div>
-          ) : !data || data.series.length === 0 ? (
-            <div className="py-16 text-center text-sm text-ink-2">
-              아직 기록된 순위 데이터가 없습니다.
-              <br />
-              매일 자동체크 이후 데이터가 누적됩니다.
-            </div>
-          ) : (
-            <div className="space-y-6">
-              {data.series.map((s) => (
-                <KeywordChart key={s.keyword} keyword={s.keyword} points={s.points} />
-              ))}
-            </div>
-          )}
-        </div>
+    <div className="border border-slate-200 rounded-lg p-3">
+      <div className="flex items-baseline gap-2 mb-2">
+        <h3 className="text-sm font-bold">{keyword}</h3>
+        <span className="text-xs text-ink-2">
+          {tracking.length}개 플레이스 추적 중
+        </span>
+        {loading && (
+          <Loader2 className="text-blue-500 animate-spin ml-2" size={12} />
+        )}
       </div>
+      {series.length === 0 && !loading ? (
+        <div className="py-10 text-center text-xs text-ink-2">
+          아직 기록된 순위 데이터가 없습니다. 매일 자동체크 이후 데이터가 누적됩니다.
+        </div>
+      ) : (
+        <MultiLineChart series={series} />
+      )}
     </div>
   )
 }
 
 /* ────────────────────────────────────────────────────────────
- * 키워드별 SVG 차트 (Y축 반전 — 1위가 위, 75위가 아래)
+ * 컴포넌트: 다중 라인 SVG 차트 (Y축 반전, 1위=상단)
  * ──────────────────────────────────────────────────────────── */
-function KeywordChart(props: {
-  keyword: string
-  points: { check_date: string; rank: number | null; out_of_range: boolean }[]
-}) {
-  const { keyword, points } = props
+const LINE_COLORS = [
+  '#2563eb',
+  '#dc2626',
+  '#16a34a',
+  '#d97706',
+  '#7c3aed',
+  '#0891b2',
+  '#db2777',
+  '#65a30d',
+]
 
-  const W = 720
-  const H = 220
+function MultiLineChart(props: { series: KeywordSeriesEntry[] }) {
+  const { series } = props
+
+  const W = 760
+  const H = 240
   const PAD_L = 40
   const PAD_R = 16
   const PAD_T = 16
@@ -819,47 +834,60 @@ function KeywordChart(props: {
   const innerW = W - PAD_L - PAD_R
   const innerH = H - PAD_T - PAD_B
 
-  const ranks = points.map((p) => p.rank).filter((r): r is number => r != null)
+  // 가장 긴 시리즈의 날짜 축 기준
+  const longest =
+    series.reduce(
+      (acc, s) => (s.points.length > acc.points.length ? s : acc),
+      series[0],
+    ) ?? null
+  const len = longest?.points.length ?? 0
+  if (len === 0) return null
+
+  const ranks = series.flatMap((s) =>
+    s.points.map((p) => p.rank).filter((r): r is number => r != null),
+  )
   const maxRank = Math.max(75, ...(ranks.length ? ranks : [10]))
-  // y: rank=1 → top, rank=maxRank → bottom (반전)
-  const x = (i: number) => PAD_L + (points.length <= 1 ? innerW / 2 : (innerW * i) / (points.length - 1))
+
+  const x = (i: number) =>
+    PAD_L + (len <= 1 ? innerW / 2 : (innerW * i) / (len - 1))
   const y = (r: number) => PAD_T + (innerH * (r - 1)) / Math.max(1, maxRank - 1)
-
-  // 라인 path (rank null/out_of_range 는 끊김)
-  const segments: string[] = []
-  let current: string[] = []
-  points.forEach((p, i) => {
-    if (p.rank == null || p.out_of_range) {
-      if (current.length) {
-        segments.push(current.join(' '))
-        current = []
-      }
-    } else {
-      const prefix = current.length === 0 ? 'M' : 'L'
-      current.push(`${prefix}${x(i).toFixed(1)},${y(p.rank).toFixed(1)}`)
-    }
-  })
-  if (current.length) segments.push(current.join(' '))
-
-  // 현재 순위 (마지막 데이터)
-  const last = points[points.length - 1]
-  const lastRank = last?.rank ?? null
 
   const yTicks = [1, 5, 10, 25, 50, 75].filter((t) => t <= maxRank)
 
+  // 각 시리즈의 path 계산
+  const lines = series.map((s, idx) => {
+    const segments: string[] = []
+    let current: string[] = []
+    s.points.forEach((p, i) => {
+      if (p.rank == null || p.out_of_range) {
+        if (current.length) {
+          segments.push(current.join(' '))
+          current = []
+        }
+      } else {
+        const prefix = current.length === 0 ? 'M' : 'L'
+        current.push(`${prefix}${x(i).toFixed(1)},${y(p.rank).toFixed(1)}`)
+      }
+    })
+    if (current.length) segments.push(current.join(' '))
+    return {
+      idx,
+      label: s.label,
+      color: LINE_COLORS[idx % LINE_COLORS.length],
+      segments,
+      points: s.points,
+      lastRank: s.points[s.points.length - 1]?.rank ?? null,
+    }
+  })
+
   return (
     <div>
-      <div className="flex items-baseline gap-3 mb-2">
-        <h4 className="text-sm font-bold">{keyword}</h4>
-        {lastRank != null ? (
-          <span className="text-xs text-emerald-700 font-semibold">현재 {lastRank}위</span>
-        ) : (
-          <span className="text-xs text-rose-700 font-semibold">75위 밖</span>
-        )}
-        <span className="ml-auto text-[11px] text-ink-2">{points.length}일 기록</span>
-      </div>
       <div className="bg-slate-50 rounded-lg p-2 overflow-x-auto">
-        <svg viewBox={`0 0 ${W} ${H}`} className="w-full" preserveAspectRatio="xMidYMid meet">
+        <svg
+          viewBox={`0 0 ${W} ${H}`}
+          className="w-full"
+          preserveAspectRatio="xMidYMid meet"
+        >
           {/* Y axis grid */}
           {yTicks.map((t) => (
             <g key={t}>
@@ -871,67 +899,103 @@ function KeywordChart(props: {
                 stroke="#e2e8f0"
                 strokeDasharray={t === 1 ? '0' : '3 3'}
               />
-              <text x={PAD_L - 6} y={y(t) + 3} textAnchor="end" fontSize="10" fill="#64748b">
+              <text
+                x={PAD_L - 6}
+                y={y(t) + 3}
+                textAnchor="end"
+                fontSize="10"
+                fill="#64748b"
+              >
                 {t}
               </text>
             </g>
           ))}
-          {/* X axis labels (시작/중간/끝) */}
-          {points.length > 0 && (
+          {/* X axis labels */}
+          {longest && longest.points.length > 0 && (
             <>
-              <text x={x(0)} y={H - 8} fontSize="9" fill="#64748b" textAnchor="start">
-                {points[0].check_date.slice(5)}
+              <text
+                x={x(0)}
+                y={H - 8}
+                fontSize="9"
+                fill="#64748b"
+                textAnchor="start"
+              >
+                {longest.points[0].check_date.slice(5)}
               </text>
-              {points.length > 2 && (
+              {longest.points.length > 2 && (
                 <text
-                  x={x(Math.floor(points.length / 2))}
+                  x={x(Math.floor(longest.points.length / 2))}
                   y={H - 8}
                   fontSize="9"
                   fill="#64748b"
                   textAnchor="middle"
                 >
-                  {points[Math.floor(points.length / 2)].check_date.slice(5)}
+                  {longest.points[
+                    Math.floor(longest.points.length / 2)
+                  ].check_date.slice(5)}
                 </text>
               )}
-              {points.length > 1 && (
-                <text x={x(points.length - 1)} y={H - 8} fontSize="9" fill="#64748b" textAnchor="end">
-                  {points[points.length - 1].check_date.slice(5)}
+              {longest.points.length > 1 && (
+                <text
+                  x={x(longest.points.length - 1)}
+                  y={H - 8}
+                  fontSize="9"
+                  fill="#64748b"
+                  textAnchor="end"
+                >
+                  {longest.points[longest.points.length - 1].check_date.slice(5)}
                 </text>
               )}
             </>
           )}
-          {/* Line segments */}
-          {segments.map((d, i) => (
-            <path key={i} d={d} fill="none" stroke="#2563eb" strokeWidth="2" />
-          ))}
-          {/* Points */}
-          {points.map((p, i) => {
-            if (p.rank == null || p.out_of_range) {
-              return (
-                <circle
+          {/* Lines + points */}
+          {lines.map((ln) => (
+            <g key={ln.idx}>
+              {ln.segments.map((d, i) => (
+                <path
                   key={i}
-                  cx={x(i)}
-                  cy={H - PAD_B - 4}
-                  r="3"
-                  fill="#fecaca"
-                  stroke="#dc2626"
-                  strokeWidth="1"
+                  d={d}
+                  fill="none"
+                  stroke={ln.color}
+                  strokeWidth="2"
                 />
-              )
-            }
-            return (
-              <circle
-                key={i}
-                cx={x(i)}
-                cy={y(p.rank)}
-                r="3"
-                fill="#2563eb"
-                stroke="white"
-                strokeWidth="1"
-              />
-            )
-          })}
+              ))}
+              {ln.points.map((p, i) => {
+                if (p.rank == null || p.out_of_range) return null
+                return (
+                  <circle
+                    key={i}
+                    cx={x(i)}
+                    cy={y(p.rank)}
+                    r="2.5"
+                    fill={ln.color}
+                    stroke="white"
+                    strokeWidth="1"
+                  />
+                )
+              })}
+            </g>
+          ))}
         </svg>
+      </div>
+      {/* Legend */}
+      <div className="flex flex-wrap gap-x-4 gap-y-1 mt-2">
+        {lines.map((ln) => (
+          <div key={ln.idx} className="flex items-center gap-1.5 text-[11px]">
+            <span
+              className="inline-block w-3 h-3 rounded-sm"
+              style={{ background: ln.color }}
+            />
+            <span className="text-ink-1">{ln.label}</span>
+            {ln.lastRank != null ? (
+              <span className="text-emerald-700 font-semibold">
+                {ln.lastRank}위
+              </span>
+            ) : (
+              <span className="text-rose-600 font-semibold">75위 밖</span>
+            )}
+          </div>
+        ))}
       </div>
     </div>
   )

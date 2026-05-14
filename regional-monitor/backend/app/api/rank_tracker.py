@@ -18,6 +18,8 @@ from app.models.rank_history import PlaceRankHistory
 from app.models.user import User
 from app.schemas.rank_tracker import (
     ConfirmCandidateRequest,
+    DongChangedItem,
+    DongChangedListOut,
     RankHistoryPoint,
     RankHistoryResponse,
     RankHistorySeries,
@@ -33,8 +35,9 @@ from app.schemas.rank_tracker import (
 )
 from app.services.place_matcher import (
     deserialize_candidates,
+    deserialize_match,
     match_one,
-    serialize_candidates,
+    serialize_match,
 )
 from app.services.rank_checker import run_rank_check_for_places
 
@@ -72,20 +75,19 @@ def _csv_to_keywords(raw: str | None) -> list[str]:
 
 
 def _place_to_out(p: RegisteredPlace) -> RankPlaceOut:
-    cand_data = deserialize_candidates(p.match_candidates)
-    candidates = [
-        RankPlaceCandidate(
-            place_id=str(c.get("place_id") or ""),
-            name=str(c.get("name") or ""),
-            category=str(c.get("category") or ""),
-            phone=str(c.get("phone") or ""),
-            virtual_phone=str(c.get("virtual_phone") or ""),
-            address=str(c.get("address") or ""),
-            score=int(c.get("score") or 0),
-            reasons=list(c.get("reasons") or []),
+    """RegisteredPlace → API 응답. 070+동 정책에선 매칭된 단일 플레이스만 노출."""
+    m = deserialize_match(p.match_candidates)
+    matched: RankPlaceCandidate | None = None
+    if m:
+        matched = RankPlaceCandidate(
+            place_id=str(m.get("place_id") or ""),
+            name=str(m.get("name") or ""),
+            category=str(m.get("category") or ""),
+            phone=str(m.get("phone") or ""),
+            virtual_phone=str(m.get("virtual_phone") or ""),
+            address=str(m.get("address") or ""),
+            reasons=list(m.get("reasons") or []),
         )
-        for c in cand_data
-    ]
     return RankPlaceOut(
         id=p.id,
         phone=p.phone,
@@ -94,9 +96,10 @@ def _place_to_out(p: RegisteredPlace) -> RankPlaceOut:
         place_id=p.place_id,
         tracking_keywords=_csv_to_keywords(p.tracking_keywords),
         match_status=p.match_status,
-        match_confidence=p.match_confidence,
         matched_at=p.matched_at,
-        candidates=candidates,
+        matched=matched,
+        dong_changed=bool(getattr(p, "dong_changed", False)),
+        actual_dong=getattr(p, "actual_dong", None),
     )
 
 
@@ -172,14 +175,21 @@ async def upload_rank_rows(
             existing.registered_dong = dong
             existing.business_name = biz
             existing.tracking_keywords = kw_csv
-            # 이미 매칭된 상태면 굳이 재매칭 안 함 (NOT_FOUND/REVIEW_NEEDED/None만 재시도)
+            # 이미 매칭된 상태면 굳이 재매칭 안 함.
+            # 재매칭 대상: PENDING_MATCH / NEEDS_MANUAL / place_id 없음
+            #             (레거시 NOT_FOUND/REVIEW_NEEDED는 백필되지만 보호용으로 함께 처리)
             should_rematch = (
-                existing.match_status in (None, "PENDING_MATCH", "NOT_FOUND", "REVIEW_NEEDED")
+                existing.match_status in (
+                    None, "PENDING_MATCH", "NEEDS_MANUAL",
+                    "REVIEW_NEEDED", "NOT_FOUND",  # 레거시 호환
+                )
                 or not existing.place_id
             )
             if should_rematch:
                 existing.match_status = "PENDING_MATCH"
                 existing.match_candidates = None
+                existing.dong_changed = False
+                existing.actual_dong = None
                 enqueue_ids.append(existing.id)
             existing.in_latest_upload = True
             existing.excluded_at = None
@@ -231,7 +241,12 @@ async def upload_rank_rows(
 # 매칭 워커 (백그라운드 — BackgroundTasks)
 # ─────────────────────────────────────────────────────────
 async def _run_matching_for_ids(user_id: int, place_ids: list[int]) -> None:
-    """주어진 RegisteredPlace ID 목록에 대해 place_matcher.match_one 순차 실행."""
+    """주어진 RegisteredPlace ID 목록에 대해 place_matcher.match_one 순차 실행.
+
+    정책 (070+동 단일 매칭):
+      · 070 매칭 성공 → AUTO_MATCHED (등록동 다르면 dong_changed=True 플래그)
+      · 070 매칭 0건 → NEEDS_MANUAL (이론상 거의 없음)
+    """
     from app.core.database import AsyncSessionLocal
 
     async with AsyncSessionLocal() as db:
@@ -252,11 +267,14 @@ async def _run_matching_for_ids(user_id: int, place_ids: list[int]) -> None:
                     registered_dong=p.registered_dong or "",
                 )
                 p.match_status = result.status
-                p.match_confidence = result.confidence
+                # match_confidence는 레거시 호환용. AUTO_MATCHED=100, NEEDS_MANUAL=0
+                p.match_confidence = 100 if result.status == "AUTO_MATCHED" else 0
                 p.matched_at = now_kst()
                 if result.place_id:
                     p.place_id = result.place_id
-                p.match_candidates = serialize_candidates(result.candidates) if result.candidates else None
+                p.match_candidates = serialize_match(result.matched) if result.matched else None
+                p.dong_changed = bool(result.dong_changed)
+                p.actual_dong = result.actual_dong
                 await db.commit()
             except Exception as e:  # noqa: BLE001
                 log.exception("matching worker failed for place_id=%s: %s", pid, e)
@@ -272,7 +290,14 @@ async def list_rank_places(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> RankPlaceListOut:
-    """현재 사용자의 RankTracker 대상 행 목록 + 매칭 상태별 요약."""
+    """현재 사용자의 RankTracker 대상 행 목록 + 매칭 상태별 요약.
+
+    070+동 정책으로 단순화:
+      · auto_matched   — 070 매칭 완료 (자동 확정)
+      · dong_changed   — 그 중 등록동과 실제 노출동이 다른 케이스 (배너용)
+      · needs_manual   — 070 매칭 0건 등 예외 (이론상 거의 0)
+      · pending        — 매칭 대기
+    """
     q = await db.execute(
         select(RegisteredPlace)
         .where(
@@ -284,18 +309,19 @@ async def list_rank_places(
     places = list(q.scalars().all())
 
     auto = sum(1 for p in places if p.match_status == "AUTO_MATCHED")
-    review = sum(1 for p in places if p.match_status == "REVIEW_NEEDED")
-    notfound = sum(1 for p in places if p.match_status == "NOT_FOUND")
+    needs_manual = sum(1 for p in places if p.match_status == "NEEDS_MANUAL")
     pending = sum(1 for p in places if p.match_status in (None, "PENDING_MATCH"))
-    confirmed = sum(1 for p in places if p.match_status == "CONFIRMED")
+    dong_changed_count = sum(
+        1 for p in places
+        if p.match_status == "AUTO_MATCHED" and bool(getattr(p, "dong_changed", False))
+    )
 
     return RankPlaceListOut(
         total=len(places),
         auto_matched=auto,
-        review_needed=review,
-        not_found=notfound,
+        needs_manual=needs_manual,
         pending=pending,
-        confirmed=confirmed,
+        dong_changed_count=dong_changed_count,
         items=[_place_to_out(p) for p in places],
     )
 
@@ -310,7 +336,11 @@ async def run_match(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> RunMatchResponse:
-    """매칭 재실행. place_ids 지정 시 그 행들만, 미지정 시 사용자의 PENDING_MATCH 전체."""
+    """매칭 재실행. place_ids 지정 시 그 행들만, 미지정 시 사용자의 미완료 매칭 전체.
+
+    재매칭 대상: PENDING_MATCH / NEEDS_MANUAL
+                (레거시 REVIEW_NEEDED/NOT_FOUND는 마이그레이션에서 NEEDS_MANUAL로 백필됨)
+    """
     if req.place_ids:
         q = await db.execute(
             select(RegisteredPlace.id).where(
@@ -323,7 +353,7 @@ async def run_match(
             select(RegisteredPlace.id).where(
                 RegisteredPlace.user_id == user.id,
                 RegisteredPlace.tracking_keywords.is_not(None),
-                RegisteredPlace.match_status.in_(("PENDING_MATCH", "NOT_FOUND", "REVIEW_NEEDED")),
+                RegisteredPlace.match_status.in_(("PENDING_MATCH", "NEEDS_MANUAL")),
             )
         )
     ids = [row[0] for row in q.all()]
@@ -333,44 +363,73 @@ async def run_match(
         requested=len(ids),
         processed=0,
         auto_matched=0,
-        review_needed=0,
-        not_found=0,
+        needs_manual=0,
         errors=0,
     )
 
 
 # ─────────────────────────────────────────────────────────
-# REVIEW_NEEDED 행의 후보 확정 (수동 선택)
+# 변경 노출 배너 — 등록동 ≠ 실제 노출동인 행 목록 (대시보드 상단)
 # ─────────────────────────────────────────────────────────
-@router.post("/places/{place_pk}/confirm-candidate")
+@router.get("/dong-changed", response_model=DongChangedListOut)
+async def list_dong_changed(
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> DongChangedListOut:
+    """변경 노출 N건 — 등록동과 실제 노출동이 다른 케이스 목록.
+
+    대시보드 상단 배너에 "변경 노출 N건 발견" + 상세보기 테이블로 사용.
+    070 매칭은 시스템이 자동 확정했으므로 사용자가 클릭할 액션은 없고,
+    "내 가게 노출동이 바뀌었다"는 정보 노출만 한다.
+    """
+    q = await db.execute(
+        select(RegisteredPlace)
+        .where(
+            RegisteredPlace.user_id == user.id,
+            RegisteredPlace.match_status == "AUTO_MATCHED",
+            RegisteredPlace.dong_changed.is_(True),
+        )
+        .order_by(RegisteredPlace.matched_at.desc().nullslast())
+    )
+    rows = list(q.scalars().all())
+
+    items: list[DongChangedItem] = []
+    for p in rows:
+        m = deserialize_match(p.match_candidates)
+        items.append(DongChangedItem(
+            id=p.id,
+            phone=p.phone,
+            business_name=p.business_name,
+            registered_dong=p.registered_dong,
+            actual_dong=p.actual_dong,
+            place_id=p.place_id,
+            address=str(m.get("address")) if m and m.get("address") else None,
+        ))
+    return DongChangedListOut(count=len(items), items=items)
+
+
+# ─────────────────────────────────────────────────────────
+# (Deprecated) 후보 확정 — 070+동 단일 매칭 정책에서는 사용 안 함
+# ─────────────────────────────────────────────────────────
+@router.post("/places/{place_pk}/confirm-candidate", deprecated=True)
 async def confirm_candidate(
     place_pk: int,
     req: ConfirmCandidateRequest,
-    user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),  # noqa: ARG001
+    db: AsyncSession = Depends(get_db),  # noqa: ARG001
 ) -> dict[str, str]:
-    """REVIEW_NEEDED 행에서 사용자가 후보 1개를 확정."""
-    q = await db.execute(
-        select(RegisteredPlace).where(
-            RegisteredPlace.id == place_pk,
-            RegisteredPlace.user_id == user.id,
-        )
+    """[DEPRECATED] 후보 확정 엔드포인트.
+
+    070+동 정책 도입 후 단일 매칭으로 단순화되어 사용자가 후보를 고를 일이 없다.
+    구버전 클라이언트 호환을 위해 410 Gone 응답만 반환한다.
+    """
+    raise HTTPException(
+        status_code=410,
+        detail=(
+            "후보 확정 엔드포인트는 폐기되었습니다. "
+            "070 매칭은 시스템이 자동 확정하며, 변경 노출은 대시보드 배너로 안내됩니다."
+        ),
     )
-    p = q.scalar_one_or_none()
-    if not p:
-        raise HTTPException(404, "place not found")
-
-    cand_data = deserialize_candidates(p.match_candidates)
-    matched = next((c for c in cand_data if str(c.get("place_id")) == req.place_id), None)
-    if not matched:
-        raise HTTPException(400, "후보 목록에 없는 place_id 입니다.")
-
-    p.place_id = req.place_id
-    p.match_status = "CONFIRMED"
-    p.match_confidence = int(matched.get("score") or 0)
-    p.matched_at = now_kst()
-    await db.commit()
-    return {"status": "ok"}
 
 
 # ─────────────────────────────────────────────────────────
