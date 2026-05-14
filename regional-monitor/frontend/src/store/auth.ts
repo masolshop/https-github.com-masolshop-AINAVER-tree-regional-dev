@@ -34,6 +34,8 @@ interface AuthState {
 
   /* 메모리 전용 */
   isAuthenticated: boolean        // = !!user && user.is_profile_complete
+  /** 외부 공개 데모 게스트 세션 여부 — user.is_demo === true 일 때만 활성 */
+  isDemo: boolean
   modalStep: LoginModalStep
   redirectAfterLogin: string | null
 
@@ -57,6 +59,7 @@ export const useAuthStore = create<AuthState>()(
       accessToken: null,
       user: null,
       isAuthenticated: false,
+      isDemo: false,
       modalStep: 'closed',
       redirectAfterLogin: null,
 
@@ -65,15 +68,22 @@ export const useAuthStore = create<AuthState>()(
           accessToken: token,
           user,
           isAuthenticated: user.is_profile_complete,
+          isDemo: !!user.is_demo,
           // 신규 가입자(프로필 미완성)는 추가정보 모달, 그 외는 닫기
-          modalStep: user.is_profile_complete ? 'closed' : 'profile',
+          // 데모 게스트는 절대 추가정보 모달 띄우지 않음
+          modalStep:
+            user.is_demo || user.is_profile_complete ? 'closed' : 'profile',
         }),
 
       setUser: (user) =>
         set((state) => ({
           user,
           isAuthenticated: !!state.accessToken && user.is_profile_complete,
-          modalStep: user.is_profile_complete ? 'closed' : state.modalStep,
+          isDemo: !!user.is_demo,
+          modalStep:
+            user.is_demo || user.is_profile_complete
+              ? 'closed'
+              : state.modalStep,
         })),
 
       logout: () =>
@@ -81,6 +91,7 @@ export const useAuthStore = create<AuthState>()(
           accessToken: null,
           user: null,
           isAuthenticated: false,
+          isDemo: false,
           modalStep: 'closed',
           redirectAfterLogin: null,
         }),
@@ -102,11 +113,12 @@ export const useAuthStore = create<AuthState>()(
         accessToken: state.accessToken,
         user: state.user,
       }),
-      // localStorage → 메모리로 hydrate 시 isAuthenticated 재계산
+      // localStorage → 메모리로 hydrate 시 isAuthenticated/isDemo 재계산
       onRehydrateStorage: () => (state) => {
         if (!state) return
         state.isAuthenticated =
           !!state.accessToken && !!state.user && state.user.is_profile_complete
+        state.isDemo = !!state.user?.is_demo
       },
     },
   ),

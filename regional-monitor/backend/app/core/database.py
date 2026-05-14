@@ -70,6 +70,38 @@ async def init_db() -> None:
     await _ensure_notify_emails_column()
     await _ensure_excluded_upload_columns()
     await _ensure_rank_tracker_columns()
+    await _ensure_is_demo_column()
+
+
+async def _ensure_is_demo_column() -> None:
+    """users 테이블에 is_demo BOOLEAN 컬럼 추가 — 외부 공개 데모 게스트 플래그.
+
+    데모 계정만 is_demo=TRUE, 나머지 모든 회원은 FALSE.
+    block_if_demo 가드가 이 컬럼으로 mutation/네이버 호출 차단 여부 판정.
+    """
+    from sqlalchemy import text
+
+    is_sqlite = settings.DATABASE_URL.startswith("sqlite")
+    async with engine.begin() as conn:
+        if is_sqlite:
+            res = await conn.execute(text("PRAGMA table_info(users)"))
+            existing_cols = {row[1] for row in res.fetchall()}
+            if "is_demo" not in existing_cols:
+                await conn.execute(text(
+                    "ALTER TABLE users ADD COLUMN is_demo BOOLEAN "
+                    "NOT NULL DEFAULT 0"
+                ))
+            await conn.execute(text(
+                "CREATE INDEX IF NOT EXISTS ix_users_is_demo ON users(is_demo)"
+            ))
+        else:
+            await conn.execute(text(
+                "ALTER TABLE users ADD COLUMN IF NOT EXISTS is_demo "
+                "BOOLEAN NOT NULL DEFAULT FALSE"
+            ))
+            await conn.execute(text(
+                "CREATE INDEX IF NOT EXISTS ix_users_is_demo ON users(is_demo)"
+            ))
 
 
 async def _ensure_user_account_columns() -> None:

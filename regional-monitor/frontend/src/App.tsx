@@ -29,6 +29,9 @@ import { useNaverWcsPageView } from '@/hooks/useNaverWcs'
 import Home from '@/pages/Home'
 import ResetPassword from '@/pages/ResetPassword'
 
+// ── 외부 공개 데모 진입 (lazy) ──────────────────────
+const Demo = lazy(() => import('@/pages/Demo'))
+
 // ── 소개/Intro 페이지 (lazy) ─────────────────────────
 const Intro = lazy(() => import('@/pages/Intro'))
 const KeywordDnaIntro = lazy(() => import('@/pages/Solutions/KeywordDnaIntro'))
@@ -176,6 +179,8 @@ export default function App() {
             <Route path="/reset-password" element={<ResetPassword />} />
             <Route element={<AppLayout />}>
               <Route path="/" element={<Home />} />
+              {/* 외부 공개 데모 진입 — /demo?t=<token> */}
+              <Route path="/demo" element={<Demo />} />
               <Route path="/intro" element={<Intro />} />
               <Route path="/intro/keyword-dna" element={<KeywordDnaIntro />} />
               <Route path="/intro/keyword-discover" element={<KeywordDiscoverIntro />} />

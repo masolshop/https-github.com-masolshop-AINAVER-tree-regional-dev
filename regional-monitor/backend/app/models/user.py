@@ -53,6 +53,13 @@ class User(Base):
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False, index=True)
     blocked_reason: Mapped[str | None] = mapped_column(String(500), nullable=True)
 
+    # ── 외부 공개 데모 계정 플래그 ──
+    # True 면: /demo?t=... 로 접근한 게스트 세션. 모든 mutation/네이버 트래픽 발생 호출 차단.
+    # 시드 스크립트로 1개만 생성하며 사용자 직접 가입 경로로는 절대 생성되지 않음.
+    is_demo: Mapped[bool] = mapped_column(
+        Boolean, default=False, nullable=False, server_default="0", index=True
+    )
+
     # ── 자동 검증 시간 슬롯 (0~23, "매일 N시 검증") ──
     # [DEPRECATED — Schedule v2 도입 후 verify_slot_15m 으로 대체]
     # 1단계 마이그레이션 기간(dry-run 1주) 동안 호환성 유지를 위해 컬럼은 남겨둔다.

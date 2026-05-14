@@ -45,6 +45,8 @@ from app.schemas.auth import (
     UserOut,
     PasswordLoginRequest,
     PasswordLoginResponse,
+    DemoLoginRequest,
+    DemoLoginResponse,
     SignupRequest,
     SignupResponse,
     ForgotIdRequest,
@@ -56,6 +58,7 @@ from app.schemas.auth import (
     MyProfileUpdateRequest,
     MyProfileUpdateResponse,
 )
+from app.core.config import settings as app_settings
 from app.schemas.common import MessageResponse
 from .deps import get_current_user
 
@@ -190,6 +193,69 @@ async def login_with_password(
     return PasswordLoginResponse(
         access_token=_issue_token(user),
         user=_user_to_out(user),
+    )
+
+
+# ─────────────────────────── 외부 공개 데모 로그인 ───────────────────────────
+
+@router.post("/demo-login", response_model=DemoLoginResponse)
+@limiter.limit("30/minute")
+async def login_demo(
+    request: Request,
+    body: DemoLoginRequest,
+    db: AsyncSession = Depends(get_db),
+) -> DemoLoginResponse:
+    """외부 공개 데모 진입.
+
+    `/demo?t=<token>` 링크에서 프론트가 호출. body.token 이 환경변수
+    DEMO_ACCESS_TOKEN 과 일치하면 미리 시드된 demo_guest 계정의 JWT 발급.
+
+    데모 계정은 is_demo=True 로 시드되어, 이후 모든 mutation/네이버 트래픽
+    발생 엔드포인트에서 block_if_demo 가드로 차단된다.
+
+    보안:
+      - DEMO_ACCESS_TOKEN 미설정(빈 문자열) 시 503 (데모 비활성)
+      - 토큰 불일치 시 401
+      - 데모 계정 미존재(시드 누락) 시 503
+      - 영구 토큰 — 노출 시 환경변수만 회전하면 즉시 무효화
+    """
+    expected = (app_settings.DEMO_ACCESS_TOKEN or "").strip()
+    if not expected:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="외부 공개 데모가 비활성화되어 있습니다.",
+        )
+    if not secrets.compare_digest(body.token.strip(), expected):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="유효하지 않은 데모 접근 토큰입니다.",
+        )
+
+    result = await db.execute(
+        select(User).where(
+            User.email == app_settings.DEMO_ACCOUNT_EMAIL,
+            User.is_demo == True,  # noqa: E712
+        )
+    )
+    demo_user = result.scalar_one_or_none()
+    if not demo_user:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="데모 계정이 준비되지 않았습니다. 운영자에게 문의하세요.",
+        )
+    if not demo_user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="데모 계정이 일시 중지되었습니다.",
+        )
+
+    demo_user.last_login_at = now_kst()
+    await db.commit()
+    await db.refresh(demo_user)
+
+    return DemoLoginResponse(
+        access_token=_issue_token(demo_user),
+        user=_user_to_out(demo_user),
     )
 
 

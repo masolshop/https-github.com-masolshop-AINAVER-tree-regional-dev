@@ -22,6 +22,8 @@ import type {
   VerifySlotUpdateResponse,
   MyProfileUpdateRequest,
   MyProfileUpdateResponse,
+  DemoLoginRequest,
+  DemoLoginResponse,
 } from './types'
 
 export const authApi = {
@@ -80,4 +82,12 @@ export const authApi = {
 
   /** 회원 탈퇴 — 본인 계정 + 모든 데이터 영구 삭제 */
   deleteMyAccount: () => api.del<MessageResponse>('/api/v1/auth/me'),
+
+  /**
+   * 외부 공개 데모 로그인 — `/demo?t=<token>` 링크에서 호출.
+   * 백엔드 DEMO_ACCESS_TOKEN 환경변수와 일치하면 demo_guest 계정 JWT 발급.
+   * 응답 user.is_demo === true 면 프론트는 데모 배너 + mutation 가드 활성화.
+   */
+  demoLogin: (body: DemoLoginRequest) =>
+    api.post<DemoLoginResponse>('/api/v1/auth/demo-login', body),
 }

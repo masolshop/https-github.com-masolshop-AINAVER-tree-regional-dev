@@ -23,6 +23,8 @@ class UserOut(BaseModel):
     verify_slot: int = 0           # 0~23, 매일 자동 검증되는 시각(시)
     is_superadmin: bool = False
     is_active: bool = True
+    # 외부 공개 데모 게스트 세션 여부 — 프론트가 배너/가드 표시에 사용
+    is_demo: bool = False
     created_at: datetime
 
     class Config:
@@ -73,6 +75,23 @@ class PasswordLoginRequest(BaseModel):
     """
     email: str = Field(..., min_length=3, max_length=255, description="이메일 또는 아이디")
     password: str = Field(..., min_length=4, max_length=200)
+
+
+# ─────────── 외부 공개 데모 로그인 ───────────
+
+class DemoLoginRequest(BaseModel):
+    """`/demo?t=...` 링크의 t 토큰을 백엔드 DEMO_ACCESS_TOKEN 과 대조.
+
+    토큰 일치 시 미리 시드된 demo_guest 계정의 JWT 발급.
+    데모 계정은 is_demo=True 라서 모든 mutation 가드(block_if_demo)에 막힘.
+    """
+    token: str = Field(..., min_length=1, max_length=200)
+
+
+class DemoLoginResponse(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+    user: UserOut
 
 
 class PasswordLoginResponse(BaseModel):

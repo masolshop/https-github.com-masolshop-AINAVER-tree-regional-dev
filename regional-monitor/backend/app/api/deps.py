@@ -118,6 +118,24 @@ async def require_complete_profile(
     return user
 
 
+async def block_if_demo(
+    user: User = Depends(get_current_user),
+) -> User:
+    """데모 게스트 계정 차단 가드.
+
+    `/demo?t=...` 로 접근한 외부 공개 게스트(is_demo=True) 는 모든 mutation
+    (POST/PATCH/DELETE) 과 네이버 트래픽 발생 GET 엔드포인트에서 차단된다.
+    응답: 403 + 프론트가 파싱할 수 있는 reason='demo_readonly' 헤더 포함.
+    """
+    if user.is_demo:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="외부 공개 데모 계정에서는 실제 기능을 사용할 수 없습니다. 회원가입 후 이용해주세요.",
+            headers={"X-Demo-Readonly": "1"},
+        )
+    return user
+
+
 async def require_superadmin(
     user: User = Depends(get_current_user),
 ) -> User:

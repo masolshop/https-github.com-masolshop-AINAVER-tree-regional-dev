@@ -9,6 +9,8 @@ import { useEffect, useState } from 'react'
 import { Outlet, useLocation, Link } from 'react-router-dom'
 import { Menu, X } from 'lucide-react'
 import { Sidebar } from './Sidebar'
+import { DemoBanner } from './DemoBanner'
+import { DemoKakaoFab } from './DemoKakaoFab'
 import { LoginModal } from '@/components/auth/LoginModal'
 
 export function AppLayout() {
@@ -44,6 +46,9 @@ export function AppLayout() {
 
   return (
     <div className="min-h-screen bg-bg lg:flex">
+      {/* ───── 외부 공개 데모 게스트 세션 — 상단 띠 배너 (isDemo 일 때만) ───── */}
+      <DemoBanner />
+
       {/* ───── 모바일 전용 상단 헤더 (햄버거 + 로고) ───── */}
       <header className="lg:hidden sticky top-0 z-30 bg-white/95 backdrop-blur border-b border-bg-subtle">
         <div className="flex items-center justify-between px-4 h-14">
@@ -116,6 +121,9 @@ export function AppLayout() {
 
       {/* 로그인 모달 (전역) */}
       <LoginModal />
+
+      {/* 외부 공개 데모 게스트 — 어느 페이지에서도 따라다니는 카톡상담 플로팅 버튼 */}
+      <DemoKakaoFab />
     </div>
   )
 }

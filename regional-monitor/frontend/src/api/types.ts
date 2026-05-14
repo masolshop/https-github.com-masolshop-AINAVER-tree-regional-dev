@@ -269,6 +269,8 @@ export interface User {
   verify_slot: number              // 0~23 (KST 기준 자동 검증 시각)
   is_superadmin?: boolean
   is_active?: boolean
+  // 외부 공개 데모 게스트 세션 — true 면 모든 mutation/외부 트래픽 차단
+  is_demo?: boolean
   created_at: string
 }
 
@@ -282,6 +284,17 @@ export interface PasswordLoginRequest {
 }
 
 export interface PasswordLoginResponse {
+  access_token: string
+  token_type: string
+  user: User
+}
+
+/* ─────────── 외부 공개 데모 로그인 ─────────── */
+export interface DemoLoginRequest {
+  token: string
+}
+
+export interface DemoLoginResponse {
   access_token: string
   token_type: string
   user: User
