@@ -30,6 +30,10 @@ import {
   MapPin,
   Trash2,
   X,
+  ExternalLink,
+  Phone,
+  Building2,
+  Calendar,
 } from 'lucide-react'
 import clsx from 'clsx'
 
@@ -52,6 +56,7 @@ import {
   type DongChangedListOut,
   type LatestRanksResponse,
   type RankCheckProgress,
+  type RankHistoryResponse,
 } from '@/api/rankTracker'
 
 /* ────────────────────────────────────────────────────────────
@@ -83,6 +88,8 @@ export default function RankTracker() {
   // 전체 초기화 모달
   const [resetModalOpen, setResetModalOpen] = useState(false)
   const [resetting, setResetting] = useState(false)
+  // 플레이스 상세 모달 (매트릭스 행 클릭)
+  const [detailPlace, setDetailPlace] = useState<RankPlaceOut | null>(null)
 
   const showToast = useCallback((msg: string) => {
     setToast(msg)
@@ -366,7 +373,11 @@ export default function RankTracker() {
 
       {/* 3) 등록동 × 키워드 매트릭스 — 현재 순위 한눈에 */}
       {list && list.items.length > 0 && (
-        <RankMatrix list={list} reloadTick={matrixReloadTick} />
+        <RankMatrix
+          list={list}
+          reloadTick={matrixReloadTick}
+          onRowClick={(p) => setDetailPlace(p)}
+        />
       )}
 
       {/* 4) 키워드별 30일 추이 그래프 N개 */}
@@ -379,6 +390,14 @@ export default function RankTracker() {
           resetting={resetting}
           onCancel={() => setResetModalOpen(false)}
           onConfirm={handleResetAll}
+        />
+      )}
+
+      {/* 플레이스 상세 모달 (매트릭스 행 클릭 시) */}
+      {detailPlace && (
+        <PlaceDetailModal
+          place={detailPlace}
+          onClose={() => setDetailPlace(null)}
         />
       )}
     </div>
@@ -1080,8 +1099,12 @@ function SummaryBar(props: {
  *  - cells = 현재 순위 (place×keyword 의 최신 rank)
  *  - 첫 컬럼 sticky
  * ──────────────────────────────────────────────────────────── */
-function RankMatrix(props: { list: RankPlaceListOut; reloadTick?: number }) {
-  const { list, reloadTick = 0 } = props
+function RankMatrix(props: {
+  list: RankPlaceListOut
+  reloadTick?: number
+  onRowClick?: (place: RankPlaceOut) => void
+}) {
+  const { list, reloadTick = 0, onRowClick } = props
 
   // 매칭 완료(place_id 있음)된 행만 매트릭스에 표시
   const items = useMemo(() => list.items.filter((p) => !!p.place_id), [list])
@@ -1199,9 +1222,18 @@ function RankMatrix(props: { list: RankPlaceListOut; reloadTick?: number }) {
           </thead>
           <tbody>
             {items.map((p) => (
-              <tr key={p.id} className="border-t border-slate-100 hover:bg-blue-50/30">
+              <tr
+                key={p.id}
+                onClick={() => onRowClick?.(p)}
+                className={clsx(
+                  'border-t border-slate-100 hover:bg-blue-50/30',
+                  onRowClick && 'cursor-pointer',
+                )}
+              >
                 <td className="px-3 py-2 sticky left-0 bg-white z-10 border-r border-slate-100">
-                  <div className="font-semibold">{p.business_name || '-'}</div>
+                  <div className="font-semibold text-blue-700 hover:underline">
+                    {p.business_name || '-'}
+                  </div>
                   <div className="text-[11px] text-ink-2 flex items-center gap-1 mt-0.5">
                     <span className="px-1 rounded bg-slate-100">
                       {p.registered_dong || '-'}
@@ -1570,6 +1602,369 @@ function MultiLineChart(props: { series: KeywordSeriesEntry[] }) {
             )}
           </div>
         ))}
+      </div>
+    </div>
+  )
+}
+
+/* ────────────────────────────────────────────────────────────
+ * 컴포넌트: 플레이스 상세 모달
+ *  - 매트릭스 행 클릭 시 오픈
+ *  - 업체 기본정보(070/등록동/실제 노출동/place_id/매칭일시)
+ *  - 키워드별 최신 순위 + 7일/30일 변동
+ *  - 네이버 플레이스(m.place.naver.com) 외부 링크
+ * ──────────────────────────────────────────────────────────── */
+function PlaceDetailModal(props: {
+  place: RankPlaceOut
+  onClose: () => void
+}) {
+  const { place, onClose } = props
+
+  const [history, setHistory] = useState<RankHistoryResponse | null>(null)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  // ESC 키로 닫기
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [onClose])
+
+  // history fetch (30일)
+  useEffect(() => {
+    let cancelled = false
+    setLoading(true)
+    setError(null)
+    getRankHistory(place.id, 30)
+      .then((resp) => {
+        if (!cancelled) setHistory(resp)
+      })
+      .catch((e) => {
+        if (!cancelled) setError((e as Error).message || '이력 조회 실패')
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [place.id])
+
+  // 키워드별 최신/7일전/30일전 rank 추출
+  const summaries = useMemo(() => {
+    if (!history) {
+      return place.tracking_keywords.map((kw) => ({
+        keyword: kw,
+        latest: null as number | null,
+        latestOOR: false,
+        latestDate: null as string | null,
+        diff7: null as number | null,
+        diff30: null as number | null,
+        points: 0,
+      }))
+    }
+    const byKw = new Map(history.series.map((s) => [s.keyword, s.points]))
+    return place.tracking_keywords.map((kw) => {
+      const pts = byKw.get(kw) ?? []
+      const filled = pts.filter((p) => p.rank != null) // 75위 밖이어도 out_of_range로 표기됨
+      const last = pts[pts.length - 1] ?? null
+      const latest = last?.rank ?? null
+      const latestOOR = !!last?.out_of_range
+      const latestDate = last?.check_date ?? null
+      // 7일/30일 전 비교: 동일 시리즈 내 인덱스 기준 (최신 = 마지막)
+      const pickPast = (daysAgo: number): number | null => {
+        if (pts.length < 2) return null
+        // pts는 check_date asc 정렬 가정. daysAgo 만큼 떨어진 가까운 포인트.
+        const target = pts.length - 1 - daysAgo
+        if (target < 0) return null
+        const p = pts[target]
+        return p?.rank ?? null
+      }
+      const past7 = pickPast(7)
+      const past30 = pickPast(Math.min(30, pts.length - 1))
+      const diff = (past: number | null): number | null => {
+        if (latest == null || past == null) return null
+        return past - latest // 양수=상승(과거보다 좋아짐), 음수=하락
+      }
+      return {
+        keyword: kw,
+        latest,
+        latestOOR,
+        latestDate,
+        diff7: diff(past7),
+        diff30: diff(past30),
+        points: filled.length,
+      }
+    })
+  }, [history, place.tracking_keywords])
+
+  const naverPlaceUrl = place.place_id
+    ? `https://m.place.naver.com/place/${place.place_id}/home`
+    : null
+  const naverMapUrl = place.place_id
+    ? `https://m.map.naver.com/search?query=${encodeURIComponent(
+        (place.registered_dong ?? '') + ' ' + (place.business_name ?? ''),
+      )}`
+    : null
+
+  const rankBadge = (rank: number | null, oor: boolean) => {
+    if (rank == null && !oor) {
+      return <span className="text-ink-2 text-xs">—</span>
+    }
+    if (oor || (rank != null && rank > 75)) {
+      return (
+        <span className="px-2 py-0.5 rounded font-bold text-xs bg-rose-100 text-rose-700">
+          75위 밖
+        </span>
+      )
+    }
+    const r = rank as number
+    const tone =
+      r <= 3
+        ? 'bg-emerald-100 text-emerald-800'
+        : r <= 10
+          ? 'bg-blue-100 text-blue-800'
+          : r <= 30
+            ? 'bg-slate-100 text-slate-800'
+            : 'bg-amber-100 text-amber-800'
+    return (
+      <span className={clsx('px-2 py-0.5 rounded font-bold text-xs', tone)}>
+        {r}위
+      </span>
+    )
+  }
+
+  const diffBadge = (d: number | null) => {
+    if (d == null) return <span className="text-ink-2 text-[11px]">—</span>
+    if (d === 0)
+      return <span className="text-ink-2 text-[11px] font-semibold">±0</span>
+    if (d > 0)
+      return (
+        <span className="text-emerald-700 text-[11px] font-semibold">
+          ▲{d}
+        </span>
+      )
+    return (
+      <span className="text-rose-600 text-[11px] font-semibold">▼{-d}</span>
+    )
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4 py-6"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose()
+      }}
+    >
+      <div className="bg-white rounded-xl shadow-2xl max-w-2xl w-full max-h-[90vh] flex flex-col">
+        {/* 헤더 */}
+        <div className="flex items-center gap-2 px-5 py-4 border-b border-slate-200">
+          <Building2 className="text-blue-600 shrink-0" size={20} />
+          <div className="flex-1 min-w-0">
+            <h3 className="text-base font-bold truncate">
+              {place.business_name || '(상호 미등록)'}
+            </h3>
+            <div className="text-[11px] text-ink-2 mt-0.5 flex items-center gap-1 flex-wrap">
+              <span className="px-1 rounded bg-slate-100">
+                {place.registered_dong || '-'}
+              </span>
+              {place.dong_changed && place.actual_dong && (
+                <span className="px-1 rounded bg-amber-100 text-amber-800 inline-flex items-center gap-0.5">
+                  <MapPin size={10} />
+                  실제 {place.actual_dong}
+                </span>
+              )}
+              <span
+                className={clsx(
+                  'px-1 rounded font-semibold',
+                  place.match_status === 'AUTO_MATCHED'
+                    ? 'bg-emerald-100 text-emerald-800'
+                    : place.match_status === 'NEEDS_MANUAL'
+                      ? 'bg-amber-100 text-amber-800'
+                      : 'bg-slate-100 text-slate-700',
+                )}
+              >
+                {place.match_status ?? 'PENDING_MATCH'}
+              </span>
+            </div>
+          </div>
+          <button
+            onClick={onClose}
+            className="ml-2 p-1 rounded hover:bg-slate-100"
+            aria-label="닫기"
+          >
+            <X size={16} className="text-ink-2" />
+          </button>
+        </div>
+
+        {/* 본문 — 스크롤 */}
+        <div className="px-5 py-4 overflow-y-auto flex-1 space-y-4">
+          {/* 기본 정보 */}
+          <section>
+            <h4 className="text-xs font-bold text-ink-2 mb-2 uppercase tracking-wide">
+              기본 정보
+            </h4>
+            <div className="text-xs grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1.5">
+              <div className="flex items-center gap-1.5">
+                <Phone size={12} className="text-ink-2 shrink-0" />
+                <span className="text-ink-2">070전번:</span>
+                <span className="font-mono">{place.phone}</span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <MapPin size={12} className="text-ink-2 shrink-0" />
+                <span className="text-ink-2">등록동:</span>
+                <span className="font-semibold">
+                  {place.registered_dong || '-'}
+                </span>
+              </div>
+              {place.matched?.category && (
+                <div className="flex items-center gap-1.5">
+                  <span className="text-ink-2">카테고리:</span>
+                  <span>{place.matched.category}</span>
+                </div>
+              )}
+              {place.matched?.address && (
+                <div className="flex items-center gap-1.5 sm:col-span-2">
+                  <span className="text-ink-2">매칭 주소:</span>
+                  <span className="text-ink-1">{place.matched.address}</span>
+                </div>
+              )}
+              <div className="flex items-center gap-1.5">
+                <span className="text-ink-2">place_id:</span>
+                <span className="font-mono text-[11px]">
+                  {place.place_id || '-'}
+                </span>
+              </div>
+              {place.matched_at && (
+                <div className="flex items-center gap-1.5">
+                  <Calendar size={12} className="text-ink-2 shrink-0" />
+                  <span className="text-ink-2">매칭일시:</span>
+                  <span className="text-[11px]">
+                    {new Date(place.matched_at).toLocaleString('ko-KR')}
+                  </span>
+                </div>
+              )}
+            </div>
+
+            {/* 외부 링크 */}
+            {(naverPlaceUrl || naverMapUrl) && (
+              <div className="flex items-center gap-2 mt-3">
+                {naverPlaceUrl && (
+                  <a
+                    href={naverPlaceUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 text-xs font-semibold px-2 py-1 rounded-md bg-emerald-100 text-emerald-800 hover:bg-emerald-200"
+                  >
+                    <ExternalLink size={11} />
+                    네이버 플레이스 열기
+                  </a>
+                )}
+                {naverMapUrl && (
+                  <a
+                    href={naverMapUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 text-xs font-semibold px-2 py-1 rounded-md bg-blue-100 text-blue-800 hover:bg-blue-200"
+                  >
+                    <Search size={11} />
+                    네이버 지도 검색
+                  </a>
+                )}
+              </div>
+            )}
+          </section>
+
+          {/* 키워드별 순위 */}
+          <section>
+            <h4 className="text-xs font-bold text-ink-2 mb-2 uppercase tracking-wide flex items-center gap-2">
+              키워드별 최신 순위 (30일 변동)
+              {loading && (
+                <Loader2
+                  className="text-blue-500 animate-spin"
+                  size={12}
+                />
+              )}
+            </h4>
+            {error ? (
+              <div className="text-xs text-rose-600 bg-rose-50 rounded px-3 py-2">
+                {error}
+              </div>
+            ) : place.tracking_keywords.length === 0 ? (
+              <div className="text-xs text-ink-2 bg-slate-50 rounded px-3 py-2">
+                추적 키워드가 없습니다.
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs border-collapse">
+                  <thead className="bg-slate-50">
+                    <tr className="text-ink-2">
+                      <th className="px-2 py-1.5 text-left font-semibold">
+                        키워드
+                      </th>
+                      <th className="px-2 py-1.5 text-center font-semibold">
+                        현재 순위
+                      </th>
+                      <th className="px-2 py-1.5 text-center font-semibold">
+                        7일 전 대비
+                      </th>
+                      <th className="px-2 py-1.5 text-center font-semibold">
+                        30일 전 대비
+                      </th>
+                      <th className="px-2 py-1.5 text-center font-semibold">
+                        기록
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {summaries.map((s) => (
+                      <tr
+                        key={s.keyword}
+                        className="border-t border-slate-100"
+                      >
+                        <td className="px-2 py-1.5 font-semibold">
+                          {s.keyword}
+                        </td>
+                        <td className="px-2 py-1.5 text-center">
+                          {rankBadge(s.latest, s.latestOOR)}
+                        </td>
+                        <td className="px-2 py-1.5 text-center">
+                          {diffBadge(s.diff7)}
+                        </td>
+                        <td className="px-2 py-1.5 text-center">
+                          {diffBadge(s.diff30)}
+                        </td>
+                        <td className="px-2 py-1.5 text-center text-[11px] text-ink-2">
+                          {s.points}건
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                <p className="text-[11px] text-ink-2 mt-2">
+                  ▲ 상승(과거보다 좋은 순위) · ▼ 하락 · 75위 밖은 비교에서
+                  제외됨.
+                </p>
+              </div>
+            )}
+          </section>
+        </div>
+
+        {/* 푸터 */}
+        <div className="flex items-center gap-2 px-5 py-3 bg-slate-50 rounded-b-xl border-t border-slate-200">
+          <span className="text-[11px] text-ink-2">
+            ESC 또는 바깥 영역 클릭으로 닫기
+          </span>
+          <button
+            onClick={onClose}
+            className="ml-auto text-xs font-semibold px-3 py-1.5 rounded-md bg-slate-200 hover:bg-slate-300 text-ink-1"
+          >
+            닫기
+          </button>
+        </div>
       </div>
     </div>
   )
