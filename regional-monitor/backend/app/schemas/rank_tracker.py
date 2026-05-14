@@ -118,6 +118,53 @@ class ConfirmCandidateRequest(BaseModel):
 
 
 # ─────────────────────────────────────────────────────────
+# 수동 place_id 확정 (NEEDS_MANUAL 행을 유저가 직접 해결)
+# ─────────────────────────────────────────────────────────
+class ConfirmPlaceIdRequest(BaseModel):
+    """유저가 네이버에서 직접 찾은 place_id 를 입력해서 NEEDS_MANUAL → AUTO_MATCHED 승격.
+
+    place_id 만 받아 페이지를 fetch 한 뒤:
+      · 페이지 살아있음(200, dead 키워드 없음)
+      · 페이지의 070/가상번호가 등록 070과 일치 (또는 force=True 로 우회)
+    조건을 통과하면 AUTO_MATCHED 로 승격 + 즉시 rank check 시작.
+    """
+    place_id: str = Field(
+        ...,
+        description="네이버 place_id (예: '1062331436' 또는 URL의 마지막 숫자 부분)",
+        min_length=3,
+        max_length=20,
+    )
+    force: bool = Field(
+        default=False,
+        description=(
+            "True 면 phone 불일치도 허용. "
+            "유저가 '내 번호가 안 보여도 이 place 가 맞다'고 확신할 때 사용."
+        ),
+    )
+
+    @field_validator("place_id", mode="before")
+    @classmethod
+    def _strip_place_id(cls, v: Any) -> str:
+        s = str(v or "").strip()
+        # URL 입력 케이스: ".../place/123456789/home" → "123456789"
+        m = __import__("re").search(r"(\d{3,20})", s)
+        return m.group(1) if m else s
+
+
+class ConfirmPlaceIdResponse(BaseModel):
+    """수동 확정 결과."""
+    place_pk: int
+    place_id: str
+    status: str                 # AUTO_MATCHED / FAILED
+    actual_name: str | None = None
+    actual_phone: str | None = None
+    actual_address: str | None = None
+    phone_match: bool           # 페이지 phone 이 등록 070 과 일치했는지
+    forced: bool                # force=True 로 phone 불일치를 우회했는지
+    message: str | None = None
+
+
+# ─────────────────────────────────────────────────────────
 # 변경 노출 배너용 응답 (대시보드 상단)
 # ─────────────────────────────────────────────────────────
 class DongChangedItem(BaseModel):

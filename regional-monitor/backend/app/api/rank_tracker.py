@@ -18,6 +18,8 @@ from app.models.rank_history import PlaceRankHistory
 from app.models.user import User
 from app.schemas.rank_tracker import (
     ConfirmCandidateRequest,
+    ConfirmPlaceIdRequest,
+    ConfirmPlaceIdResponse,
     DongChangedItem,
     DongChangedListOut,
     LatestRankCell,
@@ -38,6 +40,7 @@ from app.schemas.rank_tracker import (
     RunRankCheckResponse,
 )
 from app.services.place_matcher import (
+    MatchCandidate,
     deserialize_candidates,
     deserialize_match,
     match_one,
@@ -529,6 +532,154 @@ async def confirm_candidate(
         detail=(
             "후보 확정 엔드포인트는 폐기되었습니다. "
             "070 매칭은 시스템이 자동 확정하며, 변경 노출은 대시보드 배너로 안내됩니다."
+        ),
+    )
+
+
+# ─────────────────────────────────────────────────────────
+# 수동 place_id 확정 — NEEDS_MANUAL 행을 유저가 직접 해결
+# ─────────────────────────────────────────────────────────
+@router.post(
+    "/places/{place_pk}/confirm-place-id",
+    response_model=ConfirmPlaceIdResponse,
+)
+async def confirm_place_id(
+    place_pk: int,
+    req: ConfirmPlaceIdRequest,
+    background_tasks: BackgroundTasks,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> ConfirmPlaceIdResponse:
+    """유저가 네이버에서 찾은 place_id 를 입력하면, 해당 페이지의 phone을
+    검증한 뒤 NEEDS_MANUAL → AUTO_MATCHED 로 승격하고 즉시 rank check 시작.
+
+    검증 절차:
+      1) m.place.naver.com/place/{place_id}/home 페이지 fetch
+      2) 페이지 alive (200 + dead 키워드 없음) 확인
+      3) 페이지의 phone/virtual_phone 이 등록 070 과 일치하는지 확인
+         · 일치 → AUTO_MATCHED 승격
+         · 불일치 + force=False → 400 (유저에게 force 옵션 안내)
+         · 불일치 + force=True  → AUTO_MATCHED 승격 (수동 강제)
+      4) 승격되면 백그라운드로 rank check 트리거
+    """
+    import httpx
+    from app.services.place_id_checker import check_place
+
+    q = await db.execute(
+        select(RegisteredPlace).where(
+            RegisteredPlace.id == place_pk,
+            RegisteredPlace.user_id == user.id,
+        )
+    )
+    p = q.scalar_one_or_none()
+    if not p:
+        raise HTTPException(404, "place not found")
+
+    pid = req.place_id.strip()
+    if not pid.isdigit():
+        raise HTTPException(400, "place_id 는 숫자여야 합니다 (네이버 URL의 마지막 숫자 부분)")
+
+    # 네이버 m.place 페이지 검증
+    sample = {
+        "place_id": pid,
+        "phone": p.phone or "",
+        "expected_dong": p.registered_dong or "",
+        "expected_biz": p.business_name or "",
+    }
+    async with httpx.AsyncClient(timeout=20.0) as client:
+        try:
+            check = await check_place(client, sample)
+        except Exception as e:  # noqa: BLE001
+            log.exception("confirm_place_id: check_place failed: %s", e)
+            raise HTTPException(502, f"네이버 페이지 검증 실패: {type(e).__name__}")
+
+    # 페이지 자체가 죽어있으면 거부
+    if not check.place_alive or check.verdict == "DEAD":
+        raise HTTPException(
+            400,
+            f"place_id={pid} 페이지가 존재하지 않습니다 (verdict={check.verdict}). "
+            f"네이버에서 다시 확인해주세요.",
+        )
+    if check.verdict == "PENDING":
+        raise HTTPException(
+            503,
+            f"네이버 일시 오류로 검증 불가 ({check.detail}). 잠시 후 다시 시도해주세요.",
+        )
+
+    # phone 일치 여부 판정
+    target_norm = re.sub(r"\D+", "", p.phone or "")
+    actual_norm = re.sub(r"\D+", "", check.actual_phone or "")
+    phone_match = bool(target_norm) and (target_norm == actual_norm)
+
+    if not phone_match and not req.force:
+        # 유저에게 force 옵션 제시
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "PHONE_MISMATCH",
+                "message": (
+                    f"입력한 place_id 의 전화번호({check.actual_phone or '없음'})가 "
+                    f"등록 070({p.phone}) 과 일치하지 않습니다. "
+                    f"그래도 이 place 가 맞다면 force=true 로 다시 요청해주세요."
+                ),
+                "actual_name": check.actual_name,
+                "actual_phone": check.actual_phone,
+                "actual_address": check.actual_address,
+            },
+        )
+
+    # AUTO_MATCHED 로 승격
+    p.place_id = pid
+    p.match_status = "AUTO_MATCHED"
+    p.match_confidence = 100 if phone_match else 50  # 강제 승격은 신뢰도 50
+    p.matched_at = now_kst()
+
+    reasons = ["manual_confirm"]
+    if phone_match:
+        reasons.append("phone_matched")
+    else:
+        reasons.append("forced_no_phone_match")
+
+    matched = MatchCandidate(
+        place_id=pid,
+        name=check.actual_name or "",
+        category=check.actual_category or "",
+        phone=check.actual_phone or "",
+        virtual_phone="",
+        address=check.actual_address or "",
+        reasons=reasons,
+    )
+    p.match_candidates = serialize_match(matched)
+
+    # 등록동 변경 여부 체크
+    dong_in_addr = (p.registered_dong or "").strip()
+    addr_text = (check.actual_address or "")
+    p.dong_changed = bool(dong_in_addr) and (dong_in_addr not in addr_text)
+    if p.dong_changed:
+        # 실제 노출동 추출 (간단 정규식)
+        m_dong = re.search(r"([가-힣]{1,6}\d{0,2}동)(?![가-힣])", addr_text)
+        p.actual_dong = m_dong.group(1) if m_dong else None
+    else:
+        p.actual_dong = None
+
+    await db.commit()
+
+    # 즉시 rank check 트리거 (백그라운드)
+    background_tasks.add_task(_run_rank_check_for_ids, user.id, [place_pk])
+
+    return ConfirmPlaceIdResponse(
+        place_pk=place_pk,
+        place_id=pid,
+        status="AUTO_MATCHED",
+        actual_name=check.actual_name or None,
+        actual_phone=check.actual_phone or None,
+        actual_address=check.actual_address or None,
+        phone_match=phone_match,
+        forced=(not phone_match and req.force),
+        message=(
+            "매칭이 확정되었습니다. 곧 순위가 채워집니다."
+            if phone_match else
+            "전화번호 불일치를 우회하여 강제 매칭했습니다. 결과를 확인해주세요."
         ),
     )
 

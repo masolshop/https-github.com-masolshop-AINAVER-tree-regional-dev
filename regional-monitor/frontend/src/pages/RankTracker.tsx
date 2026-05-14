@@ -45,6 +45,7 @@ import {
   getRankHistory,
   getRankProgress,
   resetAllRankData,
+  confirmPlaceId,
   type RankUploadRow,
   type RankPlaceOut,
   type RankPlaceListOut,
@@ -350,6 +351,19 @@ export default function RankTracker() {
         <ProgressBanner progress={progress} />
       )}
 
+      {/* 수동확인 필요 — NEEDS_MANUAL 행 직접 해결 */}
+      {list && list.needs_manual > 0 && (
+        <NeedsManualPanel
+          list={list}
+          onResolved={async () => {
+            await fetchAll()
+            await fetchProgress()
+            setMatrixReloadTick((n) => n + 1)
+          }}
+          onToast={showToast}
+        />
+      )}
+
       {/* 3) 등록동 × 키워드 매트릭스 — 현재 순위 한눈에 */}
       {list && list.items.length > 0 && (
         <RankMatrix list={list} reloadTick={matrixReloadTick} />
@@ -456,6 +470,280 @@ function ResetConfirmModal(props: {
           </button>
         </div>
       </div>
+    </div>
+  )
+}
+
+/* ────────────────────────────────────────────────────────────
+ * 컴포넌트: 수동확인 필요 패널
+ *  - NEEDS_MANUAL 행 목록 + 행마다 "네이버에서 찾기" 링크 + place_id 입력
+ *  - 입력된 place_id 의 phone 이 등록 070 과 일치하면 AUTO_MATCHED 로 승격
+ *  - phone 불일치 시 409 + force 옵션 안내 → 유저가 "그래도 등록" 누르면 force=true
+ *
+ * UX 배경:
+ *   업로드된 070 중 상당수가 네이버 미등록(혹은 검색에 안 잡히는 케이스).
+ *   서버측 자동 매칭으론 도달 불가능하므로 유저가 직접 place_id 를 붙여넣어
+ *   해결할 수 있도록 한다. 네이버 검색 페이지를 새 탭으로 띄워주고,
+ *   URL 마지막 숫자(place_id) 만 복사해서 입력하면 검증+승격.
+ * ──────────────────────────────────────────────────────────── */
+function NeedsManualPanel(props: {
+  list: RankPlaceListOut
+  onResolved: () => void | Promise<void>
+  onToast: (msg: string) => void
+}) {
+  const { list, onResolved, onToast } = props
+
+  // NEEDS_MANUAL + (place_id 없음) 행만 추출
+  const items = useMemo(
+    () =>
+      list.items.filter(
+        (p) => p.match_status === 'NEEDS_MANUAL' || (!p.place_id && p.match_status !== 'AUTO_MATCHED'),
+      ),
+    [list],
+  )
+
+  const [expanded, setExpanded] = useState(false)
+
+  if (items.length === 0) return null
+
+  return (
+    <Card className="p-0 overflow-hidden">
+      <button
+        onClick={() => setExpanded((v) => !v)}
+        className="w-full px-4 py-3 border-b border-slate-200 bg-amber-50 hover:bg-amber-100/70 flex items-center gap-2 text-left"
+      >
+        <AlertTriangle className="text-amber-600" size={18} />
+        <h2 className="text-base font-bold text-amber-900">
+          수동확인 필요 ({items.length}건)
+        </h2>
+        <span className="text-xs text-amber-700">
+          {expanded
+            ? '접어두기'
+            : '클릭해서 펼치고 네이버에서 직접 place_id 를 찾아 입력하세요'}
+        </span>
+        <span className="ml-auto">
+          {expanded ? (
+            <ChevronUp size={16} className="text-amber-700" />
+          ) : (
+            <ChevronDown size={16} className="text-amber-700" />
+          )}
+        </span>
+      </button>
+
+      {expanded && (
+        <div className="px-4 py-3 space-y-2 max-h-[520px] overflow-y-auto">
+          <div className="text-xs text-ink-2 bg-amber-50 rounded-lg px-3 py-2 ring-1 ring-amber-200">
+            <strong className="text-amber-800">왜 수동 확인이 필요한가요?</strong>{' '}
+            업로드된 070 번호 중 일부는 네이버 플레이스에 등록되지 않았거나
+            검색 결과 75건 안에 노출되지 않아 자동 매칭이 불가능합니다.
+            아래 행마다 "네이버에서 찾기" 를 눌러 직접 본인 업체 페이지를
+            연 다음, URL 의 마지막 숫자(place_id) 를 복사해서 입력하면
+            매칭이 완료됩니다.
+          </div>
+          {items.map((p) => (
+            <NeedsManualRow
+              key={p.id}
+              place={p}
+              onResolved={onResolved}
+              onToast={onToast}
+            />
+          ))}
+        </div>
+      )}
+    </Card>
+  )
+}
+
+/* NEEDS_MANUAL 1행 — 등록정보 + 네이버 검색 링크 + place_id 입력 + 확정 버튼 */
+function NeedsManualRow(props: {
+  place: RankPlaceOut
+  onResolved: () => void | Promise<void>
+  onToast: (msg: string) => void
+}) {
+  const { place, onResolved, onToast } = props
+
+  const [placeIdInput, setPlaceIdInput] = useState('')
+  const [submitting, setSubmitting] = useState(false)
+  // 409 PHONE_MISMATCH 응답 후 force 강제 모드
+  const [forceMode, setForceMode] = useState(false)
+  const [mismatchInfo, setMismatchInfo] = useState<{
+    actual_name?: string
+    actual_phone?: string
+    actual_address?: string
+  } | null>(null)
+
+  // 네이버 모바일 지도 검색 URL — 시군구 + 첫 키워드 조합 (없으면 동 + 키워드)
+  const naverSearchUrl = useMemo(() => {
+    const dong = (place.registered_dong || '').trim()
+    const kw = place.tracking_keywords[0] || place.business_name || ''
+    const q = [dong, kw].filter(Boolean).join(' ')
+    return `https://m.map.naver.com/search?query=${encodeURIComponent(q)}`
+  }, [place])
+
+  const handleConfirm = useCallback(
+    async (useForce: boolean) => {
+      const raw = placeIdInput.trim()
+      // URL 또는 숫자에서 place_id 추출
+      const m = raw.match(/(\d{3,20})/)
+      const pid = m ? m[1] : ''
+      if (!pid) {
+        onToast('place_id 를 입력해주세요 (네이버 URL 의 마지막 숫자 부분).')
+        return
+      }
+      setSubmitting(true)
+      try {
+        const resp = await confirmPlaceId(place.id, {
+          place_id: pid,
+          force: useForce,
+        })
+        onToast(
+          resp.message ||
+            `매칭 완료: ${resp.actual_name || resp.place_id} (${
+              resp.phone_match ? '전번 일치' : '강제 매칭'
+            })`,
+        )
+        setPlaceIdInput('')
+        setForceMode(false)
+        setMismatchInfo(null)
+        await onResolved()
+      } catch (e: any) {
+        const status = e?.response?.status ?? e?.status
+        const detail = e?.response?.data?.detail ?? e?.body?.detail ?? e?.data?.detail
+        if (status === 409 && detail && typeof detail === 'object' && detail.code === 'PHONE_MISMATCH') {
+          // 전화 불일치 — force 옵션 노출
+          setMismatchInfo({
+            actual_name: detail.actual_name,
+            actual_phone: detail.actual_phone,
+            actual_address: detail.actual_address,
+          })
+          setForceMode(true)
+        } else {
+          const msg =
+            typeof detail === 'string'
+              ? detail
+              : detail?.message || e?.message || '확정 실패'
+          onToast('확정 실패: ' + msg)
+        }
+      } finally {
+        setSubmitting(false)
+      }
+    },
+    [place.id, placeIdInput, onResolved, onToast],
+  )
+
+  return (
+    <div className="rounded-lg border border-amber-200 bg-amber-50/30 p-3">
+      <div className="flex flex-wrap items-start gap-x-3 gap-y-1 text-xs mb-2">
+        <span className="font-bold text-sm text-ink-1">
+          {place.business_name || '-'}
+        </span>
+        <span className="px-1.5 py-0.5 rounded bg-slate-100 text-ink-2">
+          {place.phone}
+        </span>
+        <span className="px-1.5 py-0.5 rounded bg-slate-100 text-ink-2 inline-flex items-center gap-1">
+          <MapPin size={11} />
+          {place.registered_dong || '-'}
+        </span>
+        {place.tracking_keywords.slice(0, 5).map((k) => (
+          <span
+            key={k}
+            className="px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 text-[11px]"
+          >
+            {k}
+          </span>
+        ))}
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2">
+        <a
+          href={naverSearchUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-xs font-semibold px-2.5 py-1.5 rounded-md bg-emerald-600 hover:bg-emerald-700 text-white inline-flex items-center gap-1"
+        >
+          <Search size={12} />
+          네이버에서 찾기
+        </a>
+        <input
+          type="text"
+          value={placeIdInput}
+          onChange={(e) => {
+            setPlaceIdInput(e.target.value)
+            // 입력 바뀌면 force 모드 리셋
+            if (forceMode) {
+              setForceMode(false)
+              setMismatchInfo(null)
+            }
+          }}
+          placeholder="place_id 또는 네이버 URL 붙여넣기"
+          className="flex-1 min-w-[200px] text-xs px-2 py-1.5 rounded-md ring-1 ring-slate-300 focus:ring-blue-500 focus:outline-none"
+          disabled={submitting}
+        />
+        {!forceMode && (
+          <button
+            onClick={() => handleConfirm(false)}
+            disabled={submitting || !placeIdInput.trim()}
+            className="text-xs font-semibold px-3 py-1.5 rounded-md bg-blue-600 hover:bg-blue-700 text-white inline-flex items-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {submitting ? (
+              <Loader2 size={12} className="animate-spin" />
+            ) : (
+              <CheckCircle2 size={12} />
+            )}
+            확정
+          </button>
+        )}
+      </div>
+
+      {forceMode && mismatchInfo && (
+        <div className="mt-2 rounded-md bg-rose-50 ring-1 ring-rose-200 px-3 py-2 text-xs">
+          <div className="font-semibold text-rose-800 mb-1">
+            ⚠️ 전화번호 불일치
+          </div>
+          <div className="text-ink-2 space-y-0.5">
+            <div>
+              · 등록 070: <strong>{place.phone}</strong>
+            </div>
+            <div>
+              · 네이버 페이지 전번:{' '}
+              <strong>{mismatchInfo.actual_phone || '없음'}</strong>
+            </div>
+            {mismatchInfo.actual_name && (
+              <div>
+                · 페이지 상호: <strong>{mismatchInfo.actual_name}</strong>
+              </div>
+            )}
+            {mismatchInfo.actual_address && (
+              <div>· 페이지 주소: {mismatchInfo.actual_address}</div>
+            )}
+          </div>
+          <div className="mt-2 flex items-center gap-2">
+            <button
+              onClick={() => handleConfirm(true)}
+              disabled={submitting}
+              className="text-xs font-semibold px-3 py-1.5 rounded-md bg-rose-600 hover:bg-rose-700 text-white inline-flex items-center gap-1 disabled:opacity-50"
+            >
+              {submitting ? (
+                <Loader2 size={12} className="animate-spin" />
+              ) : (
+                <AlertTriangle size={12} />
+              )}
+              그래도 이 place 로 강제 매칭
+            </button>
+            <button
+              onClick={() => {
+                setForceMode(false)
+                setMismatchInfo(null)
+                setPlaceIdInput('')
+              }}
+              disabled={submitting}
+              className="text-xs font-semibold px-3 py-1.5 rounded-md bg-white hover:bg-slate-100 ring-1 ring-slate-300 disabled:opacity-50"
+            >
+              다시 입력
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

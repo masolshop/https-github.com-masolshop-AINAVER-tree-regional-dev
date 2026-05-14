@@ -208,3 +208,31 @@ export interface ResetAllResponse {
 
 export const resetAllRankData = () =>
   api.del<ResetAllResponse>('/api/v1/rank-tracker/reset-all', { timeoutMs: 60_000 })
+
+/* ─────────── 수동 place_id 확정 (NEEDS_MANUAL 해결) ─────────── */
+export interface ConfirmPlaceIdRequest {
+  place_id: string
+  force?: boolean
+}
+
+export interface ConfirmPlaceIdResponse {
+  place_pk: number
+  place_id: string
+  status: string
+  actual_name: string | null
+  actual_phone: string | null
+  actual_address: string | null
+  phone_match: boolean
+  forced: boolean
+  message: string | null
+}
+
+export const confirmPlaceId = (
+  placePk: number,
+  req: ConfirmPlaceIdRequest,
+) =>
+  api.post<ConfirmPlaceIdResponse>(
+    `/api/v1/rank-tracker/places/${placePk}/confirm-place-id`,
+    req,
+    { timeoutMs: 30_000 },
+  )
