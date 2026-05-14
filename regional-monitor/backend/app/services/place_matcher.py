@@ -293,6 +293,114 @@ async def _search_by_phone(
 
 
 # ─────────────────────────────────────────────────────────
+# 폴백 매칭 — 070 검색 0건일 때 상호명+동으로 단일 후보 추출
+# ─────────────────────────────────────────────────────────
+def _name_tokens(name: str) -> list[str]:
+    """상호명을 검색 가능한 토큰으로 분해.
+
+    "24시대형렉카.연합렉카" → ["24시대형렉카", "연합렉카"]
+    영문/숫자/한글만 남기고 구분자(./,·|·-)로 split.
+    """
+    if not name:
+        return []
+    # 구분자: 점/쉼표/슬래시/공백/하이픈/콜론/괄호 등
+    parts = re.split(r"[\s./,·\-|()\[\]{}:;]+", name)
+    tokens: list[str] = []
+    for p in parts:
+        p = p.strip()
+        if len(p) >= 2 and p not in tokens:
+            tokens.append(p)
+    return tokens
+
+
+async def _search_by_name_and_dong(
+    *,
+    business_name: str,
+    registered_dong: str,
+    tracking_keywords: list[str] | None,
+    client: httpx.AsyncClient | None,
+) -> MapPlace | None:
+    """070 매칭 0건일 때 상호명+동으로 단일 후보 1건 자동 추출.
+
+    승격 조건 (false-positive 회피):
+      · 검색 결과 중 "주소에 등록동 포함" + "이름 토큰 1개 이상 포함" 인 것만 후보
+      · 그 후보가 정확히 1건이면 AUTO_MATCHED, 0건이거나 2건 이상이면 None
+    """
+    name = (business_name or "").strip()
+    dong = (registered_dong or "").strip()
+    if not name or not dong:
+        return None
+
+    sido, sigungu, dong_only = _parse_registered_address(registered_dong)
+    tokens = _name_tokens(name)
+    if not tokens:
+        return None
+
+    # 검색 쿼리: 동 + 상호 + (옵션) 동 + 첫 토큰
+    queries: list[str] = []
+
+    def _add(q: str) -> None:
+        q = q.strip()
+        if q and q not in queries:
+            queries.append(q)
+
+    # 1) 동 + 전체 상호
+    if sigungu and dong_only:
+        _add(f"{sigungu} {dong_only} {name}")
+    if dong_only:
+        _add(f"{dong_only} {name}")
+    # 2) 동 + 첫 이름 토큰 (브랜드 prefix)
+    first_token = tokens[0]
+    if dong_only and first_token != name:
+        _add(f"{dong_only} {first_token}")
+    # 3) 동 + 첫 추적 키워드 (카테고리)
+    first_kw = next(
+        (k.strip() for k in (tracking_keywords or []) if k and k.strip()),
+        None,
+    )
+    if dong_only and first_kw:
+        _add(f"{dong_only} {first_kw}")
+
+    if not queries:
+        return None
+
+    candidates: list[MapPlace] = []
+    seen_pids: set[str] = set()
+
+    for q in queries:
+        items = await _search_once(q, client=client)
+        for it in items:
+            if not it.place_id or it.place_id in seen_pids:
+                continue
+            haystack = " ".join([it.address or "", it.road_address or ""])
+            # 등록동 포함 필수
+            if dong_only and dong_only not in haystack:
+                continue
+            # 이름 토큰 중 하나 이상 포함 필수
+            if not any(tok in (it.name or "") for tok in tokens):
+                continue
+            candidates.append(it)
+            seen_pids.add(it.place_id)
+        await asyncio.sleep(MATCH_PACE_SEC)
+        # 첫 쿼리에서 후보가 충분히 좁혀지면 추가 쿼리 생략
+        if len(candidates) >= 3:
+            break
+
+    # 정확히 1건일 때만 자동 승격
+    if len(candidates) == 1:
+        log.info(
+            "place_matcher fallback matched '%s' / '%s' → place_id=%s",
+            name, dong, candidates[0].place_id,
+        )
+        return candidates[0]
+    log.info(
+        "place_matcher fallback ambiguous: name='%s' dong='%s' candidates=%d",
+        name, dong, len(candidates),
+    )
+    return None
+
+
+# ─────────────────────────────────────────────────────────
 # 메인 진입점 — 070+동 단일 매칭
 # ─────────────────────────────────────────────────────────
 async def match_one(
@@ -336,12 +444,27 @@ async def match_one(
             error=f"search_error: {type(e).__name__}: {e}",
         )
 
+    fallback_used = False
     if not hit:
-        # 070 매칭 0건 — 매우 예외적 케이스 (인덱싱 지연/번호 변경 등)
-        return MatchResult(status="NEEDS_MANUAL", place_id=None)
+        # 070 매칭 0건 — 상호명+동 폴백 매칭 시도 (false-positive 회피 위해
+        # 결과가 정확히 1건일 때만 승격).
+        try:
+            hit = await _search_by_name_and_dong(
+                business_name=business_name,
+                registered_dong=registered_dong,
+                tracking_keywords=tracking_keywords,
+                client=client,
+            )
+        except Exception as e:  # noqa: BLE001
+            log.exception("match_one fallback failed: %s", e)
+            hit = None
+        if not hit:
+            # 폴백도 실패 → NEEDS_MANUAL (프론트는 패널 숨기므로 사용자에게 보이지 않음)
+            return MatchResult(status="NEEDS_MANUAL", place_id=None)
+        fallback_used = True
 
-    # 070 일치 → 자동 확정
-    reasons = ["phone_matched"]
+    # 070 일치(또는 이름+동 폴백) → 자동 확정
+    reasons = ["name_dong_fallback_matched"] if fallback_used else ["phone_matched"]
     haystack = " ".join([hit.address or "", hit.road_address or ""])
 
     dong = (registered_dong or "").strip()
