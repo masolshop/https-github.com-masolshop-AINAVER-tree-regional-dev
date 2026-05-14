@@ -37,8 +37,9 @@ from app.services.region_loader import lookup_region_by_dong
 log = logging.getLogger(__name__)
 
 # 매칭 시 네이버 호출당 페이스 (IP 차단 회피)
-# competition 솔루션과 동일하게 0.4초 페이스 + 결과 75건으로 확대
-MATCH_PACE_SEC = 1.0
+# competition 솔루션 수준으로 끌어올림 (1.0s → 0.3s).
+# 외부 드라이버에서 Semaphore 로 동시성 제한 + retry backoff 시 (1+attempt) 배율 적용.
+MATCH_PACE_SEC = 0.3
 # 검색당 가져올 결과 개수 (competition 과 동일하게 75건 = 네이버 최대치)
 MATCH_DISPLAY = 75
 # 네이버 일시 오류 시 단일 쿼리 재시도 횟수

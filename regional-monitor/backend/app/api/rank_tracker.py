@@ -248,53 +248,73 @@ async def upload_rank_rows(
 # 매칭 워커 (백그라운드 — BackgroundTasks)
 # ─────────────────────────────────────────────────────────
 async def _run_matching_for_ids(user_id: int, place_ids: list[int]) -> None:
-    """주어진 RegisteredPlace ID 목록에 대해 place_matcher.match_one 순차 실행.
+    """주어진 RegisteredPlace ID 목록에 대해 place_matcher.match_one 을 동시 실행.
 
     정책 (070+동 단일 매칭):
       · 070 매칭 성공 → AUTO_MATCHED (등록동 다르면 dong_changed=True 플래그)
       · 070 매칭 0건 → NEEDS_MANUAL (이론상 거의 없음)
+
+    이전: 순차 for 루프 (1건씩 처리) → 296건 매칭에 5분+
+    개선: asyncio.Semaphore(MATCH_CONCURRENCY) + gather 동시 실행.
+    각 worker 는 별도 DB 세션을 사용해 commit 충돌을 회피한다.
 
     매칭 완료 후, 새로 AUTO_MATCHED 된 행에 대해 자동으로 rank check 까지 실행하여
     업로드 직후 매트릭스에 순위가 바로 채워지도록 한다.
     """
     from app.core.database import AsyncSessionLocal
 
-    newly_auto_matched_ids: list[int] = []
+    if not place_ids:
+        return
 
-    async with AsyncSessionLocal() as db:
-        for pid in place_ids:
-            try:
-                q = await db.execute(
-                    select(RegisteredPlace).where(
-                        RegisteredPlace.id == pid,
-                        RegisteredPlace.user_id == user_id,
+    # 매칭 동시성 — competition 솔루션의 CHUNK_CONCURRENCY=10 과 동등 수준.
+    MATCH_CONCURRENCY = 8
+    sem = asyncio.Semaphore(MATCH_CONCURRENCY)
+    newly_auto_matched_ids: list[int] = []
+    lock = asyncio.Lock()
+
+    async def worker(pid: int) -> None:
+        async with sem:
+            # 워커마다 독립 세션 — 동시 commit 충돌 없이 폴링 가시성 유지.
+            async with AsyncSessionLocal() as db:
+                try:
+                    q = await db.execute(
+                        select(RegisteredPlace).where(
+                            RegisteredPlace.id == pid,
+                            RegisteredPlace.user_id == user_id,
+                        )
                     )
-                )
-                p = q.scalar_one_or_none()
-                if not p:
-                    continue
-                result = await match_one(
-                    phone_070=p.phone,
-                    business_name=p.business_name or "",
-                    registered_dong=p.registered_dong or "",
-                    tracking_keywords=_csv_to_keywords(p.tracking_keywords),
-                )
-                p.match_status = result.status
-                # match_confidence는 레거시 호환용. AUTO_MATCHED=100, NEEDS_MANUAL=0
-                p.match_confidence = 100 if result.status == "AUTO_MATCHED" else 0
-                p.matched_at = now_kst()
-                if result.place_id:
-                    p.place_id = result.place_id
-                p.match_candidates = serialize_match(result.matched) if result.matched else None
-                p.dong_changed = bool(result.dong_changed)
-                p.actual_dong = result.actual_dong
-                await db.commit()
-                if result.status == "AUTO_MATCHED" and result.place_id:
-                    newly_auto_matched_ids.append(pid)
-            except Exception as e:  # noqa: BLE001
-                log.exception("matching worker failed for place_id=%s: %s", pid, e)
-                await db.rollback()
-                await asyncio.sleep(0.5)
+                    p = q.scalar_one_or_none()
+                    if not p:
+                        return
+                    result = await match_one(
+                        phone_070=p.phone,
+                        business_name=p.business_name or "",
+                        registered_dong=p.registered_dong or "",
+                        tracking_keywords=_csv_to_keywords(p.tracking_keywords),
+                    )
+                    p.match_status = result.status
+                    # match_confidence는 레거시 호환용. AUTO_MATCHED=100, NEEDS_MANUAL=0
+                    p.match_confidence = 100 if result.status == "AUTO_MATCHED" else 0
+                    p.matched_at = now_kst()
+                    if result.place_id:
+                        p.place_id = result.place_id
+                    p.match_candidates = (
+                        serialize_match(result.matched) if result.matched else None
+                    )
+                    p.dong_changed = bool(result.dong_changed)
+                    p.actual_dong = result.actual_dong
+                    await db.commit()
+                    if result.status == "AUTO_MATCHED" and result.place_id:
+                        async with lock:
+                            newly_auto_matched_ids.append(pid)
+                except Exception as e:  # noqa: BLE001
+                    log.exception("matching worker failed for place_id=%s: %s", pid, e)
+                    try:
+                        await db.rollback()
+                    except Exception:  # noqa: BLE001
+                        pass
+
+    await asyncio.gather(*(worker(pid) for pid in place_ids))
 
     # 매칭이 끝난 AUTO_MATCHED 행들에 대해 즉시 rank check 실행
     if newly_auto_matched_ids:

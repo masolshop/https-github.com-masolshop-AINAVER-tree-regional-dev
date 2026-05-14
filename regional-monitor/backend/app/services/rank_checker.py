@@ -29,9 +29,10 @@ from app.services.region_loader import lookup_region_by_dong
 log = logging.getLogger(__name__)
 
 # 차단 회피를 위한 순위 체크 호출 페이스
-RANK_PACE_SEC = 0.8
-# 동시성 (보수적으로 설정)
-RANK_CONCURRENCY = 3
+# competition 솔루션과 동일한 수준으로 끌어올림 (이전 0.8s/3concurrency → 너무 보수적)
+RANK_PACE_SEC = 0.2
+# 동시성 (competition 의 CHUNK_CONCURRENCY=10 보다 약간 보수적)
+RANK_CONCURRENCY = 8
 
 
 @dataclass
