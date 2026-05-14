@@ -13,12 +13,10 @@
  *  4) 등록동 × 키워드 매트릭스 (현재 순위 한눈에)
  *  5) 키워드별 30일 순위 추이 SVG 라인차트 (Y축 반전)
  */
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, useCallback, useEffect, useMemo, useState } from 'react'
 import {
   TrendingUp,
-  Upload,
   Download,
-  FileSpreadsheet,
   RefreshCw,
   CheckCircle2,
   AlertTriangle,
@@ -34,14 +32,17 @@ import {
   Phone,
   Building2,
   Calendar,
+  Plus,
+  Tag,
+  ArrowRight,
 } from 'lucide-react'
+import { Link } from 'react-router-dom'
 import clsx from 'clsx'
 
 import { Card } from '@/components/ui/Card'
 import { useBodyClass } from '@/hooks/useBodyClass'
 import PageSeo from '@/components/seo/PageSeo'
 import {
-  uploadRankRows,
   listRankPlaces,
   listDongChanged,
   listLatestRanks,
@@ -50,7 +51,7 @@ import {
   getRankProgress,
   resetAllRankData,
   getCompetition,
-  type RankUploadRow,
+  updateKeywords,
   type RankPlaceOut,
   type RankPlaceListOut,
   type DongChangedListOut,
@@ -79,7 +80,6 @@ export default function RankTracker() {
   const [list, setList] = useState<RankPlaceListOut | null>(null)
   const [dongChanged, setDongChanged] = useState<DongChangedListOut | null>(null)
   const [loadingList, setLoadingList] = useState(false)
-  const [uploading, setUploading] = useState(false)
   const [running, setRunning] = useState(false)
   const [toast, setToast] = useState<string | null>(null)
   // 진행 상태 (업로드 후 자동 매칭+순위체크 폴링)
@@ -150,87 +150,27 @@ export default function RankTracker() {
     return () => window.clearInterval(t)
   }, [inProgress, fetchProgress, fetchAll])
 
-  /* ── 업로드 ── */
-  const handleFile = useCallback(
-    async (file: File) => {
-      setUploading(true)
+  /* ── 추적 키워드 인라인 업데이트 (2단계 UX) ── */
+  const handleUpdateKeywords = useCallback(
+    async (placePk: number, keywords: string[]) => {
       try {
-        const { parseXlsxFile } = await import('@/utils/xlsx')
-        const rows = await parseXlsxFile(file)
-        const payload: RankUploadRow[] = rows
-          .map((row: Record<string, unknown>) => {
-            const phone = String(
-              row['070전번'] ?? row['phone'] ?? row['전화번호'] ?? row['070'] ?? '',
-            ).trim()
-            const dong = String(row['등록동'] ?? row['dong'] ?? row['동'] ?? '').trim()
-            const biz = String(
-              row['상호'] ?? row['business_name'] ?? row['업체명'] ?? '',
-            ).trim()
-            const kwRaw = String(
-              row['추적키워드'] ?? row['keywords'] ?? row['키워드'] ?? '',
-            ).trim()
-            const keywords = kwRaw
-              .split(/[,\u3001|/]+/)
-              .map((k) => k.trim())
-              .filter(Boolean)
-              .slice(0, 5)
-            return {
-              phone,
-              registered_dong: dong,
-              business_name: biz,
-              tracking_keywords: keywords,
-            }
-          })
-          .filter(
-            (r) =>
-              r.phone && r.registered_dong && r.business_name && r.tracking_keywords.length,
-          )
-
-        if (payload.length === 0) {
-          showToast(
-            '업로드 가능한 행이 없습니다. (070전번/등록동/상호/추적키워드 컬럼 확인)',
-          )
-          return
+        const resp = await updateKeywords(placePk, keywords)
+        if (resp.auto_matched) {
+          showToast('키워드 등록 완료 — 순위 자동체크가 백그라운드에서 시작됩니다.')
+        } else if (keywords.length === 0) {
+          showToast('추적 키워드 해제 완료')
+        } else {
+          showToast('키워드 등록 완료 — 매칭 대기 중')
         }
-        const resp = await uploadRankRows(payload)
-        showToast(
-          `업로드 완료 — 신규 ${resp.created} · 갱신 ${resp.updated} · 오류 ${resp.errors}건. 매칭+순위체크가 백그라운드에서 진행됩니다.`,
-        )
         await fetchAll()
-        // 업로드 직후 진행 상태 즉시 갱신 → in_progress=true 면 자동 폴링 시작
         await fetchProgress()
       } catch (e) {
-        console.error('upload failed', e)
-        showToast('업로드 실패: ' + (e as Error).message)
-      } finally {
-        setUploading(false)
+        console.error('update keywords failed', e)
+        showToast('키워드 등록 실패: ' + (e as Error).message)
       }
     },
     [fetchAll, fetchProgress, showToast],
   )
-
-  /* ── 템플릿 다운로드 ── */
-  const downloadTemplate = useCallback(async () => {
-    const { downloadXlsx } = await import('@/utils/xlsx')
-    await downloadXlsx(
-      [
-        {
-          '070전번': '070-1234-5678',
-          등록동: '압구정동',
-          상호: '예시업체명',
-          추적키워드: '강남맛집,압구정맛집',
-        },
-        {
-          '070전번': '070-9876-5432',
-          등록동: '역삼동',
-          상호: '두번째예시',
-          추적키워드: '역삼맛집',
-        },
-      ],
-      `타지역_순위자동체크_업로드템플릿_${todayKst()}.xlsx`,
-      '업로드양식',
-    )
-  }, [])
 
   /* ── 결과 Excel 다운로드 ── */
   const exportResults = useCallback(async () => {
@@ -297,7 +237,7 @@ export default function RankTracker() {
     <div className="px-4 lg:px-8 py-6 max-w-7xl mx-auto space-y-6" data-page="solution-tool">
       <PageSeo
         title="타지역 순위 자동체크 솔루션"
-        description="070전번·등록동·상호 엑셀 업로드 → 네이버 플레이스 자동 매칭 → 매일 동별 노출 순위 자동 추적."
+        description="노출관리 자동체크와 한 세트 — monitor 에 등록된 업체에 추적 키워드만 추가하면 매일 동별 노출 순위를 자동 추적합니다."
         path="/auto-rank-check"
         keywords={[
           '타지역 순위 자동체크',
@@ -316,9 +256,9 @@ export default function RankTracker() {
           타지역 순위 자동체크 솔루션
         </h1>
         <p className="text-sm text-ink-2 mt-1">
-          <strong>070전번 · 등록동 · 상호 · 추적키워드</strong> 4컬럼 엑셀 한 번 업로드 →
-          네이버 플레이스 <strong>자동 확정 매칭</strong> + 매일 자동체크로 동별 노출
-          순위를 시계열 그래프로 추적합니다.
+          <strong>노출관리 자동체크</strong>에 등록된 업체를 그대로 가져와{' '}
+          <strong>추적 키워드만 추가</strong>하면, 매일 자동체크로 동별 노출 순위를
+          시계열 그래프로 추적합니다.
         </p>
       </div>
 
@@ -334,12 +274,13 @@ export default function RankTracker() {
         <DongChangedBanner data={dongChanged} />
       )}
 
-      {/* 1) 업로드 카드 */}
-      <UploadCard
-        uploading={uploading}
-        onFile={handleFile}
-        onDownloadTemplate={downloadTemplate}
-      />
+      {/* 1) 추적 키워드 등록 — monitor 등록 업체에 키워드만 추가 (엑셀 업로드 대체) */}
+      {list && (
+        <KeywordRegistryCard
+          list={list}
+          onUpdateKeywords={handleUpdateKeywords}
+        />
+      )}
 
       {/* 2) 요약 + 액션 */}
       {list && (
@@ -443,8 +384,8 @@ function ResetConfirmModal(props: {
             <li>· 키워드별 순위 이력 (30일 추이 그래프 데이터)</li>
           </ul>
           <p className="text-xs text-amber-700 bg-amber-50 rounded-lg px-3 py-2 ring-1 ring-amber-200">
-            <strong>주의:</strong> 삭제 후 복구할 수 없습니다. 초기화 후
-            새 엑셀을 다시 업로드해야 합니다.
+            <strong>주의:</strong> 추적 키워드와 모든 순위 이력이 삭제됩니다.
+            (monitor 에 등록된 업체 자체는 그대로 유지됩니다.)
           </p>
 
           <label className="flex items-start gap-2 pt-1 cursor-pointer select-none">
@@ -495,91 +436,278 @@ function ResetConfirmModal(props: {
  * ──────────────────────────────────────────────────────────── */
 
 /* ────────────────────────────────────────────────────────────
- * 컴포넌트: 업로드 카드
+ * 컴포넌트: 추적 키워드 등록 카드 (2단계 UX — 엑셀 업로드 대체)
+ *
+ *  · monitor (노출관리 자동체크) 에 이미 등록된 업체 목록을 그대로 표시
+ *  · 070/등록동/상호는 monitor 가 채워둔 값을 그대로 사용 — 사용자는 키워드만 추가
+ *  · 키워드 칩 추가/제거 후 즉시 PATCH /places/{pk}/keywords 호출
+ *  · 빈 상태: monitor 에 업체 없으면 "노출관리에 먼저 등록" 안내 + 링크
  * ──────────────────────────────────────────────────────────── */
-function UploadCard(props: {
-  uploading: boolean
-  onFile: (f: File) => void
-  onDownloadTemplate: () => void
+function KeywordRegistryCard(props: {
+  list: RankPlaceListOut
+  onUpdateKeywords: (placePk: number, keywords: string[]) => Promise<void>
 }) {
-  const { uploading, onFile, onDownloadTemplate } = props
-  const inputRef = useRef<HTMLInputElement>(null)
-  const [drag, setDrag] = useState(false)
+  const { list, onUpdateKeywords } = props
+  const [expanded, setExpanded] = useState(false)
+
+  // 키워드 등록 우선순위: 키워드 없는 업체를 먼저 보여줌
+  const sorted = useMemo(() => {
+    const items = [...list.items]
+    items.sort((a, b) => {
+      const aNo = a.tracking_keywords.length === 0 ? 0 : 1
+      const bNo = b.tracking_keywords.length === 0 ? 0 : 1
+      if (aNo !== bNo) return aNo - bNo
+      return (a.business_name || '').localeCompare(b.business_name || '')
+    })
+    return items
+  }, [list.items])
+
+  // monitor 에 등록된 업체가 0건 → 안내 배너
+  if (list.total === 0) {
+    return (
+      <Card className="p-6 border-blue-200 ring-1 ring-blue-100 bg-blue-50/40">
+        <div className="flex items-start gap-3">
+          <div className="shrink-0 w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center">
+            <Building2 className="text-blue-600" size={20} />
+          </div>
+          <div className="flex-1">
+            <h2 className="text-base font-bold text-blue-900 mb-1">
+              먼저 노출관리 자동체크 솔루션에 업체를 등록해주세요
+            </h2>
+            <p className="text-sm text-ink-1 mb-3">
+              순위 자동체크는 <strong>노출관리 자동체크</strong>와 한 세트로 동작합니다.
+              monitor 에 등록된 070/등록동/상호 정보를 그대로 가져와, 여기서는
+              <strong> 추적 키워드만 추가</strong>하면 됩니다.
+            </p>
+            <Link
+              to="/monitor"
+              className="inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-2 rounded-md bg-blue-600 hover:bg-blue-700 text-white shadow-sm"
+            >
+              노출관리 솔루션으로 이동
+              <ArrowRight size={14} />
+            </Link>
+          </div>
+        </div>
+      </Card>
+    )
+  }
+
+  const noKeywordsCount = list.no_keywords_count
+  const withKeywordsCount = list.total - noKeywordsCount
 
   return (
-    <Card className="p-6">
-      <div className="flex items-center justify-between mb-3">
+    <Card className="p-4">
+      <div className="flex items-center justify-between mb-3 gap-2 flex-wrap">
         <h2 className="text-base font-bold flex items-center gap-2">
-          <Upload size={18} className="text-blue-600" />
-          1단계 · 엑셀 업로드
+          <Tag size={18} className="text-blue-600" />
+          1단계 · 추적 키워드 등록
+          <span className="text-xs font-normal text-ink-2 ml-1">
+            (monitor 등록 업체 {list.total}건)
+          </span>
         </h2>
-        <button
-          onClick={onDownloadTemplate}
-          className="text-xs font-semibold px-3 py-1.5 rounded-md bg-slate-100 hover:bg-slate-200 text-ink-1 inline-flex items-center gap-1"
-        >
-          <FileSpreadsheet size={14} />
-          양식 다운로드
-        </button>
+        <div className="flex items-center gap-2">
+          {noKeywordsCount > 0 && (
+            <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 ring-1 ring-amber-200">
+              키워드 미등록 {noKeywordsCount}건
+            </span>
+          )}
+          {withKeywordsCount > 0 && (
+            <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 ring-1 ring-emerald-200">
+              추적 중 {withKeywordsCount}건
+            </span>
+          )}
+          <button
+            onClick={() => setExpanded((v) => !v)}
+            className="text-xs font-semibold px-3 py-1.5 rounded-md bg-slate-100 hover:bg-slate-200 inline-flex items-center gap-1"
+          >
+            {expanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+            {expanded ? '접기' : '펼치기'}
+          </button>
+        </div>
       </div>
-      <div
-        onDragEnter={(e) => {
-          e.preventDefault()
-          setDrag(true)
-        }}
-        onDragOver={(e) => {
-          e.preventDefault()
-          setDrag(true)
-        }}
-        onDragLeave={() => setDrag(false)}
-        onDrop={(e) => {
-          e.preventDefault()
-          setDrag(false)
-          const f = e.dataTransfer.files?.[0]
-          if (f) onFile(f)
-        }}
-        onClick={() => inputRef.current?.click()}
-        className={clsx(
-          'rounded-lg border-2 border-dashed p-8 text-center cursor-pointer transition-colors',
-          drag
-            ? 'border-blue-500 bg-blue-50'
-            : 'border-slate-300 hover:border-blue-400 hover:bg-slate-50',
-          uploading && 'opacity-60 pointer-events-none',
-        )}
-      >
-        {uploading ? (
-          <div className="flex flex-col items-center gap-2 text-blue-600">
-            <Loader2 className="animate-spin" size={32} />
-            <p className="text-sm font-semibold">업로드 중…</p>
-          </div>
-        ) : (
-          <div className="flex flex-col items-center gap-2">
-            <Upload className="text-slate-400" size={32} />
-            <p className="text-sm font-bold text-ink-1">
-              엑셀 파일을 여기로 드래그하거나 클릭하세요
-            </p>
-            <p className="text-xs text-ink-2">
-              컬럼:{' '}
-              <code className="px-1 bg-slate-100 rounded">
-                070전번 | 등록동 | 상호 | 추적키워드
-              </code>
-              <br />
-              추적키워드는 쉼표(,)로 최대 5개
-            </p>
-          </div>
-        )}
-        <input
-          ref={inputRef}
-          type="file"
-          accept=".xlsx,.xls,.csv"
-          className="hidden"
-          onChange={(e) => {
-            const f = e.target.files?.[0]
-            if (f) onFile(f)
-            e.target.value = ''
-          }}
-        />
-      </div>
+
+      <p className="text-xs text-ink-2 mb-2">
+        monitor 가 검증한 업체에 추적 키워드만 추가하세요. 키워드를 등록하면 즉시
+        매칭(0초)되고 백그라운드에서 순위 자동체크가 시작됩니다. 키워드는 최대 5개.
+      </p>
+
+      {expanded && (
+        <div className="rounded-lg ring-1 ring-slate-200 overflow-hidden">
+          <table className="w-full text-sm">
+            <thead className="bg-slate-50 text-[11px] uppercase tracking-wider text-ink-2">
+              <tr>
+                <th className="px-3 py-2 text-left font-semibold">상호</th>
+                <th className="px-3 py-2 text-left font-semibold">등록동</th>
+                <th className="px-3 py-2 text-left font-semibold">070</th>
+                <th className="px-3 py-2 text-left font-semibold">추적 키워드</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-200">
+              {sorted.map((p) => (
+                <KeywordRegistryRow
+                  key={p.id}
+                  place={p}
+                  onSave={(kws) => onUpdateKeywords(p.id, kws)}
+                />
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </Card>
+  )
+}
+
+/* ────────────────────────────────────────────────────────────
+ * KeywordRegistryCard 의 1행 — 추적 키워드 chip 인라인 편집
+ * ──────────────────────────────────────────────────────────── */
+function KeywordRegistryRow(props: {
+  place: RankPlaceOut
+  onSave: (keywords: string[]) => Promise<void>
+}) {
+  const { place, onSave } = props
+  const [draft, setDraft] = useState<string[]>(place.tracking_keywords)
+  const [input, setInput] = useState('')
+  const [saving, setSaving] = useState(false)
+
+  // place 변경(서버 동기화) 시 draft 동기화
+  useEffect(() => {
+    setDraft(place.tracking_keywords)
+  }, [place.tracking_keywords])
+
+  const dirty = useMemo(() => {
+    if (draft.length !== place.tracking_keywords.length) return true
+    return draft.some((k, i) => k !== place.tracking_keywords[i])
+  }, [draft, place.tracking_keywords])
+
+  const addKeyword = useCallback(() => {
+    const v = input.trim()
+    if (!v) return
+    if (draft.includes(v)) {
+      setInput('')
+      return
+    }
+    if (draft.length >= 5) return
+    setDraft([...draft, v])
+    setInput('')
+  }, [draft, input])
+
+  const removeKeyword = useCallback(
+    (kw: string) => {
+      setDraft(draft.filter((k) => k !== kw))
+    },
+    [draft],
+  )
+
+  const handleSave = useCallback(async () => {
+    if (!dirty || saving) return
+    setSaving(true)
+    try {
+      await onSave(draft)
+    } finally {
+      setSaving(false)
+    }
+  }, [dirty, draft, onSave, saving])
+
+  const handleCancel = useCallback(() => {
+    setDraft(place.tracking_keywords)
+    setInput('')
+  }, [place.tracking_keywords])
+
+  return (
+    <tr className="hover:bg-slate-50/60">
+      <td className="px-3 py-2 align-top">
+        <div className="font-semibold text-ink-1 text-sm">
+          {place.business_name || <span className="text-ink-2">—</span>}
+        </div>
+        {place.dong_changed && place.actual_dong && (
+          <div className="mt-0.5 text-[10px] text-orange-700 inline-flex items-center gap-0.5">
+            <AlertTriangle size={10} />
+            실제 노출 {place.actual_dong}
+          </div>
+        )}
+      </td>
+      <td className="px-3 py-2 align-top text-xs text-ink-1">
+        {place.registered_dong || <span className="text-ink-2">—</span>}
+      </td>
+      <td className="px-3 py-2 align-top text-xs font-mono text-ink-1">
+        {place.phone}
+      </td>
+      <td className="px-3 py-2 align-top">
+        <div className="flex flex-wrap items-center gap-1.5">
+          {draft.map((kw) => (
+            <span
+              key={kw}
+              className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full bg-blue-50 text-blue-800 ring-1 ring-blue-200"
+            >
+              {kw}
+              <button
+                type="button"
+                onClick={() => removeKeyword(kw)}
+                disabled={saving}
+                className="hover:bg-blue-100 rounded-full p-0.5 disabled:opacity-50"
+                aria-label={`${kw} 제거`}
+              >
+                <X size={10} />
+              </button>
+            </span>
+          ))}
+          {draft.length < 5 && (
+            <div className="inline-flex items-center gap-1">
+              <input
+                type="text"
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault()
+                    addKeyword()
+                  }
+                }}
+                placeholder={draft.length === 0 ? '추적 키워드 입력' : '+ 추가'}
+                disabled={saving}
+                className="text-[11px] px-2 py-0.5 rounded-md ring-1 ring-slate-300 focus:ring-blue-500 focus:outline-none w-24 disabled:opacity-50"
+              />
+              {input.trim() && (
+                <button
+                  type="button"
+                  onClick={addKeyword}
+                  disabled={saving}
+                  className="text-[11px] font-semibold px-2 py-0.5 rounded-md bg-slate-100 hover:bg-slate-200 inline-flex items-center gap-0.5 disabled:opacity-50"
+                >
+                  <Plus size={11} />
+                </button>
+              )}
+            </div>
+          )}
+          {dirty && (
+            <>
+              <button
+                type="button"
+                onClick={handleSave}
+                disabled={saving}
+                className="text-[11px] font-semibold px-2 py-0.5 rounded-md bg-blue-600 hover:bg-blue-700 text-white inline-flex items-center gap-1 disabled:opacity-50"
+              >
+                {saving ? (
+                  <Loader2 size={11} className="animate-spin" />
+                ) : (
+                  <CheckCircle2 size={11} />
+                )}
+                저장
+              </button>
+              <button
+                type="button"
+                onClick={handleCancel}
+                disabled={saving}
+                className="text-[11px] font-semibold px-2 py-0.5 rounded-md bg-slate-100 hover:bg-slate-200 text-ink-1 disabled:opacity-50"
+              >
+                취소
+              </button>
+            </>
+          )}
+        </div>
+      </td>
+    </tr>
   )
 }
 
@@ -887,8 +1015,8 @@ function RankMatrix(props: {
   if (items.length === 0) {
     return (
       <Card className="p-6 text-center text-sm text-ink-2">
-        매칭 완료된 플레이스가 없습니다. 엑셀을 업로드하고 매칭이 끝날 때까지 잠시
-        기다려 주세요.
+        추적 키워드가 등록된 업체가 없습니다. 위 <strong>1단계 · 추적 키워드 등록</strong>{' '}
+        카드를 펼쳐 monitor 등록 업체에 키워드를 추가해 주세요.
       </Card>
     )
   }

@@ -73,6 +73,8 @@ export interface RankPlaceOut {
   /** 변경 노출 플래그 — true 이면 등록동과 실제 노출동이 다름 */
   dong_changed: boolean
   actual_dong: string | null
+  /** 2단계 UX: 추적 키워드 등록 여부 (false 면 "키워드 추가" 인라인 UI 노출) */
+  has_keywords: boolean
 }
 
 export interface RankPlaceListOut {
@@ -82,8 +84,33 @@ export interface RankPlaceListOut {
   pending: number
   /** 변경 노출 건수 — 대시보드 배너 표시 트리거 */
   dong_changed_count: number
+  /** monitor 에 등록되었지만 아직 추적 키워드를 등록하지 않은 업체 수 */
+  no_keywords_count: number
   items: RankPlaceOut[]
 }
+
+/* ─────────── 추적 키워드 인라인 편집 (2단계 UX) ─────────── */
+export interface UpdateKeywordsRequest {
+  tracking_keywords: string[]
+}
+
+export interface UpdateKeywordsResponse {
+  place_pk: number
+  tracking_keywords: string[]
+  match_status: MatchStatus
+  auto_matched: boolean
+  rank_check_enqueued: boolean
+}
+
+export const updateKeywords = (
+  placePk: number,
+  keywords: string[],
+) =>
+  api.patch<UpdateKeywordsResponse>(
+    `/api/v1/rank-tracker/places/${placePk}/keywords`,
+    { tracking_keywords: keywords },
+    { timeoutMs: 30_000 },
+  )
 
 /* ─────────── 매칭 실행 ─────────── */
 export interface RunMatchRequest {

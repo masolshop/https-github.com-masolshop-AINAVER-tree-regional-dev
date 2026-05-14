@@ -83,6 +83,8 @@ class RankPlaceOut(BaseModel):
     # 변경 노출 플래그 — True 이면 등록동과 실제 노출동이 다름
     dong_changed: bool = False
     actual_dong: str | None = None
+    # 2단계 UX: 추적 키워드 등록 여부 (없으면 "키워드 추가" 인라인 UI 노출)
+    has_keywords: bool = False
 
     model_config = {"from_attributes": True}
 
@@ -93,7 +95,44 @@ class RankPlaceListOut(BaseModel):
     needs_manual: int
     pending: int
     dong_changed_count: int = 0
+    # monitor 에 등록되었지만 아직 추적 키워드를 등록하지 않은 업체 수
+    no_keywords_count: int = 0
     items: list[RankPlaceOut]
+
+
+# ─────────────────────────────────────────────────────────
+# 추적 키워드 인라인 편집 (2단계 UX)
+# ─────────────────────────────────────────────────────────
+class UpdateKeywordsRequest(BaseModel):
+    """단일 업체의 tracking_keywords 만 인라인 업데이트.
+
+    엑셀 업로드 대신 monitor 에 이미 등록된 업체에 키워드만 추가/수정한다.
+    """
+    tracking_keywords: list[str] = Field(
+        default_factory=list,
+        description="추적 키워드 배열 (0~5개). 빈 배열이면 키워드 전체 제거.",
+        max_length=5,
+    )
+
+    @field_validator("tracking_keywords", mode="before")
+    @classmethod
+    def _split_keywords(cls, v: Any) -> list[str]:
+        if v is None:
+            return []
+        if isinstance(v, str):
+            return [k.strip() for k in v.split(",") if k.strip()]
+        if isinstance(v, list):
+            return [str(k).strip() for k in v if str(k).strip()]
+        return []
+
+
+class UpdateKeywordsResponse(BaseModel):
+    """추적 키워드 업데이트 결과."""
+    place_pk: int
+    tracking_keywords: list[str]
+    match_status: str | None
+    auto_matched: bool                  # True 면 즉시 AUTO_MATCHED (rank check 시작)
+    rank_check_enqueued: bool           # True 면 백그라운드에서 즉시 순위체크 시작
 
 
 # ─────────────────────────────────────────────────────────

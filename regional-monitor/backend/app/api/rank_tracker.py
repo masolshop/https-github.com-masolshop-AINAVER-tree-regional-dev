@@ -40,6 +40,8 @@ from app.schemas.rank_tracker import (
     RunMatchRequest,
     RunMatchResponse,
     RunRankCheckResponse,
+    UpdateKeywordsRequest,
+    UpdateKeywordsResponse,
 )
 from app.services.place_matcher import (
     MatchCandidate,
@@ -98,18 +100,20 @@ def _place_to_out(p: RegisteredPlace) -> RankPlaceOut:
             address=str(m.get("address") or ""),
             reasons=list(m.get("reasons") or []),
         )
+    keywords = _csv_to_keywords(p.tracking_keywords)
     return RankPlaceOut(
         id=p.id,
         phone=p.phone,
         registered_dong=p.registered_dong,
         business_name=p.business_name,
         place_id=p.place_id,
-        tracking_keywords=_csv_to_keywords(p.tracking_keywords),
+        tracking_keywords=keywords,
         match_status=p.match_status,
         matched_at=p.matched_at,
         matched=matched,
         dong_changed=bool(getattr(p, "dong_changed", False)),
         actual_dong=getattr(p, "actual_dong", None),
+        has_keywords=bool(keywords),
     )
 
 
@@ -383,17 +387,32 @@ async def list_rank_places(
 ) -> RankPlaceListOut:
     """현재 사용자의 RankTracker 대상 행 목록 + 매칭 상태별 요약.
 
-    070+동 정책으로 단순화:
-      · auto_matched   — 070 매칭 완료 (자동 확정)
-      · dong_changed   — 그 중 등록동과 실제 노출동이 다른 케이스 (배너용)
-      · needs_manual   — 070 매칭 0건 등 예외 (이론상 거의 0)
-      · pending        — 매칭 대기
+    2단계 UX: monitor (노출관리 자동체크) 에 등록된 업체를 그대로 노출.
+      · place_id 가 채워진 행은 monitor 가 검증한 업체 — rank-tracker 후보
+      · tracking_keywords 가 있는 행은 이미 순위 추적 중
+      · 둘 다 비어있으면 (legacy 잔여) 표시하지 않음
+
+    상태 분류:
+      · auto_matched     — AUTO_MATCHED (rank check 가능)
+      · needs_manual     — 매우 예외적
+      · pending          — 매칭 대기 (PENDING_MATCH)
+      · no_keywords_count — monitor 에 등록되었지만 키워드 미입력 (인라인 등록 대상)
     """
+    from sqlalchemy import or_, and_
+
     q = await db.execute(
         select(RegisteredPlace)
         .where(
             RegisteredPlace.user_id == user.id,
-            RegisteredPlace.tracking_keywords.is_not(None),
+            or_(
+                # monitor 가 검증한 업체 (place_id 있음)
+                RegisteredPlace.place_id.is_not(None),
+                # 또는 이미 키워드가 등록된 업체 (legacy 호환)
+                and_(
+                    RegisteredPlace.tracking_keywords.is_not(None),
+                    RegisteredPlace.tracking_keywords != "",
+                ),
+            ),
         )
         .order_by(RegisteredPlace.created_at.desc())
     )
@@ -406,6 +425,10 @@ async def list_rank_places(
         1 for p in places
         if p.match_status == "AUTO_MATCHED" and bool(getattr(p, "dong_changed", False))
     )
+    no_keywords_count = sum(
+        1 for p in places
+        if not _csv_to_keywords(p.tracking_keywords)
+    )
 
     return RankPlaceListOut(
         total=len(places),
@@ -413,6 +436,7 @@ async def list_rank_places(
         needs_manual=needs_manual,
         pending=pending,
         dong_changed_count=dong_changed_count,
+        no_keywords_count=no_keywords_count,
         items=[_place_to_out(p) for p in places],
     )
 
@@ -456,6 +480,109 @@ async def run_match(
         auto_matched=0,
         needs_manual=0,
         errors=0,
+    )
+
+
+# ─────────────────────────────────────────────────────────
+# 추적 키워드 인라인 편집 (2단계 UX — 엑셀 업로드 대체)
+# ─────────────────────────────────────────────────────────
+@router.patch(
+    "/places/{place_pk}/keywords",
+    response_model=UpdateKeywordsResponse,
+)
+async def update_place_keywords(
+    place_pk: int,
+    req: UpdateKeywordsRequest,
+    background_tasks: BackgroundTasks,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> UpdateKeywordsResponse:
+    """단일 업체의 추적 키워드 인라인 업데이트.
+
+    monitor (노출관리 자동체크) 에 이미 등록된 RegisteredPlace 행에 대해
+    추적 키워드만 추가/수정한다. 070/동/상호는 monitor 가 채워둔 값을 그대로 사용.
+
+    동작:
+      · monitor 가 검증해둔 place_id 있으면 → 즉시 AUTO_MATCHED + 백그라운드 rank check
+      · monitor 검증 전(place_id 없음) → PENDING_MATCH 로 마킹 + 매칭 큐 적재
+      · 빈 배열로 PATCH 하면 추적 해제 (tracking_keywords=NULL)
+    """
+    q = await db.execute(
+        select(RegisteredPlace).where(
+            RegisteredPlace.id == place_pk,
+            RegisteredPlace.user_id == user.id,
+        )
+    )
+    p = q.scalar_one_or_none()
+    if not p:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="해당 업체를 찾을 수 없습니다. (monitor 에 먼저 등록해주세요)",
+        )
+
+    # 중복 제거 + 공백 제거
+    new_kws: list[str] = []
+    for k in req.tracking_keywords or []:
+        kk = (k or "").strip()
+        if kk and kk not in new_kws:
+            new_kws.append(kk)
+    new_csv = _keywords_to_csv(new_kws)
+
+    # 빈 배열 → 추적 해제
+    if not new_kws:
+        p.tracking_keywords = None
+        # 매칭 상태는 그대로 두되, 매트릭스에서는 제외됨 (키워드 없음)
+        await db.commit()
+        return UpdateKeywordsResponse(
+            place_pk=p.id,
+            tracking_keywords=[],
+            match_status=p.match_status,
+            auto_matched=False,
+            rank_check_enqueued=False,
+        )
+
+    # 키워드 업데이트
+    p.tracking_keywords = new_csv
+
+    # Y안 매칭 로직 인라인 — monitor 가 검증한 place_id 있으면 즉시 AUTO_MATCHED
+    auto_matched = False
+    rank_check_enqueued = False
+
+    if p.place_id:
+        p.match_status = "AUTO_MATCHED"
+        p.match_confidence = 100
+        p.matched_at = now_kst()
+        p.match_candidates = json.dumps(
+            {
+                "place_id": p.place_id,
+                "name": p.business_name or "",
+                "category": p.category or "",
+                "phone": p.phone or "",
+                "virtual_phone": "",
+                "address": p.full_address or "",
+                "reasons": ["reused_from_monitor"],
+            },
+            ensure_ascii=False,
+        )
+        auto_matched = True
+        await db.commit()
+        # 즉시 백그라운드 rank check
+        background_tasks.add_task(_run_rank_check_for_ids, user.id, [p.id])
+        rank_check_enqueued = True
+    else:
+        # monitor 가 아직 검증 전 — 매칭 대기 큐로
+        p.match_status = "PENDING_MATCH"
+        p.matched_at = None
+        p.match_candidates = None
+        await db.commit()
+        background_tasks.add_task(_run_matching_for_ids, user.id, [p.id])
+
+    return UpdateKeywordsResponse(
+        place_pk=p.id,
+        tracking_keywords=new_kws,
+        match_status=p.match_status,
+        auto_matched=auto_matched,
+        rank_check_enqueued=rank_check_enqueued,
     )
 
 
