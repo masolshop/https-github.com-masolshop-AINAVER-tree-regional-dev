@@ -20,6 +20,7 @@ import httpx
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.database import AsyncSessionLocal
 from app.core.time_utils import now_kst
 from app.models.place import RegisteredPlace
 from app.models.rank_history import PlaceRankHistory
@@ -214,6 +215,9 @@ async def run_rank_check_for_places(
     sem = asyncio.Semaphore(max(1, concurrency))
     pace_s = max(0.0, pace_ms / 1000.0)
 
+    # ⚠️ 동시성 안전성: asyncpg connection 1개로는 동시에 1개 쿼리만 가능.
+    # 따라서 각 worker 마다 자체 AsyncSession (≈ 자체 connection) 을 발급해서
+    # "another operation is in progress" 에러 방지. 외부 `db` 는 select/final flush 전용.
     async with httpx.AsyncClient(timeout=20.0, follow_redirects=True) as client:
         async def worker(pk: int, place_id: str, dong: str, keyword: str) -> None:
             async with sem:
@@ -231,18 +235,24 @@ async def run_rank_check_for_places(
                     stats["out_of_range"] += 1
                 else:
                     stats["success"] += 1
+                # 워커 전용 세션으로 persist (다른 워커와 connection 공유 X)
                 try:
-                    await _persist_outcome(db, outcome, check_date)
-                    # 매트릭스 실시간 폴링이 셀을 즉시 볼 수 있도록 outcome 마다 커밋.
-                    # (이전: 모든 worker 완료 후 일괄 커밋 → 5초 폴링 중 셀이 계속 "—" 로 남음)
-                    await db.commit()
+                    async with AsyncSessionLocal() as wdb:
+                        try:
+                            await _persist_outcome(wdb, outcome, check_date)
+                            # 매트릭스 실시간 폴링이 즉시 새 셀을 볼 수 있도록 outcome 마다 커밋.
+                            await wdb.commit()
+                        except Exception as inner:  # noqa: BLE001
+                            log.exception("rank persist failed (inner): %s", inner)
+                            stats["error"] += 1
+                            try:
+                                await wdb.rollback()
+                            except Exception:  # noqa: BLE001
+                                pass
                 except Exception as e:  # noqa: BLE001
-                    log.exception("rank persist failed: %s", e)
+                    # 세션 발급 자체가 실패한 경우 — DB 풀 고갈 등.
+                    log.exception("rank persist session failed: %s", e)
                     stats["error"] += 1
-                    try:
-                        await db.rollback()
-                    except Exception:  # noqa: BLE001
-                        pass
                 if pace_s:
                     await asyncio.sleep(pace_s)
 
@@ -250,12 +260,16 @@ async def run_rank_check_for_places(
             worker(pk, pid, dg, kw) for (pk, pid, dg, kw) in tasks
         ])
 
-    # 안전망 — 위 per-outcome 커밋이 모두 끝났더라도 남은 변경이 있으면 flush.
+    # 안전망 — 워커들이 각자 commit 했으니 외부 db 는 보통 dirty 아님.
+    # 다만 호출부가 사전에 db 에 변경을 쌓아둔 게 있을 수 있어 final flush 시도.
     try:
         await db.commit()
     except Exception as e:  # noqa: BLE001
         log.exception("rank batch final commit failed: %s", e)
-        await db.rollback()
+        try:
+            await db.rollback()
+        except Exception:  # noqa: BLE001
+            pass
 
     return stats
 

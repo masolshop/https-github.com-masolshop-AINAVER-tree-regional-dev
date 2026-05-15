@@ -17,11 +17,21 @@ class Base(DeclarativeBase):
 
 
 # 비동기 엔진 (SQLite 또는 PostgreSQL)
-engine = create_async_engine(
-    settings.DATABASE_URL,
-    echo=settings.SQL_ECHO,
-    future=True,
-)
+# pool 크기: rank_checker worker (concurrency 8) + API 요청 + 스케줄러 동시 사용을 위해
+# 기본값(5/10) 보다 충분히 크게 설정. SQLite 는 풀 옵션 무시되므로 분기.
+_engine_kwargs: dict = {
+    "echo": settings.SQL_ECHO,
+    "future": True,
+}
+if not settings.DATABASE_URL.startswith("sqlite"):
+    _engine_kwargs.update({
+        "pool_size": 20,
+        "max_overflow": 20,
+        "pool_pre_ping": True,
+        "pool_recycle": 1800,  # 30 분마다 connection 재활용 (stale 방지)
+    })
+
+engine = create_async_engine(settings.DATABASE_URL, **_engine_kwargs)
 
 
 # SQLite 의 경우 FK 제약(특히 ON DELETE CASCADE) 을 사용하려면
