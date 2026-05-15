@@ -52,6 +52,7 @@ import {
   resetAllRankData,
   getCompetition,
   updateKeywords,
+  bulkApplyKeywords,
   triggerManualRankCheck,
   type RankPlaceOut,
   type RankPlaceListOut,
@@ -60,7 +61,10 @@ import {
   type RankCheckProgress,
   type RankHistoryResponse,
   type CompetitionResponse,
+  type BulkKeywordsFilter,
+  type BulkKeywordsResponse,
 } from '@/api/rankTracker'
+import { useAuthStore } from '@/store/auth'
 
 /* ────────────────────────────────────────────────────────────
  * 유틸: 날짜
@@ -92,6 +96,8 @@ export default function RankTracker() {
   const [resetting, setResetting] = useState(false)
   // 플레이스 상세 모달 (매트릭스 행 클릭)
   const [detailPlace, setDetailPlace] = useState<RankPlaceOut | null>(null)
+  // 데모 게스트 여부 (POST mutation 차단 — 일괄 적용 버튼 비활성화)
+  const isDemo = useAuthStore((s) => s.isDemo)
 
   const showToast = useCallback((msg: string) => {
     setToast(msg)
@@ -170,6 +176,30 @@ export default function RankTracker() {
         console.error('update keywords failed', e)
         showToast('키워드 등록 실패: ' + (e as Error).message)
       }
+    },
+    [fetchAll, fetchProgress, showToast],
+  )
+
+  /* ── 일괄 키워드 적용 — A안: 5개 키워드 입력 + 필터 + 한 번에 적용 ── */
+  const handleBulkApply = useCallback(
+    async (
+      keywords: string[],
+      mode: 'replace' | 'append',
+      filter: BulkKeywordsFilter,
+    ): Promise<BulkKeywordsResponse> => {
+      const resp = await bulkApplyKeywords({
+        tracking_keywords: keywords,
+        mode,
+        filter,
+      })
+      showToast(
+        `일괄 적용 완료 — 대상 ${resp.total_matched}건 · 갱신 ${resp.updated}건 · ` +
+          `자동매칭 ${resp.auto_matched}건 · 매칭대기 ${resp.pending_match}건` +
+          (resp.skipped_no_change > 0 ? ` · 변경없음 ${resp.skipped_no_change}건` : ''),
+      )
+      await fetchAll()
+      await fetchProgress()
+      return resp
     },
     [fetchAll, fetchProgress, showToast],
   )
@@ -313,6 +343,8 @@ export default function RankTracker() {
         <KeywordRegistryCard
           list={list}
           onUpdateKeywords={handleUpdateKeywords}
+          onBulkApply={handleBulkApply}
+          isDemo={isDemo}
         />
       )}
 
@@ -482,8 +514,14 @@ function ResetConfirmModal(props: {
 function KeywordRegistryCard(props: {
   list: RankPlaceListOut
   onUpdateKeywords: (placePk: number, keywords: string[]) => Promise<void>
+  onBulkApply: (
+    keywords: string[],
+    mode: 'replace' | 'append',
+    filter: BulkKeywordsFilter,
+  ) => Promise<BulkKeywordsResponse>
+  isDemo: boolean
 }) {
-  const { list, onUpdateKeywords } = props
+  const { list, onUpdateKeywords, onBulkApply, isDemo } = props
   const [expanded, setExpanded] = useState(false)
 
   // 키워드 등록 우선순위: 키워드 없는 업체를 먼저 보여줌
@@ -567,6 +605,13 @@ function KeywordRegistryCard(props: {
         매칭(0초)되고 백그라운드에서 순위 자동체크가 시작됩니다. 키워드는 최대 5개.
       </p>
 
+      {/* ── 일괄 적용 (A안) — 5개 키워드 입력 + 필터 + 한 번에 적용 ── */}
+      <BulkApplyPanel
+        list={list}
+        onBulkApply={onBulkApply}
+        isDemo={isDemo}
+      />
+
       {expanded && (
         <div className="rounded-lg ring-1 ring-slate-200 overflow-hidden">
           <table className="w-full text-sm">
@@ -591,6 +636,429 @@ function KeywordRegistryCard(props: {
         </div>
       )}
     </Card>
+  )
+}
+
+/* ────────────────────────────────────────────────────────────
+ * BulkApplyPanel — A안: 5개 키워드 입력 + 필터 + 한 번에 일괄 적용
+ *
+ *  · 키워드 칩 입력 (Enter / + 버튼, X 로 제거, 최대 5개)
+ *  · 필터: 전체 / 키워드 미등록만 / 시도 / 상호 contains
+ *  · 모드: 교체(replace) / 추가(append)
+ *  · 적용 버튼: "N건에 일괄 적용" — 대상 > 50건이면 확인 다이얼로그
+ *  · 데모 모드(isDemo=true): 적용 버튼 비활성 + amber notice
+ * ──────────────────────────────────────────────────────────── */
+type BulkFilterMode = 'all' | 'no_keywords' | 'sido' | 'business_name'
+
+function BulkApplyPanel(props: {
+  list: RankPlaceListOut
+  onBulkApply: (
+    keywords: string[],
+    mode: 'replace' | 'append',
+    filter: BulkKeywordsFilter,
+  ) => Promise<BulkKeywordsResponse>
+  isDemo: boolean
+}) {
+  const { list, onBulkApply, isDemo } = props
+
+  // 키워드 chip 입력
+  const [keywords, setKeywords] = useState<string[]>([])
+  const [input, setInput] = useState('')
+
+  // 필터
+  const [filterMode, setFilterMode] = useState<BulkFilterMode>('no_keywords')
+  const [sidoInput, setSidoInput] = useState('')
+  const [bnInput, setBnInput] = useState('')
+
+  // 적용 모드 (replace = 교체, append = 추가)
+  const [applyMode, setApplyMode] = useState<'replace' | 'append'>('replace')
+
+  // 상태
+  const [applying, setApplying] = useState(false)
+  const [confirmOpen, setConfirmOpen] = useState(false)
+  const [lastResult, setLastResult] = useState<BulkKeywordsResponse | null>(
+    null,
+  )
+
+  // 클라이언트 측 대상 개수 추정 (사용자 안내용)
+  const estimatedCount = useMemo(() => {
+    const items = list.items
+    if (filterMode === 'all') return items.length
+    if (filterMode === 'no_keywords')
+      return items.filter((p) => p.tracking_keywords.length === 0).length
+    if (filterMode === 'sido') {
+      const q = sidoInput.trim()
+      if (!q) return 0
+      return items.filter((p) => {
+        const addr = (p.matched?.address ?? '').trim()
+        return addr.split(/\s+/)[0] === q
+      }).length
+    }
+    if (filterMode === 'business_name') {
+      const q = bnInput.trim().toLowerCase()
+      if (!q) return 0
+      return items.filter((p) =>
+        (p.business_name || '').toLowerCase().includes(q),
+      ).length
+    }
+    return 0
+  }, [list.items, filterMode, sidoInput, bnInput])
+
+  const buildFilter = useCallback((): BulkKeywordsFilter => {
+    const f: BulkKeywordsFilter = {}
+    if (filterMode === 'no_keywords') f.only_no_keywords = true
+    if (filterMode === 'sido' && sidoInput.trim()) f.sido = sidoInput.trim()
+    if (filterMode === 'business_name' && bnInput.trim())
+      f.business_name_contains = bnInput.trim()
+    return f
+  }, [filterMode, sidoInput, bnInput])
+
+  const addKeyword = useCallback(() => {
+    const v = input.trim()
+    if (!v) return
+    if (keywords.includes(v)) {
+      setInput('')
+      return
+    }
+    if (keywords.length >= 5) return
+    setKeywords([...keywords, v])
+    setInput('')
+  }, [input, keywords])
+
+  const removeKeyword = useCallback(
+    (kw: string) => {
+      setKeywords(keywords.filter((k) => k !== kw))
+    },
+    [keywords],
+  )
+
+  const canApply =
+    !applying &&
+    !isDemo &&
+    keywords.length > 0 &&
+    estimatedCount > 0 &&
+    (filterMode !== 'sido' || sidoInput.trim().length > 0) &&
+    (filterMode !== 'business_name' || bnInput.trim().length > 0)
+
+  const handleClickApply = useCallback(() => {
+    if (!canApply) return
+    // 대상이 50건 초과면 확인 다이얼로그
+    if (estimatedCount > 50) {
+      setConfirmOpen(true)
+    } else {
+      void doApply()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [canApply, estimatedCount])
+
+  const doApply = useCallback(async () => {
+    setConfirmOpen(false)
+    setApplying(true)
+    setLastResult(null)
+    try {
+      const resp = await onBulkApply(keywords, applyMode, buildFilter())
+      setLastResult(resp)
+      // 적용 성공 후 입력값은 유지 (사용자가 추가 액션 가능). 키워드만 초기화는 X.
+    } catch (e) {
+      console.error('bulk apply failed', e)
+    } finally {
+      setApplying(false)
+    }
+  }, [applyMode, buildFilter, keywords, onBulkApply])
+
+  return (
+    <div className="mb-3 rounded-lg ring-1 ring-blue-200 bg-blue-50/40 p-3 space-y-3">
+      <div className="flex items-center gap-2">
+        <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-blue-600 text-white">
+          일괄 적용
+        </span>
+        <span className="text-xs text-ink-1 font-semibold">
+          5개 키워드를 입력하고 한 번에 여러 업체에 적용하세요
+        </span>
+      </div>
+
+      {/* 1) 키워드 chip 입력 */}
+      <div>
+        <div className="text-[11px] font-semibold text-ink-2 mb-1">
+          ① 적용할 키워드 (최대 5개)
+        </div>
+        <div className="flex flex-wrap items-center gap-1.5 bg-white rounded-md ring-1 ring-slate-300 px-2 py-1.5 min-h-[36px]">
+          {keywords.map((kw) => (
+            <span
+              key={kw}
+              className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full bg-blue-100 text-blue-800 ring-1 ring-blue-200"
+            >
+              {kw}
+              <button
+                type="button"
+                onClick={() => removeKeyword(kw)}
+                disabled={applying}
+                className="hover:bg-blue-200 rounded-full p-0.5 disabled:opacity-50"
+                aria-label={`${kw} 제거`}
+              >
+                <X size={10} />
+              </button>
+            </span>
+          ))}
+          {keywords.length < 5 && (
+            <div className="inline-flex items-center gap-1 flex-1 min-w-[140px]">
+              <input
+                type="text"
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault()
+                    addKeyword()
+                  }
+                }}
+                placeholder={
+                  keywords.length === 0
+                    ? '예: 흥신소, 강남 흥신소 (Enter / + 로 추가)'
+                    : '+ 키워드 추가'
+                }
+                disabled={applying}
+                className="text-xs px-2 py-0.5 rounded-md focus:outline-none flex-1 min-w-[120px] disabled:opacity-50"
+              />
+              {input.trim() && (
+                <button
+                  type="button"
+                  onClick={addKeyword}
+                  disabled={applying}
+                  className="text-[11px] font-semibold px-2 py-0.5 rounded-md bg-slate-100 hover:bg-slate-200 inline-flex items-center gap-0.5 disabled:opacity-50"
+                >
+                  <Plus size={11} />
+                  추가
+                </button>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* 2) 대상 필터 */}
+      <div>
+        <div className="text-[11px] font-semibold text-ink-2 mb-1">
+          ② 적용 대상
+        </div>
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-xs">
+          <label className="inline-flex items-center gap-1 cursor-pointer">
+            <input
+              type="radio"
+              name="bulk-filter-mode"
+              checked={filterMode === 'no_keywords'}
+              onChange={() => setFilterMode('no_keywords')}
+              disabled={applying}
+            />
+            <span>키워드 미등록만</span>
+          </label>
+          <label className="inline-flex items-center gap-1 cursor-pointer">
+            <input
+              type="radio"
+              name="bulk-filter-mode"
+              checked={filterMode === 'all'}
+              onChange={() => setFilterMode('all')}
+              disabled={applying}
+            />
+            <span>전체</span>
+          </label>
+          <label className="inline-flex items-center gap-1 cursor-pointer">
+            <input
+              type="radio"
+              name="bulk-filter-mode"
+              checked={filterMode === 'sido'}
+              onChange={() => setFilterMode('sido')}
+              disabled={applying}
+            />
+            <span>시도</span>
+            {filterMode === 'sido' && (
+              <input
+                type="text"
+                value={sidoInput}
+                onChange={(e) => setSidoInput(e.target.value)}
+                placeholder="예: 서울특별시"
+                disabled={applying}
+                className="ml-1 text-xs px-2 py-0.5 rounded-md ring-1 ring-slate-300 focus:ring-blue-500 focus:outline-none w-32 disabled:opacity-50"
+              />
+            )}
+          </label>
+          <label className="inline-flex items-center gap-1 cursor-pointer">
+            <input
+              type="radio"
+              name="bulk-filter-mode"
+              checked={filterMode === 'business_name'}
+              onChange={() => setFilterMode('business_name')}
+              disabled={applying}
+            />
+            <span>상호 포함</span>
+            {filterMode === 'business_name' && (
+              <input
+                type="text"
+                value={bnInput}
+                onChange={(e) => setBnInput(e.target.value)}
+                placeholder="예: 흥신소"
+                disabled={applying}
+                className="ml-1 text-xs px-2 py-0.5 rounded-md ring-1 ring-slate-300 focus:ring-blue-500 focus:outline-none w-32 disabled:opacity-50"
+              />
+            )}
+          </label>
+        </div>
+      </div>
+
+      {/* 3) 적용 모드 */}
+      <div>
+        <div className="text-[11px] font-semibold text-ink-2 mb-1">
+          ③ 적용 방식
+        </div>
+        <div className="flex items-center gap-3 text-xs">
+          <label className="inline-flex items-center gap-1 cursor-pointer">
+            <input
+              type="radio"
+              name="bulk-apply-mode"
+              checked={applyMode === 'replace'}
+              onChange={() => setApplyMode('replace')}
+              disabled={applying}
+            />
+            <span>교체 (기존 키워드를 새 키워드로 덮어쓰기)</span>
+          </label>
+          <label className="inline-flex items-center gap-1 cursor-pointer">
+            <input
+              type="radio"
+              name="bulk-apply-mode"
+              checked={applyMode === 'append'}
+              onChange={() => setApplyMode('append')}
+              disabled={applying}
+            />
+            <span>추가 (기존 키워드에 더하기, 5개 한도)</span>
+          </label>
+        </div>
+      </div>
+
+      {/* 4) 적용 버튼 + 데모 안내 */}
+      <div className="flex items-center justify-between gap-2 flex-wrap pt-1">
+        <div className="text-xs text-ink-2">
+          예상 대상:{' '}
+          <strong className="text-blue-800">{estimatedCount}건</strong>
+          {keywords.length > 0 && (
+            <>
+              {' '}
+              · 키워드 {keywords.length}개 ({keywords.join(', ')})
+            </>
+          )}
+        </div>
+        <button
+          type="button"
+          onClick={handleClickApply}
+          disabled={!canApply}
+          className={clsx(
+            'text-xs font-bold px-4 py-2 rounded-md inline-flex items-center gap-1.5 shadow-sm transition',
+            canApply
+              ? 'bg-blue-600 hover:bg-blue-700 text-white'
+              : 'bg-slate-200 text-slate-400 cursor-not-allowed',
+          )}
+          title={
+            isDemo
+              ? '데모 모드에서는 변경이 비활성화되어 있습니다.'
+              : keywords.length === 0
+                ? '키워드를 1개 이상 입력하세요'
+                : estimatedCount === 0
+                  ? '적용 대상이 없습니다'
+                  : ''
+          }
+        >
+          {applying ? (
+            <Loader2 size={14} className="animate-spin" />
+          ) : (
+            <CheckCircle2 size={14} />
+          )}
+          {estimatedCount > 0 ? `${estimatedCount}건에 일괄 적용` : '일괄 적용'}
+        </button>
+      </div>
+
+      {isDemo && (
+        <div className="text-[11px] text-amber-800 bg-amber-50 ring-1 ring-amber-200 rounded-md px-2 py-1.5">
+          <strong>데모 모드</strong> — 일괄 적용은 비활성화되어 있습니다. 실제
+          데이터 수정은 정식 가입 후 사용 가능합니다.
+        </div>
+      )}
+
+      {lastResult && !applying && (
+        <div className="text-[11px] text-emerald-800 bg-emerald-50 ring-1 ring-emerald-200 rounded-md px-2 py-1.5">
+          ✓ 적용 완료 — 대상 {lastResult.total_matched}건 · 갱신{' '}
+          {lastResult.updated}건 · 자동매칭 {lastResult.auto_matched}건 · 매칭대기{' '}
+          {lastResult.pending_match}건
+          {lastResult.skipped_no_change > 0 && (
+            <> · 변경없음 {lastResult.skipped_no_change}건</>
+          )}
+        </div>
+      )}
+
+      {/* 확인 다이얼로그 (대상 > 50건) */}
+      {confirmOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setConfirmOpen(false)
+          }}
+        >
+          <div className="bg-white rounded-xl shadow-2xl max-w-md w-full">
+            <div className="flex items-center gap-2 px-5 py-4 border-b border-slate-200">
+              <AlertTriangle className="text-amber-600" size={20} />
+              <h3 className="text-base font-bold text-amber-900">
+                일괄 적용 확인
+              </h3>
+              <button
+                onClick={() => setConfirmOpen(false)}
+                className="ml-auto p-1 rounded hover:bg-slate-100"
+              >
+                <X size={16} className="text-ink-2" />
+              </button>
+            </div>
+            <div className="px-5 py-4 space-y-3 text-sm">
+              <p>
+                <strong className="text-blue-700">{estimatedCount}건</strong>의
+                업체에 키워드를{' '}
+                <strong>{applyMode === 'replace' ? '교체' : '추가'}</strong>
+                합니다.
+              </p>
+              <div className="text-xs bg-slate-50 rounded-lg px-3 py-2 ring-1 ring-slate-200">
+                <div className="font-semibold mb-1">적용 키워드</div>
+                <div className="flex flex-wrap gap-1">
+                  {keywords.map((kw) => (
+                    <span
+                      key={kw}
+                      className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-blue-100 text-blue-800 ring-1 ring-blue-200"
+                    >
+                      {kw}
+                    </span>
+                  ))}
+                </div>
+              </div>
+              {applyMode === 'replace' && (
+                <p className="text-xs text-amber-700 bg-amber-50 rounded-lg px-3 py-2 ring-1 ring-amber-200">
+                  <strong>주의:</strong> 교체 모드는 기존 추적 키워드를 덮어씁니다.
+                </p>
+              )}
+            </div>
+            <div className="flex items-center gap-2 px-5 py-3 bg-slate-50 rounded-b-xl">
+              <button
+                onClick={() => setConfirmOpen(false)}
+                className="ml-auto text-xs font-semibold px-3 py-1.5 rounded-md bg-white hover:bg-slate-100 ring-1 ring-slate-300"
+              >
+                취소
+              </button>
+              <button
+                onClick={() => void doApply()}
+                className="text-xs font-bold px-3 py-1.5 rounded-md bg-blue-600 hover:bg-blue-700 text-white inline-flex items-center gap-1"
+              >
+                <CheckCircle2 size={14} />
+                {estimatedCount}건에 적용
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
   )
 }
 

@@ -112,6 +112,44 @@ export const updateKeywords = (
     { timeoutMs: 30_000 },
   )
 
+/* ─────────── 일괄 키워드 적용 (A안 — 한 번에 N건 동일 키워드 셋 적용) ─────────── */
+export interface BulkKeywordsFilter {
+  /** True 면 키워드 미등록 행만 대상 (안전한 디폴트) */
+  only_no_keywords?: boolean
+  /** 시도 정확 일치 (예: '전라남도') */
+  sido?: string | null
+  /** 상호 부분 일치 (대소문자 무시) */
+  business_name_contains?: string | null
+}
+
+export interface BulkKeywordsRequest {
+  /** 적용할 키워드 (1~5개). 빈 배열 금지. */
+  tracking_keywords: string[]
+  /** 'replace' = 덮어쓰기, 'append' = 기존에 추가 */
+  mode?: 'replace' | 'append'
+  filter?: BulkKeywordsFilter
+}
+
+export interface BulkKeywordsResponse {
+  total_matched: number
+  updated: number
+  skipped_no_change: number
+  auto_matched: number
+  pending_match: number
+  sample_place_pks: number[]
+}
+
+export const bulkApplyKeywords = (req: BulkKeywordsRequest) =>
+  api.post<BulkKeywordsResponse>(
+    '/api/v1/rank-tracker/places/bulk-keywords',
+    {
+      tracking_keywords: req.tracking_keywords,
+      mode: req.mode ?? 'replace',
+      filter: req.filter ?? {},
+    },
+    { timeoutMs: 60_000 },
+  )
+
 /* ─────────── 매칭 실행 ─────────── */
 export interface RunMatchRequest {
   place_ids?: number[]

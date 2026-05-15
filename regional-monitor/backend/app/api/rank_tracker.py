@@ -17,6 +17,8 @@ from app.models.place import RegisteredPlace
 from app.models.rank_history import PlaceRankHistory
 from app.models.user import User
 from app.schemas.rank_tracker import (
+    BulkKeywordsRequest,
+    BulkKeywordsResponse,
     CompetitionItem,
     CompetitionResponse,
     ConfirmCandidateRequest,
@@ -589,6 +591,169 @@ async def update_place_keywords(
         match_status=p.match_status,
         auto_matched=auto_matched,
         rank_check_enqueued=rank_check_enqueued,
+    )
+
+
+# ─────────────────────────────────────────────────────────
+# 일괄 키워드 적용 (A안 — 한 번에 N건 동일 키워드 셋 적용)
+# ─────────────────────────────────────────────────────────
+def _extract_sido_from_address(addr: str | None) -> str:
+    """full_address 의 첫 토큰(시도)을 추출.
+
+    예: '전라남도 목포시 삼학동' -> '전라남도'
+    """
+    if not addr:
+        return ""
+    return addr.strip().split()[0] if addr.strip() else ""
+
+
+@router.post(
+    "/places/bulk-keywords",
+    response_model=BulkKeywordsResponse,
+)
+async def bulk_apply_keywords(
+    req: BulkKeywordsRequest,
+    background_tasks: BackgroundTasks,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> BulkKeywordsResponse:
+    """N건의 등록 업체에 동일한 추적 키워드 셋을 한 번에 적용.
+
+    monitor 에 등록된 RegisteredPlace 중 필터에 매칭되는 행 전체에
+    같은 추적 키워드 셋을 1회 호출로 적용한다. (288건 일일이 클릭하는 비효율 해소)
+
+    동작:
+      · mode='replace' — 기존 tracking_keywords 를 새 셋으로 덮어쓰기
+      · mode='append'  — 기존에 추가 (5개 한도 초과시 잘라냄, 중복 제거)
+      · filter.only_no_keywords — True 면 미등록 행만 (안전)
+      · filter.sido / business_name_contains — 추가 좁히기
+      · place_id 가 있는 행 → 즉시 AUTO_MATCHED 마킹 (즉시 순위체크 가능)
+      · place_id 가 없는 행 → PENDING_MATCH 로 매칭 큐 적재 (백그라운드)
+      · 동일 키워드라 변화 없는 행 → skipped_no_change 로 집계
+    """
+    # 1) 입력 키워드 정규화 (중복/공백 제거 + 5개 한도)
+    new_kws: list[str] = []
+    for k in req.tracking_keywords or []:
+        kk = (k or "").strip()
+        if kk and kk not in new_kws:
+            new_kws.append(kk)
+        if len(new_kws) >= 5:
+            break
+    if not new_kws:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="유효한 추적 키워드가 1개 이상 필요합니다.",
+        )
+
+    # 2) 필터 적용한 RegisteredPlace 조회
+    stmt = select(RegisteredPlace).where(RegisteredPlace.user_id == user.id)
+    if req.filter.only_no_keywords:
+        # 키워드 없음 = NULL 또는 빈 문자열
+        from sqlalchemy import or_
+        stmt = stmt.where(
+            or_(
+                RegisteredPlace.tracking_keywords.is_(None),
+                RegisteredPlace.tracking_keywords == "",
+            )
+        )
+    if req.filter.business_name_contains:
+        needle = req.filter.business_name_contains.strip()
+        if needle:
+            stmt = stmt.where(RegisteredPlace.business_name.ilike(f"%{needle}%"))
+
+    q = await db.execute(stmt)
+    candidates: list[RegisteredPlace] = list(q.scalars().all())
+
+    # 시도 필터는 full_address 첫 토큰으로 — DB 인덱스 없으니 파이썬에서 필터
+    if req.filter.sido:
+        sido_needle = req.filter.sido.strip()
+        candidates = [
+            p for p in candidates
+            if _extract_sido_from_address(p.full_address) == sido_needle
+        ]
+
+    total_matched = len(candidates)
+    if total_matched == 0:
+        return BulkKeywordsResponse(
+            total_matched=0,
+            updated=0,
+            skipped_no_change=0,
+            auto_matched=0,
+            pending_match=0,
+            sample_place_pks=[],
+        )
+
+    # 3) 행별로 새 키워드 셋 결정 (replace / append) + 업데이트
+    updated = 0
+    skipped_no_change = 0
+    auto_matched_count = 0
+    pending_match_count = 0
+    pending_pks: list[int] = []
+    sample_pks: list[int] = []
+
+    for p in candidates:
+        existing = _csv_to_keywords(p.tracking_keywords)
+
+        if req.mode == "append":
+            merged: list[str] = list(existing)
+            for kw in new_kws:
+                if kw not in merged:
+                    merged.append(kw)
+                if len(merged) >= 5:
+                    break
+            final_kws = merged
+        else:  # replace
+            final_kws = list(new_kws)
+
+        # 변화 없음 → skip
+        if final_kws == existing:
+            skipped_no_change += 1
+            continue
+
+        p.tracking_keywords = _keywords_to_csv(final_kws)
+
+        # 매칭 상태 갱신 — 단건 PATCH 와 동일한 로직
+        if p.place_id:
+            p.match_status = "AUTO_MATCHED"
+            p.match_confidence = 100
+            p.matched_at = now_kst()
+            p.match_candidates = json.dumps(
+                {
+                    "place_id": p.place_id,
+                    "name": p.business_name or "",
+                    "category": p.category or "",
+                    "phone": p.phone or "",
+                    "virtual_phone": "",
+                    "address": p.full_address or "",
+                    "reasons": ["reused_from_monitor"],
+                },
+                ensure_ascii=False,
+            )
+            auto_matched_count += 1
+        else:
+            p.match_status = "PENDING_MATCH"
+            p.matched_at = None
+            p.match_candidates = None
+            pending_pks.append(p.id)
+            pending_match_count += 1
+
+        updated += 1
+        if len(sample_pks) < 10:
+            sample_pks.append(p.id)
+
+    await db.commit()
+
+    # 4) PENDING_MATCH 행은 백그라운드 매칭 큐로 (덩어리째)
+    if pending_pks:
+        background_tasks.add_task(_run_matching_for_ids, user.id, pending_pks)
+
+    return BulkKeywordsResponse(
+        total_matched=total_matched,
+        updated=updated,
+        skipped_no_change=skipped_no_change,
+        auto_matched=auto_matched_count,
+        pending_match=pending_match_count,
+        sample_place_pks=sample_pks,
     )
 
 

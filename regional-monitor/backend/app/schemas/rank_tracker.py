@@ -136,6 +136,68 @@ class UpdateKeywordsResponse(BaseModel):
 
 
 # ─────────────────────────────────────────────────────────
+# 일괄 키워드 적용 (A안 — N건에 1회 클릭으로 동일 키워드 셋 적용)
+# ─────────────────────────────────────────────────────────
+class BulkKeywordsFilter(BaseModel):
+    """일괄 적용 대상을 좁히는 필터. 모두 옵션 (미지정 시 전체 적용)."""
+    only_no_keywords: bool = Field(
+        default=False,
+        description="True 면 추적 키워드가 없는 행만 대상.",
+    )
+    sido: str | None = Field(
+        default=None,
+        description="시도 정확 일치 (예: '전라남도'). full_address 의 첫 토큰으로 매칭.",
+    )
+    business_name_contains: str | None = Field(
+        default=None,
+        description="상호 부분 일치 (대소문자 무시 contains).",
+    )
+
+
+class BulkKeywordsRequest(BaseModel):
+    """N건에 동일 키워드 셋을 한 번에 적용."""
+    tracking_keywords: list[str] = Field(
+        ...,
+        description="적용할 추적 키워드 (1~5개). 빈 배열은 허용 안 함 (해제 의도는 단건 PATCH 사용).",
+        min_length=1,
+        max_length=5,
+    )
+    mode: str = Field(
+        default="replace",
+        description="'replace' = 기존 키워드 덮어쓰기, 'append' = 기존에 추가 (5개 한도 내).",
+        pattern="^(replace|append)$",
+    )
+    filter: BulkKeywordsFilter = Field(
+        default_factory=BulkKeywordsFilter,
+        description="적용 대상 필터.",
+    )
+
+    @field_validator("tracking_keywords", mode="before")
+    @classmethod
+    def _split_keywords(cls, v: Any) -> list[str]:
+        if v is None:
+            return []
+        if isinstance(v, str):
+            return [k.strip() for k in v.split(",") if k.strip()]
+        if isinstance(v, list):
+            return [str(k).strip() for k in v if str(k).strip()]
+        return []
+
+
+class BulkKeywordsResponse(BaseModel):
+    """일괄 적용 결과."""
+    total_matched: int                  # 필터에 매칭된 행 수
+    updated: int                        # 실제 키워드가 갱신된 행 수
+    skipped_no_change: int              # 동일 키워드 세트라 건너뜀
+    auto_matched: int                   # place_id 가 있어 즉시 AUTO_MATCHED 된 수
+    pending_match: int                  # 매칭 대기 큐로 들어간 수
+    sample_place_pks: list[int] = Field(
+        default_factory=list,
+        description="갱신된 행 중 최대 10개 샘플 (디버그/확인용).",
+    )
+
+
+# ─────────────────────────────────────────────────────────
 # 매칭 실행 / 후보 선택
 # ─────────────────────────────────────────────────────────
 class RunMatchRequest(BaseModel):
