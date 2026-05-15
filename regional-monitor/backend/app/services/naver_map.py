@@ -35,6 +35,87 @@ UA = (
 )
 SEARCH_URL = "https://m.map.naver.com/search2/search.naver?query={q}&displayCount={dc}"
 
+# ─────────────────────────────────────────────────────────────────────────────
+# 재시도 / 회로차단(circuit breaker) 설정
+# ─────────────────────────────────────────────────────────────────────────────
+# 단일 호출당 재시도 횟수 (5xx / 네트워크 에러일 때만). 1 = 첫 시도 후 1번 더 = 총 2회.
+SEARCH_RETRY_ATTEMPTS = 2
+# 지수 백오프 base (초). 실제 대기 = base * 2^attempt (+ jitter)
+SEARCH_RETRY_BASE_SEC = 0.6
+# 차단 임계치: 직전 N개 연속 실패가 누적되면 회로 차단 발동
+CB_FAIL_THRESHOLD = 8
+# 차단 지속 시간 (초). 이 시간이 지나면 half-open 으로 1회 실제 호출 허용.
+CB_COOLDOWN_SEC = 120
+
+
+class _CircuitBreaker:
+    """모듈 레벨 회로차단기.
+
+    네이버 지도 엔드포인트가 연속해서 5xx / 타임아웃을 뱉을 때,
+    후속 호출을 즉시 단락시켜 (a) 대기시간 폭증 방지 (b) 차단 상태를
+    매트릭스 UI에 'naver_unavailable' 로 명시할 수 있게 한다.
+
+    State machine:
+      CLOSED   — 정상. 실패 누적 카운트만 추적.
+      OPEN     — 차단. cooldown 동안 모든 호출이 즉시 short-circuit.
+      HALF_OPEN — cooldown 종료 후 1회 실제 호출 허용. 성공하면 CLOSED 복귀,
+                  실패하면 다시 OPEN.
+    """
+
+    def __init__(self) -> None:
+        self._consecutive_fail = 0
+        self._opened_at: float = 0.0  # OPEN 진입 시각 (monotonic)
+        self._state: str = "CLOSED"  # CLOSED / OPEN / HALF_OPEN
+
+    def allow(self) -> bool:
+        """이번 호출을 실제로 보내야 하는지(True) / 단락해야 하는지(False)."""
+        if self._state == "CLOSED":
+            return True
+        if self._state == "OPEN":
+            elapsed = time.monotonic() - self._opened_at
+            if elapsed >= CB_COOLDOWN_SEC:
+                # cooldown 끝 — half-open 으로 1회 통과 허용
+                self._state = "HALF_OPEN"
+                return True
+            return False
+        # HALF_OPEN 동안에는 이미 1회 통과 중. 추가 호출은 단락.
+        return False
+
+    def on_success(self) -> None:
+        self._consecutive_fail = 0
+        if self._state in ("OPEN", "HALF_OPEN"):
+            log.info("naver_map circuit breaker → CLOSED (recovered)")
+        self._state = "CLOSED"
+        self._opened_at = 0.0
+
+    def on_failure(self) -> None:
+        self._consecutive_fail += 1
+        if self._state == "HALF_OPEN":
+            # half-open 시도 실패 → 즉시 다시 OPEN
+            self._state = "OPEN"
+            self._opened_at = time.monotonic()
+            log.warning("naver_map circuit breaker → OPEN (half-open probe failed)")
+            return
+        if self._state == "CLOSED" and self._consecutive_fail >= CB_FAIL_THRESHOLD:
+            self._state = "OPEN"
+            self._opened_at = time.monotonic()
+            log.warning(
+                "naver_map circuit breaker → OPEN (%d consecutive failures, cooldown=%ds)",
+                self._consecutive_fail, CB_COOLDOWN_SEC,
+            )
+
+    @property
+    def state(self) -> str:
+        return self._state
+
+
+_circuit = _CircuitBreaker()
+
+
+def _is_retriable_status(code: int) -> bool:
+    # 5xx 와 429 (rate-limit) 는 재시도. 4xx 나머지는 즉시 반환.
+    return code >= 500 or code == 429
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # 공통 JSON 추출
@@ -189,10 +270,27 @@ async def search_map(
     client: httpx.AsyncClient | None = None,
     timeout: float = 20.0,
 ) -> MapSearchResult:
-    """단일 쿼리 검색. (75건 이상은 받을 수 없음 — 동/시군구 prefix 분할 필요)"""
+    """단일 쿼리 검색. (75건 이상은 받을 수 없음 — 동/시군구 prefix 분할 필요)
+
+    동작:
+      - 5xx / 429 / 네트워크 에러는 지수 백오프로 SEARCH_RETRY_ATTEMPTS 회 재시도.
+      - 회로차단(circuit breaker)이 OPEN 이면 즉시 'naver_unavailable' 로 단락.
+      - 200 응답인데 본문에 RQ_STREAMING_STATE 가 전혀 없으면 'empty_response' 로 표기
+        (네이버가 에러 페이지를 200 으로 위장해 돌려보내는 케이스 대비).
+    """
     q = (query or "").strip()
     if not q:
         return MapSearchResult(query=q, total_count=0, error="empty query")
+
+    # 회로차단이 OPEN 이면 실제 호출 없이 즉시 반환 — 매트릭스에서 "out_of_range" 와
+    # 구분되는 명시적 에러 코드(naver_unavailable)를 남긴다.
+    if not _circuit.allow():
+        return MapSearchResult(
+            query=q,
+            total_count=0,
+            error="naver_unavailable",
+            elapsed_ms=0,
+        )
 
     url = SEARCH_URL.format(q=quote(q), dc=max(1, min(75, int(display))))
     headers = {
@@ -205,31 +303,80 @@ async def search_map(
     if client is None:
         client = httpx.AsyncClient(timeout=timeout, headers=headers, follow_redirects=True)
         own_client = True
-    started = time.time()
+
+    overall_started = time.time()
+    last_error: str | None = None
+
     try:
-        try:
-            r = await client.get(url, headers=headers, follow_redirects=True)
-        except httpx.HTTPError as e:
+        # 첫 시도 + SEARCH_RETRY_ATTEMPTS 회 추가 재시도. 5xx/429/네트워크 에러만 재시도 대상.
+        for attempt in range(SEARCH_RETRY_ATTEMPTS + 1):
+            attempt_started = time.time()
+            try:
+                r = await client.get(url, headers=headers, follow_redirects=True)
+            except httpx.HTTPError as e:
+                last_error = f"HTTP error: {type(e).__name__}: {e}"
+                if attempt < SEARCH_RETRY_ATTEMPTS:
+                    backoff = SEARCH_RETRY_BASE_SEC * (2 ** attempt)
+                    await asyncio.sleep(backoff)
+                    continue
+                # 재시도 소진 → 회로차단 카운터 증가
+                _circuit.on_failure()
+                return MapSearchResult(
+                    query=q,
+                    total_count=0,
+                    error=last_error,
+                    elapsed_ms=int((time.time() - overall_started) * 1000),
+                )
+
+            if r.status_code != 200:
+                last_error = f"status={r.status_code}"
+                if _is_retriable_status(r.status_code) and attempt < SEARCH_RETRY_ATTEMPTS:
+                    backoff = SEARCH_RETRY_BASE_SEC * (2 ** attempt)
+                    await asyncio.sleep(backoff)
+                    continue
+                # 재시도 불가 또는 소진 → 회로차단 카운터 증가
+                _circuit.on_failure()
+                return MapSearchResult(
+                    query=q,
+                    total_count=0,
+                    error=last_error,
+                    elapsed_ms=int((time.time() - overall_started) * 1000),
+                )
+
+            # 200 응답. 본문 파싱.
+            total, raw_items = _parse_rq_streaming(r.text)
+            if total == 0 and not raw_items and "RQ_STREAMING_STATE" not in r.text:
+                # 네이버가 200 으로 위장된 에러/차단 페이지를 돌려준 케이스.
+                # 재시도 가능하면 시도, 아니면 'empty_response' 에러로 마킹.
+                last_error = "empty_response"
+                if attempt < SEARCH_RETRY_ATTEMPTS:
+                    backoff = SEARCH_RETRY_BASE_SEC * (2 ** attempt)
+                    await asyncio.sleep(backoff)
+                    continue
+                _circuit.on_failure()
+                return MapSearchResult(
+                    query=q,
+                    total_count=0,
+                    error=last_error,
+                    elapsed_ms=int((time.time() - overall_started) * 1000),
+                )
+
+            items = [_to_map_place(it) for it in raw_items]
+            _circuit.on_success()
             return MapSearchResult(
                 query=q,
-                total_count=0,
-                error=f"HTTP error: {type(e).__name__}: {e}",
-                elapsed_ms=int((time.time() - started) * 1000),
+                total_count=total,
+                items=items,
+                elapsed_ms=int((time.time() - overall_started) * 1000),
             )
-        if r.status_code != 200:
-            return MapSearchResult(
-                query=q,
-                total_count=0,
-                error=f"status={r.status_code}",
-                elapsed_ms=int((time.time() - started) * 1000),
-            )
-        total, raw_items = _parse_rq_streaming(r.text)
-        items = [_to_map_place(it) for it in raw_items]
+
+        # 이론상 도달 불가 — 안전망
+        _circuit.on_failure()
         return MapSearchResult(
             query=q,
-            total_count=total,
-            items=items,
-            elapsed_ms=int((time.time() - started) * 1000),
+            total_count=0,
+            error=last_error or "unknown",
+            elapsed_ms=int((time.time() - overall_started) * 1000),
         )
     finally:
         if own_client:
