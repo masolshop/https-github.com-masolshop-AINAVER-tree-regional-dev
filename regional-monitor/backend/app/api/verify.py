@@ -164,11 +164,24 @@ async def _run_live_check_locked(
     places = list(result.scalars().all())
 
     if not places:
-        # only_pending 모드일 때는 메시지를 더 친절하게
+        # only_pending 모드일 때는 404 대신 200 + 빈 결과로 응답한다.
+        # 이유: 프론트는 902건을 100개 청크로 분할해 9회 호출하는데,
+        #   각 청크가 진행되는 동안 다른 청크가 verdict 를 PENDING → OK/DEAD 로
+        #   바꿔놓을 수 있다. 그 결과 후속 청크의 ID 들이 모두 더 이상 PENDING 이
+        #   아니게 되면 백엔드가 404 를 뱉었고, 프론트의 await fetch 가 throw 해서
+        #   남은 청크 전체가 중단되는 버그가 있었다 (사용자 보고: "재체크 902건
+        #   중간에 빨간 띠 + 멈춤"). 빈 청크는 정상 케이스로 처리해야 청크 자동
+        #   진행이 깨지지 않는다.
+        #
+        # 전체 등록이 0건인 등록-체크(full) 케이스는 여전히 404. (이건 실제로
+        # 등록이 비어있는 상태이므로 사용자에게 명시적으로 알릴 가치가 있음.)
         if req.only_pending:
-            raise HTTPException(
-                status_code=404,
-                detail="재체크할 검증 대기 항목이 없습니다.",
+            return LiveCheckResponse(
+                total_ms=0,
+                avg_ms=0,
+                throughput=0.0,
+                results=[],
+                summary={"ok": 0, "warning": 0, "danger": 0},
             )
         raise HTTPException(status_code=404, detail="검증할 등록이 없습니다.")
 

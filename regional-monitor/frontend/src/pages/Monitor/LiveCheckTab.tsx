@@ -28,7 +28,7 @@ import { VerdictBadge } from './VerdictBadge'
 import { usePlacesList } from '@/hooks/usePlaces'
 import { useSchedulerStatus } from '@/hooks/useEvents'
 import { useQueryClient } from '@tanstack/react-query'
-import { runLiveCheck } from '@/api/places'
+import { runLiveCheck, listPlaces } from '@/api/places'
 import { ApiError } from '@/api/client'
 import type { VerificationResult } from '@/api/types'
 import { placeKeys } from '@/hooks/usePlaces'
@@ -180,12 +180,37 @@ export default function LiveCheckTab() {
     }
     if (running) return
 
-    // 검증 대상 ID 결정
-    const targetIds: number[] =
-      checkKind === 'recheck' ? [...pendingPlaceIds] : [...allPlaceIds]
+    // ── C) 재체크 진입 직전 placesData refetch ──
+    // 이유: 화면의 PENDING 카운트는 useQuery 캐시(staleTime=15s)에 의존하므로,
+    //       자동 정기 체크가 백그라운드에서 verdict 를 바꿔놓은 직후 사용자가
+    //       "재체크" 를 누르면 실제 DB 의 PENDING 과 화면 카운트가 어긋난다.
+    //       이 어긋남이 곧 "API 404: 재체크할 검증 대기 항목이 없습니다." 의
+    //       근본 원인이었으므로, 청크 분할 직전에 최신 목록을 다시 가져온다.
+    let targetIds: number[]
+    if (checkKind === 'recheck') {
+      try {
+        const fresh = await listPlaces()
+        // 캐시도 같이 갱신 — 화면의 카운트 라벨도 즉시 보정.
+        qc.setQueryData(placeKeys.list(), fresh)
+        targetIds = (fresh.items ?? [])
+          .filter((p) => p.current_verdict === 'PENDING')
+          .map((p) => p.id)
+      } catch (e: unknown) {
+        // refetch 자체가 실패하면 캐시 값으로 폴백 (네트워크 일시 단절 등)
+        console.warn('[LiveCheck] PENDING refetch 실패, 캐시 사용:', e)
+        targetIds = [...pendingPlaceIds]
+      }
+    } else {
+      targetIds = [...allPlaceIds]
+    }
+
     if (targetIds.length === 0) {
-      // 재체크인데 PENDING 이 0건일 때 — 버튼이 disabled 라 도달하지 않지만 방어적으로
-      alert('재체크할 검증 대기 항목이 없습니다.')
+      // 재체크인데 PENDING 이 0건 — refetch 후에도 0이면 안내 후 종료.
+      if (checkKind === 'recheck') {
+        alert('재체크할 검증 대기 항목이 없습니다. (자동 체크가 이미 모두 정리했을 수 있어요)')
+      } else {
+        alert('검증할 등록이 없습니다.')
+      }
       return
     }
 
@@ -220,6 +245,8 @@ export default function LiveCheckTab() {
 
     let accResults: VerificationResult[] = []
     let accMs = 0
+    let skippedChunks = 0          // ── B) 회복 가능 에러로 skip 한 청크 카운트
+    let lastSkipReason: string | null = null
     const t0 = performance.now()
 
     try {
@@ -233,15 +260,48 @@ export default function LiveCheckTab() {
         setProgress((p) => ({ ...p, chunk: i + 1 }))
 
         const ts = performance.now()
-        // 두 단계 모두 정밀(full) 모드. 재체크는 only_pending 으로 백엔드에서도 한 번 더 필터.
-        const resp = await runLiveCheck(
-          {
-            place_ids: chunk,
-            mode: 'full',
-            only_pending: checkKind === 'recheck',
-          },
-          { signal: abortRef.current?.signal },
-        )
+        // ── B) 청크별 에러 격리 ──
+        // 한 청크 실패가 남은 청크를 못 잡아먹게 한다. 회복 가능한 에러
+        // (404 — 재체크 청크가 이미 OK/DEAD 로 바뀜, 5xx — 네이버 일시 장애)는
+        // skip 후 다음 청크로 자동 진행. 회복 불가 에러(401/409 락/사용자 취소)는
+        // 바깥 catch 로 throw 해서 전체 중단.
+        let resp: Awaited<ReturnType<typeof runLiveCheck>>
+        try {
+          // 두 단계 모두 정밀(full) 모드. 재체크는 only_pending 으로 백엔드에서도 한 번 더 필터.
+          resp = await runLiveCheck(
+            {
+              place_ids: chunk,
+              mode: 'full',
+              only_pending: checkKind === 'recheck',
+            },
+            { signal: abortRef.current?.signal },
+          )
+        } catch (chunkErr: unknown) {
+          // 1) 사용자 취소는 전체 중단으로 escalate (바깥 catch 에서 처리)
+          if (cancelRef.current || isAbortError(chunkErr)) {
+            throw chunkErr
+          }
+          // 2) 인증 실패 / 락 충돌은 전체 중단 — 다음 청크도 100% 같은 에러를 받음
+          if (chunkErr instanceof ApiError && (chunkErr.status === 401 || chunkErr.status === 409)) {
+            throw chunkErr
+          }
+          // 3) 회복 가능한 청크 단발 실패 — 404 (재체크 대상 0건), 5xx 일시 장애 등
+          //    → 이 청크만 skip, 다음 청크 계속 진행
+          skippedChunks += 1
+          lastSkipReason =
+            chunkErr instanceof ApiError
+              ? `청크 ${i + 1}: API ${chunkErr.status} ${chunkErr.message}`
+              : `청크 ${i + 1}: ${(chunkErr as Error)?.message ?? '알 수 없는 오류'}`
+          console.warn(`[LiveCheck] 청크 ${i + 1}/${chunks.length} skip — ${lastSkipReason}`)
+          // skip 도 elapsed/진행률에 반영 — 사용자가 멈춘 줄 알지 않도록
+          const skipElapsed = Math.round(performance.now() - ts)
+          setLastChunkMs((prev) => [...prev, skipElapsed])
+          if (i < chunks.length - 1 && CHUNK_DELAY_MS > 0) {
+            await new Promise((r) => setTimeout(r, CHUNK_DELAY_MS))
+          }
+          continue
+        }
+
         const elapsed = Math.round(performance.now() - ts)
 
         accMs += resp.total_ms || elapsed
@@ -265,8 +325,17 @@ export default function LiveCheckTab() {
 
       const total = Math.round(performance.now() - t0)
       console.log(
-        `[LiveCheck] ${kindLabel} 완료: ${accResults.length}/${targetIds.length}건 (총 ${total}ms)`,
+        `[LiveCheck] ${kindLabel} 완료: ${accResults.length}/${targetIds.length}건 ` +
+          `(총 ${total}ms, skip=${skippedChunks})`,
       )
+      // skip 이 있었으면 작은 경고만 — 정상 종료지만 사용자에게 보여줄 가치 있음
+      if (skippedChunks > 0) {
+        setErrorMsg(
+          `검증이 완료됐지만 ${skippedChunks}개 청크는 건너뛰었습니다 ` +
+            `(${lastSkipReason ?? '일시 오류'}). ` +
+            `필요하면 잠시 후 "재체크"를 한 번 더 눌러주세요.`,
+        )
+      }
       // 캐시 무효화는 finally 에서 일괄 처리
     } catch (e: unknown) {
       // 사용자 취소(AbortError) 는 에러로 표시하지 않음
