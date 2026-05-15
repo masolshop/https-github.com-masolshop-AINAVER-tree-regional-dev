@@ -287,9 +287,12 @@ export default function GraphTab() {
         </div>
 
         {isDemo && (
-          <div className="mb-3 px-3 py-2 rounded-md bg-amber-50 border border-amber-200 text-xs text-amber-800">
-            🎬 외부 공개 데모 — 키워드 <b>"흥신소"</b>의 실제 캡처 그래프를 보여드립니다.
-            실시간 분석은 회원가입 후 이용 가능합니다.
+          <div className="mb-3 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+            <div className="font-semibold">🎬 데모 모드</div>
+            <div className="mt-0.5">
+              키워드 <b>"흥신소"</b>의 실제 캡처 네트워크 그래프를 보여드립니다.
+              실시간 분석은 회원가입 후 이용 가능합니다.
+            </div>
           </div>
         )}
 

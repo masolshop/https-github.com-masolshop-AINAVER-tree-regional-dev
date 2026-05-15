@@ -185,9 +185,12 @@ export default function RecommendTab() {
         </div>
 
         {isDemo && (
-          <div className="mb-3 px-3 py-2 rounded-md bg-amber-50 border border-amber-200 text-xs text-amber-800">
-            🎬 외부 공개 데모 — seed <b>"흥신소"</b>의 실제 캡처 추천 결과를 보여드립니다.
-            실시간 분석은 회원가입 후 이용 가능합니다.
+          <div className="mb-3 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+            <div className="font-semibold">🎬 데모 모드</div>
+            <div className="mt-0.5">
+              seed <b>"흥신소"</b>의 실제 캡처 추천 결과를 보여드립니다.
+              실시간 분석은 회원가입 후 이용 가능합니다.
+            </div>
           </div>
         )}
 
