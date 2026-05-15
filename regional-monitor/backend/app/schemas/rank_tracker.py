@@ -352,6 +352,16 @@ class RankCheckProgress(BaseModel):
     # 프론트는 노란 배너로 "네이버 일시 차단 — 약 2분 후 다시 시도해주세요" 안내한다.
     naver_circuit_open: bool = False
 
+    # Phase 7 — 사용자별 "수동 검증 잡이 백그라운드에서 실행 중" 플래그.
+    # /manual-rank-check 가 호출되면 set, 워커가 try/finally 로 종료 시 unset.
+    # 프론트는 이 값을 신뢰해서 '지금 검증' 버튼을 비활성화하고 진행률 텍스트를 표시.
+    #   · manual_running    : 실행 중 여부 (단일 권위 신호)
+    #   · manual_started    : 이 잡에 투입된 플레이스 개수 (시작 시점 스냅샷)
+    #   · manual_started_at : 시작 시각 ISO8601 (경과 시간 계산용)
+    manual_running: bool = False
+    manual_started: int = 0
+    manual_started_at: str | None = None
+
 
 # ─────────────────────────────────────────────────────────
 # 전체 초기화 (사용자 본인의 데이터 비우기)

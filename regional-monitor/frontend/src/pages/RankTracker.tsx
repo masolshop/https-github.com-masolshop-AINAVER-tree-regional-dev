@@ -139,23 +139,30 @@ export default function RankTracker() {
     fetchProgress()
   }, [fetchProgress])
 
-  // 업로드 후 또는 매칭 대기/순위 채워지지 않은 셀이 남아 있으면 5초 폴링
-  // - 매칭 진행 중: 목록(/places) 도 함께 갱신해서 SummaryBar 가 변함
-  // - 순위 채우기 중: 매트릭스만 reload tick 증가시켜 새 셀 채우기
+  // ── 동적 폴링 (Phase 7) ──────────────────────────────────────
+  // 폴링 트리거:
+  //   · progress.in_progress     : 매칭 대기 OR 빈 셀 존재 (기존)
+  //   · progress.manual_running  : 사용자가 '지금 검증' 으로 백그라운드 잡 실행 중 (Phase 7 신규)
+  // 폴링 주기:
+  //   · manual_running 일 때는 3초 (사용자가 직접 트리거 → 즉각적 피드백 우선)
+  //   · 그렇지 않으면 5초 (백그라운드 매칭 완료 대기 — 부하 감소)
   const inProgress = progress?.in_progress ?? false
+  const manualRunningBackend = progress?.manual_running ?? false
+  const shouldPoll = inProgress || manualRunningBackend
+  const pollInterval = manualRunningBackend ? 3000 : 5000
   useEffect(() => {
-    if (!inProgress) return
+    if (!shouldPoll) return
     const t = window.setInterval(async () => {
       const p = await fetchProgress()
       // 매칭이 아직 진행 중이면 places/dong-changed도 다시 가져옴
       if (p && p.pending_match > 0) {
         await fetchAll()
       }
-      // 매트릭스 reload 트리거
+      // 매트릭스 reload 트리거 — 새 셀이 들어왔을 가능성
       setMatrixReloadTick((n) => n + 1)
-    }, 5000)
+    }, pollInterval)
     return () => window.clearInterval(t)
-  }, [inProgress, fetchProgress, fetchAll])
+  }, [shouldPoll, pollInterval, fetchProgress, fetchAll])
 
   /* ── 추적 키워드 인라인 업데이트 (2단계 UX) ── */
   const handleUpdateKeywords = useCallback(
@@ -204,14 +211,31 @@ export default function RankTracker() {
     [fetchAll, fetchProgress, showToast],
   )
 
-  /* ── 수동 순위 검증 트리거 (타지역 정책 — 자동 트리거 모두 비활성화) ── */
-  const [manualChecking, setManualChecking] = useState(false)
+  /* ── 수동 순위 검증 트리거 (타지역 정책 — 자동 트리거 모두 비활성화) ──
+   * Phase 7 변경:
+   *  · 로컬 manualLocal 은 POST 직후~첫 /progress 폴링 사이의 짧은 갭 동안만 true.
+   *  · 권위 신호는 progress.manual_running (백엔드가 잡 종료 시 try/finally 로 해제).
+   *  · 청크 분할: place 수가 CHUNK_SIZE 보다 크면 N개씩 잘라 순차 호출
+   *      "검증중 → 쿨다운(폴링) → 검증중" 패턴 (Phase 6 LiveCheckTab 과 유사 UX).
+   *  · 청크 사이엔 백엔드 manual_running 가 false 가 될 때까지 폴링 대기 후
+   *    CHUNK_COOLDOWN_MS 휴식 (네이버 부하 분산).
+   */
+  const [manualLocal, setManualLocal] = useState(false)
+  // 청크 진행 상태 — 매트릭스 버튼이 "청크 N/M" 표시할 때 사용
+  const [chunkPhase, setChunkPhase] = useState<{
+    current: number
+    total: number
+    phase: 'checking' | 'cooldown'
+  } | null>(null)
+
+  // 최종 권위 busy 신호: 로컬 즉시성 OR 백엔드 truth.
+  // RankMatrix.manualChecking 으로 내려보낸다.
+  const manualChecking =
+    manualLocal || (progress?.manual_running ?? false) || chunkPhase != null
+
   const handleManualRankCheck = useCallback(
     async (placeIds: number[] = []) => {
-      // Phase 5 - Fix A: 네이버 회로차단 OPEN 인 동안에는 백그라운드 워커가
-      // 모든 셀을 단락시키므로 사용자에게 미리 안내하고 호출 자체를 막는다.
-      // (UI 의 노란 배너로도 이미 표시되어 있지만, 직접 버튼을 누른 경우엔
-      //  토스트로 한 번 더 알린다.)
+      // Phase 5 - Fix A: 네이버 회로차단 OPEN 이면 즉시 안내하고 호출 자체를 막는다.
       const fresh = await fetchProgress()
       if (fresh?.naver_circuit_open) {
         showToast(
@@ -219,30 +243,97 @@ export default function RankTracker() {
         )
         return
       }
+      // Phase 7: 백엔드가 이미 잡을 돌리고 있다면 중복 트리거 금지.
+      if (fresh?.manual_running) {
+        showToast(
+          '이미 백그라운드에서 검증 중입니다. 완료 후 다시 시도해주세요.',
+        )
+        return
+      }
 
-      setManualChecking(true)
-      try {
-        const resp = await triggerManualRankCheck(placeIds)
-        if (resp.started > 0) {
-          showToast(
-            resp.message ??
-              `${resp.started}개 업체 순위 검증을 시작했습니다. 잠시 후 매트릭스에 반영됩니다.`,
-          )
-          // 폴링 시작을 위해 progress 한 번 fetch
-          await fetchProgress()
-          // 매트릭스가 새 결과를 받도록 reload tick 증가
-          window.setTimeout(() => {
-            setMatrixReloadTick((n) => n + 1)
-            fetchAll()
-          }, 4000)
-        } else {
-          showToast(resp.message ?? '검증 가능한 업체가 없습니다.')
+      // 청크 분할 설정
+      // - 한 청크당 N건 (네이버 호출량 = N × 키워드수). 30건이면 평균 ~150 쿼리 / ~20초 내외.
+      // - 사용자가 단일 행 검증을 누르면 (1건) 청크 분할 없음 → 즉시 처리.
+      const CHUNK_SIZE = 30
+      const CHUNK_COOLDOWN_MS = 1500
+      const POLL_INTERVAL_MS = 3000
+      const POLL_TIMEOUT_MS = 5 * 60 * 1000 // 5분 (안전장치)
+
+      const ids = placeIds.length > 0 ? [...placeIds] : []
+      const chunks: number[][] = []
+      if (ids.length === 0) {
+        // 빈 배열 = '전체 검증' — 백엔드가 알아서 본인 자격 행 전부 처리.
+        // 단일 호출이지만 백엔드 잡은 길 수 있으므로 chunkPhase 로 표시.
+        chunks.push([])
+      } else {
+        for (let i = 0; i < ids.length; i += CHUNK_SIZE) {
+          chunks.push(ids.slice(i, i + CHUNK_SIZE))
         }
+      }
+
+      const totalChunks = chunks.length
+      setManualLocal(true)
+      try {
+        for (let idx = 0; idx < totalChunks; idx++) {
+          const chunkIds = chunks[idx]
+          setChunkPhase({ current: idx + 1, total: totalChunks, phase: 'checking' })
+
+          try {
+            const resp = await triggerManualRankCheck(chunkIds)
+            if (totalChunks === 1) {
+              showToast(
+                resp.message ??
+                  `${resp.started}개 업체 검증을 시작했습니다. 매트릭스에 차례로 반영됩니다.`,
+              )
+            } else {
+              showToast(
+                `청크 ${idx + 1}/${totalChunks} 시작 — ${resp.started}건 검증 중...`,
+              )
+            }
+            // 즉시 한 번 progress 동기화 → 백엔드 manual_running 이 true 가 됨
+            await fetchProgress()
+          } catch (e) {
+            // 409 (이미 검증 중) 등 — 다음 청크는 시도하지 않고 break
+            console.error('manual rank chunk failed', e)
+            showToast(
+              `청크 ${idx + 1}/${totalChunks} 실패: ${(e as Error).message}. 잠시 후 다시 시도해주세요.`,
+            )
+            break
+          }
+
+          // 마지막 청크가 아니면 — 백엔드 잡 완료를 기다린 뒤 쿨다운 후 다음 청크
+          if (idx < totalChunks - 1) {
+            setChunkPhase({ current: idx + 1, total: totalChunks, phase: 'cooldown' })
+            // 1) 현재 청크의 manual_running 이 false 가 될 때까지 폴링
+            const deadline = Date.now() + POLL_TIMEOUT_MS
+            // 첫 폴링은 짧은 지연 후 (백엔드가 busy=true set 할 시간을 줌)
+            await new Promise((r) => window.setTimeout(r, 800))
+            while (Date.now() < deadline) {
+              const p = await fetchProgress()
+              if (!p?.manual_running) break
+              await new Promise((r) => window.setTimeout(r, POLL_INTERVAL_MS))
+            }
+            // 2) 네이버 부하 분산용 짧은 쿨다운
+            await new Promise((r) => window.setTimeout(r, CHUNK_COOLDOWN_MS))
+            // 3) 매트릭스에 누적된 셀 반영
+            setMatrixReloadTick((n) => n + 1)
+            await fetchAll()
+          }
+        }
+
+        // 모든 청크가 트리거되었음. 마지막 청크의 백엔드 잡 종료는 자동 폴링이
+        // 알아서 감지 → manualChecking 이 자연스럽게 false 가 된다.
+        // 매트릭스에 최신 상태 반영을 위한 트리거.
+        window.setTimeout(() => {
+          setMatrixReloadTick((n) => n + 1)
+          fetchAll()
+        }, 2000)
       } catch (e) {
-        console.error('manual rank check failed', e)
+        console.error('manual rank check loop crashed', e)
         showToast('수동 검증 실패: ' + (e as Error).message)
       } finally {
-        setManualChecking(false)
+        setManualLocal(false)
+        setChunkPhase(null)
       }
     },
     [fetchAll, fetchProgress, showToast],
@@ -396,6 +487,8 @@ export default function RankTracker() {
           onRowClick={(p) => setDetailPlace(p)}
           onManualCheck={handleManualRankCheck}
           manualChecking={manualChecking}
+          progress={progress}
+          chunkPhase={chunkPhase}
         />
       )}
 
@@ -1527,8 +1620,24 @@ function RankMatrix(props: {
   onRowClick?: (place: RankPlaceOut) => void
   onManualCheck?: (placeIds: number[]) => void | Promise<void>
   manualChecking?: boolean
+  /** Phase 7 — 백엔드 잡 진행률 표시용 */
+  progress?: RankCheckProgress | null
+  /** Phase 7 — 청크 단위 진행 표시 (검증중/쿨다운) */
+  chunkPhase?: {
+    current: number
+    total: number
+    phase: 'checking' | 'cooldown'
+  } | null
 }) {
-  const { list, reloadTick = 0, onRowClick, onManualCheck, manualChecking = false } = props
+  const {
+    list,
+    reloadTick = 0,
+    onRowClick,
+    onManualCheck,
+    manualChecking = false,
+    progress = null,
+    chunkPhase = null,
+  } = props
 
   // 매칭 완료(place_id 있음)된 행만 매트릭스에 표시
   const items = useMemo(() => list.items.filter((p) => !!p.place_id), [list])
@@ -1609,6 +1718,30 @@ function RankMatrix(props: {
     )
   }
 
+  // Phase 7 — 버튼 라벨/툴팁 derivation
+  // 우선순위: chunkPhase(쿨다운/검증중) > 백엔드 manual_running > 로컬 즉시 신호
+  const eligibleIds = useMemo(
+    () => items.filter((p) => p.tracking_keywords.length > 0).map((p) => p.id),
+    [items],
+  )
+  const totalCells = progress?.total_cells ?? 0
+  const filledCells = progress?.filled_cells ?? 0
+  const cellPct = totalCells > 0 ? Math.min(100, Math.round((filledCells / totalCells) * 100)) : 0
+
+  let btnLabel = '지금 검증'
+  let btnTitle =
+    '타지역 정책상 자동 순위 추적이 비활성화되어 있습니다. 이 버튼으로 명시적으로 순위 검증을 시작하세요.'
+  if (chunkPhase) {
+    btnLabel =
+      chunkPhase.phase === 'checking'
+        ? `검증 중 (${chunkPhase.current}/${chunkPhase.total} 청크)`
+        : `쿨다운 (${chunkPhase.current}/${chunkPhase.total})`
+    btnTitle = '네이버 부하 분산을 위해 청크 단위로 나누어 진행 중입니다.'
+  } else if (manualChecking) {
+    btnLabel = totalCells > 0 ? `검증 중... (${filledCells}/${totalCells} 셀)` : '검증 중...'
+    btnTitle = '백그라운드에서 검증이 진행 중입니다. 완료될 때까지 다시 누를 수 없습니다.'
+  }
+
   return (
     <Card className="p-0 overflow-hidden">
       <div className="px-4 py-3 border-b border-slate-200 flex items-center gap-2">
@@ -1623,19 +1756,18 @@ function RankMatrix(props: {
             <button
               onClick={(e) => {
                 e.stopPropagation()
-                const ids = items.filter((p) => p.tracking_keywords.length > 0).map((p) => p.id)
-                onManualCheck(ids)
+                onManualCheck(eligibleIds)
               }}
               disabled={manualChecking || items.length === 0}
               className="text-xs font-semibold px-3 py-1.5 rounded-md bg-blue-600 text-white hover:bg-blue-700 inline-flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
-              title="타지역 정책상 자동 순위 추적이 비활성화되어 있습니다. 이 버튼으로 명시적으로 순위 검증을 시작하세요."
+              title={btnTitle}
             >
               {manualChecking ? (
                 <Loader2 size={12} className="animate-spin" />
               ) : (
                 <Search size={12} />
               )}
-              {manualChecking ? '검증 중...' : '지금 검증'}
+              {btnLabel}
             </button>
           )}
           <button
@@ -1648,14 +1780,51 @@ function RankMatrix(props: {
           </button>
         </div>
       </div>
-      {/* 정책 안내 배너 — 자동 추적 비활성, 수동 검증 안내 */}
-      <div className="px-4 py-2 bg-amber-50 border-b border-amber-100 text-[11px] text-amber-800 flex items-center gap-2">
-        <AlertTriangle size={12} className="flex-shrink-0" />
-        <span>
-          타지역 환경에서는 <b>자동 순위 추적이 비활성화</b>되어 있습니다.
-          순위를 확인하려면 우측 상단 <b>"지금 검증"</b> 버튼을 눌러주세요.
-        </span>
-      </div>
+
+      {/* Phase 7 — 검증 진행률 스트립 (검증 중일 때만 표시) */}
+      {manualChecking && (
+        <div className="px-4 py-2 bg-blue-50 border-b border-blue-100">
+          <div className="flex items-center justify-between text-[11px] text-blue-900 mb-1">
+            <span className="font-semibold inline-flex items-center gap-1.5">
+              <Loader2 size={11} className="animate-spin" />
+              {chunkPhase?.phase === 'cooldown'
+                ? `청크 ${chunkPhase.current}/${chunkPhase.total} 완료 — 다음 청크 준비 중...`
+                : chunkPhase
+                  ? `청크 ${chunkPhase.current}/${chunkPhase.total} 검증 중`
+                  : '백그라운드에서 순위 검증 중'}
+            </span>
+            {totalCells > 0 && (
+              <span className="font-mono">
+                {filledCells} / {totalCells} 셀 ({cellPct}%)
+              </span>
+            )}
+          </div>
+          {totalCells > 0 && (
+            <div className="h-1.5 rounded-full bg-blue-100 overflow-hidden">
+              <div
+                className={clsx(
+                  'h-full transition-all duration-500',
+                  chunkPhase?.phase === 'cooldown'
+                    ? 'bg-amber-400'
+                    : 'bg-emerald-500',
+                )}
+                style={{ width: `${cellPct}%` }}
+              />
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* 정책 안내 배너 — 자동 추적 비활성, 수동 검증 안내 (검증 중엔 숨김) */}
+      {!manualChecking && (
+        <div className="px-4 py-2 bg-amber-50 border-b border-amber-100 text-[11px] text-amber-800 flex items-center gap-2">
+          <AlertTriangle size={12} className="flex-shrink-0" />
+          <span>
+            타지역 환경에서는 <b>자동 순위 추적이 비활성화</b>되어 있습니다.
+            순위를 확인하려면 우측 상단 <b>"지금 검증"</b> 버튼을 눌러주세요.
+          </span>
+        </div>
+      )}
       <div className="overflow-x-auto">
         <table className="w-full text-xs border-collapse">
           <thead className="bg-slate-50">

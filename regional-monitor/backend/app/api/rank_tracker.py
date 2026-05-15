@@ -65,6 +65,42 @@ router = APIRouter(prefix="/rank-tracker", tags=["rank-tracker"])
 
 
 # ─────────────────────────────────────────────────────────
+# Phase 7 — 사용자별 "수동 검증 실행 중" 플래그 (in-memory)
+# ─────────────────────────────────────────────────────────
+# 사용자가 '지금 검증' 을 누르면 백그라운드 워커가 분 단위로 돌지만,
+# 기존엔 POST 응답이 즉시 돌아와서 프론트의 manualChecking 이 곧바로 false 가
+# 되어 사용자가 중복 클릭으로 동일 job 을 여러 번 띄울 수 있었다.
+#
+# 본 딕셔너리는 사용자별로 "지금 백그라운드에서 검증중인 잡이 있는지"를
+# 단순 기록한다. /progress 응답에 그대로 노출되며, /manual-rank-check 는
+# 이 값이 set 되어 있으면 409 로 거절한다.
+#
+# 프로세스 재시작 시 자연 초기화됨 (workers 도 함께 죽으므로 일관성 유지).
+# 멀티프로세스 환경이라면 Redis 로 옮겨야 하지만, 현재는 uvicorn 1워커이므로
+# 메모리 dict 로 충분.
+_user_rank_busy: dict[int, dict[str, object]] = {}
+
+
+def _mark_rank_busy(user_id: int, started: int, label: str = "manual") -> None:
+    """`started` = 이번 잡에 투입된 RegisteredPlace 개수.
+    label 은 후일 다른 트리거(스케줄러 등) 와 구분이 필요할 때 사용.
+    """
+    _user_rank_busy[user_id] = {
+        "started_at": now_kst().isoformat(),
+        "started": int(started),
+        "label": label,
+    }
+
+
+def _clear_rank_busy(user_id: int) -> None:
+    _user_rank_busy.pop(user_id, None)
+
+
+def _get_rank_busy(user_id: int) -> dict[str, object] | None:
+    return _user_rank_busy.get(user_id)
+
+
+# ─────────────────────────────────────────────────────────
 # 유틸
 # ─────────────────────────────────────────────────────────
 _PHONE_RE = re.compile(r"^070-\d{3,4}-\d{4}$")
@@ -370,29 +406,40 @@ async def _run_rank_check_for_ids(user_id: int, place_ids: list[int]) -> None:
     """
     from app.core.database import AsyncSessionLocal
 
-    # 1) places fetch 전용 세션 — 즉시 닫는다.
-    async with AsyncSessionLocal() as fetch_db:
-        q = await fetch_db.execute(
-            select(RegisteredPlace).where(
-                RegisteredPlace.id.in_(place_ids),
-                RegisteredPlace.user_id == user_id,
-                RegisteredPlace.match_status == "AUTO_MATCHED",
-                RegisteredPlace.place_id.is_not(None),
-                RegisteredPlace.tracking_keywords.is_not(None),
+    # Phase 7 — 전체 워커 라이프사이클을 try/finally 로 감싸 busy 누수 방지.
+    # 엔드포인트(_mark_rank_busy)와 워커 종료(_clear_rank_busy)의 짝을 보장한다.
+    # fetch 단계에서 places=0 으로 조기 return 하더라도 finally 가 실행되므로 안전.
+    try:
+        # 1) places fetch 전용 세션 — 즉시 닫는다.
+        async with AsyncSessionLocal() as fetch_db:
+            q = await fetch_db.execute(
+                select(RegisteredPlace).where(
+                    RegisteredPlace.id.in_(place_ids),
+                    RegisteredPlace.user_id == user_id,
+                    RegisteredPlace.match_status == "AUTO_MATCHED",
+                    RegisteredPlace.place_id.is_not(None),
+                    RegisteredPlace.tracking_keywords.is_not(None),
+                )
             )
-        )
-        places = list(q.scalars().all())
-        # NOTE: fetch_db 는 with 블록을 빠져나가면서 자동으로 닫힌다.
+            places = list(q.scalars().all())
+            # NOTE: fetch_db 는 with 블록을 빠져나가면서 자동으로 닫힌다.
 
-    if not places:
-        return
-    log.info(
-        "auto rank-check starting: user_id=%s places=%d",
-        user_id, len(places),
-    )
-    # 2) rank_check 본체 — 자체 워커 세션만 사용. 외부 db 인자는 None.
-    stats = await run_rank_check_for_places(None, places)
-    log.info("auto rank-check done: user_id=%s stats=%s", user_id, stats)
+        if not places:
+            log.info("auto rank-check no-op: user_id=%s places=0", user_id)
+            return
+        log.info(
+            "auto rank-check starting: user_id=%s places=%d",
+            user_id, len(places),
+        )
+        # 엔드포인트에서 이미 set 했지만, 직접 함수가 다른 경로로 호출될 가능성
+        # (관리자 페이지 등) 을 대비해 동일 키로 갱신. 멱등 — 같은 데이터로 덮어씀.
+        _mark_rank_busy(user_id, started=len(places), label="manual")
+        # 2) rank_check 본체 — 자체 워커 세션만 사용. 외부 db 인자는 None.
+        stats = await run_rank_check_for_places(None, places)
+        log.info("auto rank-check done: user_id=%s stats=%s", user_id, stats)
+    finally:
+        # 정상/예외/early-return 모두 — 잡 종료 시 busy 해제 보장
+        _clear_rank_busy(user_id)
 
 
 # ─────────────────────────────────────────────────────────
@@ -1373,6 +1420,16 @@ async def get_rank_progress(
     except Exception:  # noqa: BLE001
         circuit_open = False
 
+    # Phase 7 — 사용자별 "수동 검증 실행 중" 플래그.
+    # /manual-rank-check 가 BackgroundTask 로 _run_rank_check_for_ids 를 호출하면
+    # 그 워커가 시작과 동시에 _mark_rank_busy(user_id) 를 set, 종료/예외 시
+    # try/finally 로 _clear_rank_busy(user_id). 그 사이 본 엔드포인트는
+    # 항상 manual_running=True 를 반환하므로 프론트가 신뢰성 있게 버튼을 비활성화할 수 있다.
+    busy = _get_rank_busy(user.id)
+    manual_running = busy is not None
+    manual_started = int(busy["started"]) if busy else 0
+    manual_started_at = str(busy["started_at"]) if busy else None
+
     return RankCheckProgress(
         total_places=total_places,
         pending_match=pending,
@@ -1382,6 +1439,9 @@ async def get_rank_progress(
         filled_cells=filled_cells,
         in_progress=in_progress,
         naver_circuit_open=circuit_open,
+        manual_running=manual_running,
+        manual_started=manual_started,
+        manual_started_at=manual_started_at,
     )
 
 
@@ -1444,6 +1504,16 @@ async def trigger_manual_rank_check(
     · req.place_ids 비어있음 → 본인의 AUTO_MATCHED + 키워드 보유 행 전체 검증
     · req.place_ids 지정 → 그 중 자격 조건 만족하는 행만 검증
     """
+    # Phase 7 — 중복 잡 방지.
+    # 이 사용자에 대한 이전 잡이 아직 백그라운드에서 돌고 있다면 409 로 거절한다.
+    # 프론트는 /progress.manual_running 로도 같은 정보를 미리 받고 있어 버튼이
+    # 비활성화되지만, 폴링 사이의 race (사용자가 폴링 직후 클릭) 를 막기 위한 서버측 가드.
+    if _get_rank_busy(user.id) is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="이미 검증 중입니다. 잠시 후 다시 시도해주세요.",
+        )
+
     # 자격 조건: 본인 소유 + AUTO_MATCHED/CONFIRMED + place_id 보유 + 키워드 1개 이상
     base_where = [
         RegisteredPlace.user_id == user.id,
@@ -1466,6 +1536,11 @@ async def trigger_manual_rank_check(
         skipped = 0
 
     if started > 0:
+        # Phase 7 — race-safe busy mark.
+        # BackgroundTasks 큐잉 ~ 워커 시작 사이의 갭에 다른 요청이 들어와도
+        # 409 로 거절되도록 *동기적으로* 플래그 set. 워커 내부의 finally 에서
+        # 동일 _clear_rank_busy 가 항상 호출되므로 leak 위험 없음.
+        _mark_rank_busy(user.id, started=started, label="manual")
         background_tasks.add_task(_run_rank_check_for_ids, user.id, eligible_ids)
 
     return ManualRankCheckResponse(

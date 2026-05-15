@@ -247,6 +247,14 @@ export interface RankCheckProgress {
    *  true 일 때 "지금 검증" 을 눌러도 모든 셀이 단락되어 결과가 안 쌓이므로
    *  프론트는 노란 배너로 "약 2분 후 다시 시도" 를 안내한다. */
   naver_circuit_open?: boolean
+  /** Phase 7 — 사용자별 "수동 검증 실행 중" 플래그.
+   *  /manual-rank-check 호출 시 set, 워커 종료 시 unset.
+   *  프론트는 이 값을 단일 권위 신호로 사용하여 '지금 검증' 버튼을 비활성화한다. */
+  manual_running?: boolean
+  /** 이번 잡에 투입된 플레이스 개수 (시작 시점 스냅샷). */
+  manual_started?: number
+  /** 잡 시작 시각 ISO8601 (경과 시간/추정 잔여 시간 계산용). */
+  manual_started_at?: string | null
 }
 
 /* ─────────── API 함수 ─────────── */
