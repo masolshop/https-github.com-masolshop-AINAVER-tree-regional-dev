@@ -53,8 +53,34 @@ def _split_tracking_keywords(raw: str | None) -> list[str]:
     return [k.strip() for k in raw.split(",") if k.strip()][:5]
 
 
-def _build_query(*, dong: str, keyword: str) -> str:
-    """등록동 + 키워드 조합 쿼리. region 추론되면 시도+시군구 포함."""
+def _is_rural_admin_unit(dong: str) -> bool:
+    """등록동이 면/리 등 농어촌 행정 단위인지 판별.
+
+    면(township) / 리(village) 단위는 모집단이 매우 적어
+    "{시도} {시군구} {면} {keyword}" 쿼리가 top 75 안에 결과를 거의 못 만든다.
+    이 경우 시군구 레벨로 넓혀서 재검색해야 노출 순위가 잡힌다.
+    """
+    if not dong:
+        return False
+    d = dong.strip()
+    # 끝자리 한 글자가 면/리 이면 농어촌 단위로 간주.
+    # (예: "춘양면", "내북면", "도원리"). "동" 으로 끝나면 도시 동 → 좁은 쿼리 유지.
+    return d.endswith("면") or d.endswith("리")
+
+
+def _build_query(*, dong: str, keyword: str, wide: bool = False) -> str:
+    """등록동 + 키워드 조합 쿼리.
+
+    Args:
+        dong: 등록동 (예: "춘양면", "역삼동")
+        keyword: 추적 키워드 (예: "대형렉카")
+        wide: True 이면 동 컴포넌트를 빼고 시도+시군구+키워드만 사용.
+              농어촌 면/리 단위 fallback 검색에 사용.
+
+    Returns:
+        - narrow (wide=False): "{시도} {시군구} {동} {keyword}"
+        - wide   (wide=True):  "{시도} {시군구} {keyword}"
+    """
     parts: list[str] = []
     regions = lookup_region_by_dong(dong) if dong else []
     if regions:
@@ -63,11 +89,27 @@ def _build_query(*, dong: str, keyword: str) -> str:
             parts.append(sido)
         if sigungu:
             parts.append(sigungu)
-    if dong:
+    if dong and not wide:
         parts.append(dong)
     if keyword:
         parts.append(keyword)
     return " ".join(parts)
+
+
+async def _search_and_rank(
+    *,
+    query: str,
+    place_id: str,
+    client: httpx.AsyncClient | None,
+) -> tuple[int | None, int | None, str | None]:
+    """단일 쿼리로 네이버 지도 검색 → (rank, total_count, error) 반환."""
+    res = await search_map(query, display=75, client=client)
+    if res.error:
+        return None, None, res.error
+    for idx, it in enumerate(res.items, start=1):
+        if str(it.place_id) == str(place_id):
+            return idx, res.total_count, None
+    return None, res.total_count, None
 
 
 async def check_rank_one(
@@ -78,9 +120,14 @@ async def check_rank_one(
     keyword: str,
     client: httpx.AsyncClient | None = None,
 ) -> RankCheckOutcome:
-    """단일 (place_pk, dong, keyword) 조합 순위 체크."""
-    query = _build_query(dong=dong, keyword=keyword)
-    if not query or not place_id:
+    """단일 (place_pk, dong, keyword) 조합 순위 체크.
+
+    검색 전략 (rural 면/리 단위 노출률 개선):
+      1차 — narrow: "{시도} {시군구} {동} {keyword}"
+      2차 — wide (등록동이 면/리 일 때만): "{시도} {시군구} {keyword}"
+            1차에서 out_of_range 였고, fallback 쿼리가 실제로 달라질 때만 시도.
+    """
+    if not place_id or not (dong or keyword):
         return RankCheckOutcome(
             place_pk=place_pk,
             keyword=keyword,
@@ -91,8 +138,8 @@ async def check_rank_one(
             error="invalid_input",
         )
 
-    res = await search_map(query, display=75, client=client)
-    if res.error:
+    narrow_query = _build_query(dong=dong, keyword=keyword, wide=False)
+    if not narrow_query:
         return RankCheckOutcome(
             place_pk=place_pk,
             keyword=keyword,
@@ -100,14 +147,33 @@ async def check_rank_one(
             rank=None,
             out_of_range=True,
             total_results=None,
-            error=res.error,
+            error="invalid_input",
         )
 
-    rank: int | None = None
-    for idx, it in enumerate(res.items, start=1):
-        if str(it.place_id) == str(place_id):
-            rank = idx
-            break
+    rank, total, err = await _search_and_rank(
+        query=narrow_query, place_id=place_id, client=client,
+    )
+    if err:
+        return RankCheckOutcome(
+            place_pk=place_pk,
+            keyword=keyword,
+            dong=dong,
+            rank=None,
+            out_of_range=True,
+            total_results=None,
+            error=err,
+        )
+
+    # Fallback: rural 면/리 단위인데 1차에서 못 잡혔으면 시군구 레벨로 재검색.
+    if rank is None and _is_rural_admin_unit(dong):
+        wide_query = _build_query(dong=dong, keyword=keyword, wide=True)
+        if wide_query and wide_query != narrow_query:
+            w_rank, w_total, w_err = await _search_and_rank(
+                query=wide_query, place_id=place_id, client=client,
+            )
+            if not w_err and w_rank is not None:
+                rank = w_rank
+                total = w_total
 
     return RankCheckOutcome(
         place_pk=place_pk,
@@ -115,7 +181,7 @@ async def check_rank_one(
         dong=dong,
         rank=rank,
         out_of_range=(rank is None),
-        total_results=res.total_count,
+        total_results=total,
     )
 
 
