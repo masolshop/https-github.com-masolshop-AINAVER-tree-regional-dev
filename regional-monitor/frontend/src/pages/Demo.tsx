@@ -40,6 +40,13 @@ export default function Demo() {
       return
     }
 
+    // 안전한 next path 파싱 — 같은 출처 내부 경로만 허용 (open-redirect 방지)
+    const rawNext = (params.get('next') || params.get('redirect') || '').trim()
+    const nextPath =
+      rawNext && rawNext.startsWith('/') && !rawNext.startsWith('//')
+        ? rawNext
+        : '/monitor' // 기본값 — 5대 솔루션 진입의 자연스러운 시작점
+
     let cancelled = false
     ;(async () => {
       setStatus('loading')
@@ -47,8 +54,8 @@ export default function Demo() {
         const resp = await authApi.demoLogin({ token })
         if (cancelled) return
         setSession(resp.access_token, resp.user)
-        // 데모 게스트는 monitor 부터 — 5대 솔루션 진입의 자연스러운 시작점
-        navigate('/monitor', { replace: true })
+        // 데모 게스트는 monitor 부터 — 단, next 쿼리로 특정 솔루션 지정 가능
+        navigate(nextPath, { replace: true })
       } catch (e) {
         if (cancelled) return
         const msg =
