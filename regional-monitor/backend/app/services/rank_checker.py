@@ -53,47 +53,88 @@ def _split_tracking_keywords(raw: str | None) -> list[str]:
     return [k.strip() for k in raw.split(",") if k.strip()][:5]
 
 
-def _is_rural_admin_unit(dong: str) -> bool:
-    """등록동이 면/리 등 농어촌 행정 단위인지 판별.
+def _is_rural_token(tok: str) -> bool:
+    """토큰이 면/리 등 농어촌 단위인지 판별."""
+    if not tok:
+        return False
+    t = tok.strip()
+    return t.endswith("면") or t.endswith("리")
 
-    면(township) / 리(village) 단위는 모집단이 매우 적어
-    "{시도} {시군구} {면} {keyword}" 쿼리가 top 75 안에 결과를 거의 못 만든다.
-    이 경우 시군구 레벨로 넓혀서 재검색해야 노출 순위가 잡힌다.
+
+def _has_rural_tokens(dong: str) -> bool:
+    """등록동 문자열 어딘가에 면/리 토큰이 있으면 True.
+
+    registered_dong 는 보통 "{시도} {시군구} {읍/면/동} {리?}" 형태의 멀티토큰
+    문자열로 저장된다 (예: "전라남도 화순군 청풍면 대비리", "광주광역시 광산구 왕동").
+    면/리 토큰이 하나라도 있으면 농어촌 단위로 간주해 wide fallback 을 활성화한다.
     """
     if not dong:
         return False
-    d = dong.strip()
-    # 끝자리 한 글자가 면/리 이면 농어촌 단위로 간주.
-    # (예: "춘양면", "내북면", "도원리"). "동" 으로 끝나면 도시 동 → 좁은 쿼리 유지.
-    return d.endswith("면") or d.endswith("리")
+    return any(_is_rural_token(t) for t in dong.strip().split())
 
 
 def _build_query(*, dong: str, keyword: str, wide: bool = False) -> str:
     """등록동 + 키워드 조합 쿼리.
 
+    registered_dong 는 두 가지 포맷이 혼재한다:
+      (A) 단일 토큰 — "역삼동", "춘양면" → 과거 매칭 결과 (구버전)
+      (B) 멀티 토큰 — "광주광역시 광산구 왕동",
+                       "전라남도 화순군 청풍면 대비리" → 신버전
+    어느 경우든 narrow 쿼리는 dong 문자열을 그대로 붙인 뒤
+    region 추론이 가능하면 시도+시군구를 prepend 한다.
+
+    wide=True (rural fallback) 일 때:
+      - 멀티토큰이면: 끝에서부터 면/리 토큰을 제거하여 시도+시군구(+읍/동)만 남긴다.
+        예: "전라남도 화순군 청풍면 대비리" → "전라남도 화순군"
+        예: "전라남도 고흥군 고흥읍 고소리" → "전라남도 고흥군 고흥읍"
+      - 단일토큰이면: region 추론으로 시도+시군구만 사용하고 dong 은 버린다.
+
     Args:
-        dong: 등록동 (예: "춘양면", "역삼동")
+        dong: 등록동 (예: "춘양면", "전라남도 화순군 청풍면 대비리")
         keyword: 추적 키워드 (예: "대형렉카")
-        wide: True 이면 동 컴포넌트를 빼고 시도+시군구+키워드만 사용.
-              농어촌 면/리 단위 fallback 검색에 사용.
+        wide: 농어촌 면/리 단위 fallback 검색 활성화 플래그.
 
     Returns:
-        - narrow (wide=False): "{시도} {시군구} {동} {keyword}"
-        - wide   (wide=True):  "{시도} {시군구} {keyword}"
+        narrow: "{[시도 시군구 ]?}{dong원본} {keyword}"
+        wide:   "{시도} {시군구}[ 읍/동]?  {keyword}"
     """
     parts: list[str] = []
-    regions = lookup_region_by_dong(dong) if dong else []
-    if regions:
-        sido, sigungu = regions[0]
-        if sido:
-            parts.append(sido)
-        if sigungu:
-            parts.append(sigungu)
-    if dong and not wide:
-        parts.append(dong)
+    d = (dong or "").strip()
+
+    if not wide:
+        # NARROW — 기존 동작 유지. region 추론이 가능하면 시도/시군구 prepend.
+        regions = lookup_region_by_dong(d) if d else []
+        if regions:
+            sido, sigungu = regions[0]
+            if sido:
+                parts.append(sido)
+            if sigungu:
+                parts.append(sigungu)
+        if d:
+            parts.append(d)
+    else:
+        # WIDE — 면/리 토큰을 제거해서 시군구 레벨로 넓힌다.
+        tokens = d.split() if d else []
+        if len(tokens) >= 2:
+            # 멀티토큰: 끝에서부터 면/리 제거
+            trimmed = list(tokens)
+            while trimmed and _is_rural_token(trimmed[-1]):
+                trimmed.pop()
+            parts.extend(trimmed)
+        elif len(tokens) == 1:
+            # 단일토큰: region 추론으로 시도+시군구만 사용
+            regions = lookup_region_by_dong(d)
+            if regions:
+                sido, sigungu = regions[0]
+                if sido:
+                    parts.append(sido)
+                if sigungu:
+                    parts.append(sigungu)
+            # dong 자체는 wide 모드에서 추가하지 않음
+
     if keyword:
         parts.append(keyword)
-    return " ".join(parts)
+    return " ".join(p for p in parts if p)
 
 
 async def _search_and_rank(
@@ -164,8 +205,9 @@ async def check_rank_one(
             error=err,
         )
 
-    # Fallback: rural 면/리 단위인데 1차에서 못 잡혔으면 시군구 레벨로 재검색.
-    if rank is None and _is_rural_admin_unit(dong):
+    # Fallback: rural 면/리 토큰이 포함된 등록동인데 1차에서 못 잡혔으면
+    # 시군구 레벨로 재검색.
+    if rank is None and _has_rural_tokens(dong):
         wide_query = _build_query(dong=dong, keyword=keyword, wide=True)
         if wide_query and wide_query != narrow_query:
             w_rank, w_total, w_err = await _search_and_rank(
