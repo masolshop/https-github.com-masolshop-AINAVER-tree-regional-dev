@@ -347,6 +347,11 @@ class RankCheckProgress(BaseModel):
     filled_cells: int           # PlaceRankHistory에 기록 있는 셀 개수
     in_progress: bool           # True 면 아직 작업 중 — 프론트는 폴링 계속
 
+    # Phase 5 - Fix A: 네이버 회로차단 상태를 프론트가 직접 볼 수 있도록 노출.
+    # OPEN 인 동안에는 "지금 검증" 을 눌러도 모든 셀이 단락되어 결과가 안 쌓이므로
+    # 프론트는 노란 배너로 "네이버 일시 차단 — 약 2분 후 다시 시도해주세요" 안내한다.
+    naver_circuit_open: bool = False
+
 
 # ─────────────────────────────────────────────────────────
 # 전체 초기화 (사용자 본인의 데이터 비우기)

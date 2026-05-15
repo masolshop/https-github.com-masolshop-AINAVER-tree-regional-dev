@@ -112,6 +112,19 @@ class _CircuitBreaker:
 _circuit = _CircuitBreaker()
 
 
+def is_circuit_open() -> bool:
+    """현재 회로차단 상태가 OPEN 인지 외부에서 확인할 수 있는 헬퍼.
+
+    rank_checker 의 워커가 검색 호출 전에 미리 short-circuit 하기 위해 사용한다.
+    HALF_OPEN 은 1회 통과 허용 상태이므로 여기서는 False 로 본다(=호출 시도).
+
+    [정책] OPEN 동안 워커들이 줄지어 DB write 시도하면 cooldown=120s 동안
+    수십~수백건의 무의미한 commit() 이 발생해 'prepared/another operation'
+    경쟁이 심해진다. 따라서 워커 진입 시점에 한 번 더 체크해서 단락한다.
+    """
+    return _circuit.state == "OPEN"
+
+
 def _is_retriable_status(code: int) -> bool:
     # 5xx 와 429 (rate-limit) 는 재시도. 4xx 나머지는 즉시 반환.
     return code >= 500 or code == 429

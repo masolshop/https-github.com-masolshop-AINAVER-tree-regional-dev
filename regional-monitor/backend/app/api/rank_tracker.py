@@ -361,11 +361,18 @@ async def _run_rank_check_for_ids(user_id: int, place_ids: list[int]) -> None:
 
     [정책] 타지역 환경에서는 자동 순위 추적이 의미가 없어 자동 트리거를 모두 비활성화함.
     이 함수는 오직 수동 트리거 (POST /run-rank-check, POST /run-rank-check-ids) 에서만 호출된다.
+
+    [Phase 5 - Fix B] places 조회용 세션과 rank-check 본체를 명확히 분리.
+    이전엔 fetch 세션을 rank_check 본체에 넘겼다가 워커들이 동시 commit 하는 사이
+    fetch 세션이 'prepared/closed' 상태로 어그러져 IllegalStateChangeError 가 났다.
+    이제는 places 만 가져온 뒤 fetch 세션을 닫고, run_rank_check_for_places 는
+    자체 워커 세션만 사용한다.
     """
     from app.core.database import AsyncSessionLocal
 
-    async with AsyncSessionLocal() as db:
-        q = await db.execute(
+    # 1) places fetch 전용 세션 — 즉시 닫는다.
+    async with AsyncSessionLocal() as fetch_db:
+        q = await fetch_db.execute(
             select(RegisteredPlace).where(
                 RegisteredPlace.id.in_(place_ids),
                 RegisteredPlace.user_id == user_id,
@@ -375,14 +382,17 @@ async def _run_rank_check_for_ids(user_id: int, place_ids: list[int]) -> None:
             )
         )
         places = list(q.scalars().all())
-        if not places:
-            return
-        log.info(
-            "auto rank-check starting: user_id=%s places=%d",
-            user_id, len(places),
-        )
-        stats = await run_rank_check_for_places(db, places)
-        log.info("auto rank-check done: user_id=%s stats=%s", user_id, stats)
+        # NOTE: fetch_db 는 with 블록을 빠져나가면서 자동으로 닫힌다.
+
+    if not places:
+        return
+    log.info(
+        "auto rank-check starting: user_id=%s places=%d",
+        user_id, len(places),
+    )
+    # 2) rank_check 본체 — 자체 워커 세션만 사용. 외부 db 인자는 None.
+    stats = await run_rank_check_for_places(None, places)
+    log.info("auto rank-check done: user_id=%s stats=%s", user_id, stats)
 
 
 # ─────────────────────────────────────────────────────────
@@ -1322,6 +1332,15 @@ async def get_rank_progress(
     #   - AUTO_MATCHED 인데 아직 채워지지 않은 셀이 있는 경우
     in_progress = (pending > 0) or (filled_cells < total_cells)
 
+    # Phase 5 - Fix A: 네이버 회로차단 상태 노출.
+    # OPEN 상태에서 "지금 검증" 을 눌러도 모든 셀이 단락되므로 프론트가
+    # 즉시 노란 배너로 안내해서 사용자 혼란을 줄인다.
+    try:
+        from app.services.naver_map import is_circuit_open as _ncb_is_open
+        circuit_open = _ncb_is_open()
+    except Exception:  # noqa: BLE001
+        circuit_open = False
+
     return RankCheckProgress(
         total_places=total_places,
         pending_match=pending,
@@ -1330,6 +1349,7 @@ async def get_rank_progress(
         total_cells=total_cells,
         filled_cells=filled_cells,
         in_progress=in_progress,
+        naver_circuit_open=circuit_open,
     )
 
 
@@ -1358,12 +1378,13 @@ async def trigger_rank_check_now(
     started = len(places)
 
     async def _run() -> None:
-        from app.core.database import AsyncSessionLocal
-        async with AsyncSessionLocal() as worker_db:
-            try:
-                await run_rank_check_for_places(worker_db, places)
-            except Exception as e:  # noqa: BLE001
-                log.exception("manual rank-check failed: %s", e)
+        # Phase 5 - Fix B: 외부 db 없이 자체 워커 세션만 사용.
+        # run_rank_check_for_places 는 db 인자를 받아도 더 이상 사용하지 않으며,
+        # 호출 후 final commit 도 시도하지 않으므로 외부 세션을 만들 필요가 없다.
+        try:
+            await run_rank_check_for_places(None, places)
+        except Exception as e:  # noqa: BLE001
+            log.exception("manual rank-check failed: %s", e)
 
     background_tasks.add_task(_run)
     return RunRankCheckResponse(

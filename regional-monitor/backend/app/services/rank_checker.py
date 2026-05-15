@@ -24,7 +24,7 @@ from app.core.database import AsyncSessionLocal
 from app.core.time_utils import now_kst
 from app.models.place import RegisteredPlace
 from app.models.rank_history import PlaceRankHistory
-from app.services.naver_map import search_map
+from app.services.naver_map import is_circuit_open, search_map
 from app.services.region_loader import lookup_region_by_dong
 
 log = logging.getLogger(__name__)
@@ -33,6 +33,10 @@ log = logging.getLogger(__name__)
 # competition 솔루션과 동일한 수준으로 끌어올림 (이전 0.8s/3concurrency → 너무 보수적)
 RANK_PACE_SEC = 0.2
 # 동시성 (competition 의 CHUNK_CONCURRENCY=10 보다 약간 보수적)
+#
+# [DB pool 과의 관계] core/database.py 의 PostgreSQL pool_size=20, max_overflow=20 → 최대 40 connection.
+# 워커마다 자체 AsyncSession (1 connection) 을 발급하므로 RANK_CONCURRENCY <= 16 이면 안전.
+# 8 은 (네이버 차단 회피용) + (다른 API 요청을 위한 풀 여유분) 의 절충점.
 RANK_CONCURRENCY = 8
 
 
@@ -284,7 +288,7 @@ async def _persist_outcome(
 
 
 async def run_rank_check_for_places(
-    db: AsyncSession,
+    db: AsyncSession | None,
     places: Iterable[RegisteredPlace],
     *,
     check_date: date_cls | None = None,
@@ -293,9 +297,27 @@ async def run_rank_check_for_places(
 ) -> dict[str, int]:
     """주어진 places 리스트의 모든 (place × keyword) 조합 순위를 일괄 체크.
 
+    [Fix B 의 핵심 — Phase 5]
+    이전에는 호출자가 넘긴 `db` 세션을 워커 종료 후 final commit 에 사용했으나,
+    워커들이 자체 AsyncSession 으로 commit 하는 동안 외부 `db` 는 'idle in
+    transaction' 또는 'prepared' 상태에 머무를 수 있다. 그 상태에서 final
+    `db.commit()` 을 부르면 다음 에러들이 연쇄 발생했다:
+        · sqlalchemy.exc.IllegalStateChangeError (prepared → commit)
+        · sqlalchemy.exc.InvalidRequestError (prepared state, no further SQL)
+        · sqlalchemy.exc.ResourceClosedError (transaction is closed)
+        · asyncpg.InterfaceError: another operation is in progress
+
+    이제는 **외부 `db` 를 일체 사용하지 않는다**. 이 함수는 워커마다 자체
+    AsyncSession 을 발급해 영속화 + commit 하므로 호출자의 세션 상태와
+    완전히 독립적이다. `db` 인자는 하위호환을 위해 받기만 하고 무시한다.
+    (호출부가 places 를 미리 select 한 세션을 그대로 넘겨주는 패턴이 많아
+    바로 제거하지 않음.)
+
     Returns:
         {processed, success, out_of_range, error, skipped}
     """
+    # db 인자는 하위호환을 위해 받지만 사용하지 않는다 (Fix B).
+    _ = db  # mark intentionally unused
     if check_date is None:
         check_date = now_kst().date()
 
@@ -317,38 +339,76 @@ async def run_rank_check_for_places(
             "out_of_range": 0,
             "error": 0,
             "skipped": 0,
+            "circuit_skipped": 0,
         }
 
-    stats = {"processed": 0, "success": 0, "out_of_range": 0, "error": 0, "skipped": 0}
+    stats = {
+        "processed": 0,
+        "success": 0,
+        "out_of_range": 0,
+        "error": 0,
+        "skipped": 0,
+        "circuit_skipped": 0,  # 회로차단으로 단락된 건수 (Fix A)
+    }
     sem = asyncio.Semaphore(max(1, concurrency))
     pace_s = max(0.0, pace_ms / 1000.0)
 
     # ⚠️ 동시성 안전성: asyncpg connection 1개로는 동시에 1개 쿼리만 가능.
     # 따라서 각 worker 마다 자체 AsyncSession (≈ 자체 connection) 을 발급해서
-    # "another operation is in progress" 에러 방지. 외부 `db` 는 select/final flush 전용.
+    # "another operation is in progress" 에러 방지.
     async with httpx.AsyncClient(timeout=20.0, follow_redirects=True) as client:
         async def worker(pk: int, place_id: str, dong: str, keyword: str) -> None:
             async with sem:
-                outcome = await check_rank_one(
-                    place_pk=pk,
-                    place_id=place_id,
-                    dong=dong,
-                    keyword=keyword,
-                    client=client,
-                )
+                # ─── Fix A: 회로차단 OPEN 이면 네이버 호출 시도조차 하지 않고
+                # outcome.error='naver_unavailable' 로 기록한다.
+                # search_map() 내부에서도 단락하지만, 워커 진입 시점에
+                # 미리 체크해두면 (1) check_rank_one 의 헛돈 분기 (예: rural
+                # fallback 2회 시도)를 막고, (2) DB write 도 스킵해서
+                # prepared/another operation 경쟁을 줄인다.
+                if is_circuit_open():
+                    stats["processed"] += 1
+                    stats["circuit_skipped"] += 1
+                    # pace 도 의미 없으니 즉시 다음 worker 에게 슬롯 양보
+                    return
+
+                try:
+                    outcome = await check_rank_one(
+                        place_pk=pk,
+                        place_id=place_id,
+                        dong=dong,
+                        keyword=keyword,
+                        client=client,
+                    )
+                except Exception as e:  # noqa: BLE001
+                    # check_rank_one 자체에서 예외가 새어나온 경우 (이론상 없음).
+                    log.exception("check_rank_one crashed for pk=%s kw=%s: %s", pk, keyword, e)
+                    stats["processed"] += 1
+                    stats["error"] += 1
+                    return
+
                 stats["processed"] += 1
+                # naver_unavailable (회로차단 단락) 은 일반 error 와 구분해서 카운트
+                if outcome.error == "naver_unavailable":
+                    stats["circuit_skipped"] += 1
+                    # DB write 도 스킵 — out_of_range 로 덮어쓰면 진짜 75위밖과
+                    # 구별 불가하므로 그냥 기존 셀을 유지한다.
+                    if pace_s:
+                        await asyncio.sleep(pace_s)
+                    return
                 if outcome.error:
                     stats["error"] += 1
                 elif outcome.rank is None:
                     stats["out_of_range"] += 1
                 else:
                     stats["success"] += 1
+
                 # 워커 전용 세션으로 persist (다른 워커와 connection 공유 X)
                 try:
                     async with AsyncSessionLocal() as wdb:
                         try:
                             await _persist_outcome(wdb, outcome, check_date)
-                            # 매트릭스 실시간 폴링이 즉시 새 셀을 볼 수 있도록 outcome 마다 커밋.
+                            # 매트릭스 실시간 폴링이 즉시 새 셀을 볼 수 있도록
+                            # outcome 마다 커밋.
                             await wdb.commit()
                         except Exception as inner:  # noqa: BLE001
                             log.exception("rank persist failed (inner): %s", inner)
@@ -368,16 +428,18 @@ async def run_rank_check_for_places(
             worker(pk, pid, dg, kw) for (pk, pid, dg, kw) in tasks
         ])
 
-    # 안전망 — 워커들이 각자 commit 했으니 외부 db 는 보통 dirty 아님.
-    # 다만 호출부가 사전에 db 에 변경을 쌓아둔 게 있을 수 있어 final flush 시도.
-    try:
-        await db.commit()
-    except Exception as e:  # noqa: BLE001
-        log.exception("rank batch final commit failed: %s", e)
-        try:
-            await db.rollback()
-        except Exception:  # noqa: BLE001
-            pass
+    # ─── Fix B: 외부 db 에 대한 final commit 제거.
+    # 워커들이 자체 세션으로 이미 영속화했으므로 추가 commit 이 필요 없다.
+    # 외부 db 를 건드리지 않으므로 호출자 컨텍스트에서 발생하던 prepared/closed
+    # 충돌이 사라진다.
+
+    if stats["circuit_skipped"] > 0:
+        log.warning(
+            "rank-check completed with naver_unavailable: total=%d circuit_skipped=%d "
+            "success=%d out_of_range=%d error=%d",
+            stats["processed"], stats["circuit_skipped"],
+            stats["success"], stats["out_of_range"], stats["error"],
+        )
 
     return stats
 
@@ -387,6 +449,8 @@ async def run_daily_rank_check(db: AsyncSession) -> dict[str, int]:
 
     현재 정책: 자동 timer 비활성. 운영자 수동 트리거(/api/v1/rank-tracker/run-rank-check)
     또는 향후 스케줄러가 본 함수를 호출한다.
+
+    [Phase 5 - Fix B] places 만 외부 db 로 fetch 한 뒤, 본체는 자체 워커 세션만 사용한다.
     """
     q = await db.execute(
         select(RegisteredPlace).where(
@@ -396,4 +460,5 @@ async def run_daily_rank_check(db: AsyncSession) -> dict[str, int]:
         )
     )
     places = list(q.scalars().all())
-    return await run_rank_check_for_places(db, places)
+    # 외부 db 는 더 이상 본체에 넘기지 않는다 — 워커들이 자체 세션으로 commit.
+    return await run_rank_check_for_places(None, places)

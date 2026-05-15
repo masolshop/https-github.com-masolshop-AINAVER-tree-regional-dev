@@ -208,6 +208,18 @@ export default function RankTracker() {
   const [manualChecking, setManualChecking] = useState(false)
   const handleManualRankCheck = useCallback(
     async (placeIds: number[] = []) => {
+      // Phase 5 - Fix A: 네이버 회로차단 OPEN 인 동안에는 백그라운드 워커가
+      // 모든 셀을 단락시키므로 사용자에게 미리 안내하고 호출 자체를 막는다.
+      // (UI 의 노란 배너로도 이미 표시되어 있지만, 직접 버튼을 누른 경우엔
+      //  토스트로 한 번 더 알린다.)
+      const fresh = await fetchProgress()
+      if (fresh?.naver_circuit_open) {
+        showToast(
+          '네이버가 일시 차단되어 검증을 시작할 수 없습니다. 약 2분 후 다시 시도해주세요.',
+        )
+        return
+      }
+
       setManualChecking(true)
       try {
         const resp = await triggerManualRankCheck(placeIds)
@@ -332,6 +344,9 @@ export default function RankTracker() {
           {toast}
         </div>
       )}
+
+      {/* 0a) 네이버 회로차단 배너 — Phase 5 Fix A */}
+      {progress?.naver_circuit_open && <NaverCircuitOpenBanner />}
 
       {/* 0) 변경 노출 배너 — 등록동≠실제 노출동 케이스 알림 */}
       {dongChanged && dongChanged.count > 0 && (
@@ -1284,6 +1299,33 @@ function ProgressBanner(props: { progress: RankCheckProgress }) {
       <div className="mt-3 text-[11px] text-blue-800/80">
         매칭이 끝나는 대로 매칭된 플레이스의 키워드별 순위가 네이버에서 자동 수집되어
         아래 매트릭스에 채워집니다. 페이지를 떠나도 백그라운드에서 계속 진행됩니다.
+      </div>
+    </Card>
+  )
+}
+
+/* ────────────────────────────────────────────────────────────
+ * 컴포넌트: 네이버 회로차단 배너 (Phase 5 - Fix A)
+ *  - 백엔드의 naver_map circuit breaker 가 OPEN 일 때 표시
+ *  - OPEN 동안에는 "지금 검증" 을 눌러도 모든 셀이 단락되어 결과가 안 쌓인다
+ *  - cooldown 은 120 초. 5 초 폴링이므로 자동으로 사라진다.
+ * ──────────────────────────────────────────────────────────── */
+function NaverCircuitOpenBanner() {
+  return (
+    <Card className="p-0 overflow-hidden border-rose-300 ring-1 ring-rose-200">
+      <div className="flex items-center gap-3 px-4 py-3 bg-rose-50">
+        <AlertTriangle className="text-rose-600 shrink-0" size={20} />
+        <div className="flex-1 min-w-0">
+          <div className="text-sm font-bold text-rose-900">
+            네이버 지도 일시 차단 감지 — 검증을 잠시 중단합니다
+          </div>
+          <div className="text-xs text-rose-800/80 mt-0.5">
+            네이버 응답이 연속 실패하여 회로차단이 발동했습니다. 약 2분 후
+            자동으로 복구되며, 이 배너가 사라지면 "지금 검증" 을 다시
+            눌러주세요. 이미 누른 검증은 결과를 받지 못해도 데이터가 손상되지
+            않습니다.
+          </div>
+        </div>
       </div>
     </Card>
   )

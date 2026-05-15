@@ -243,6 +243,10 @@ export interface RankCheckProgress {
   total_cells: number
   filled_cells: number
   in_progress: boolean
+  /** Phase 5 - Fix A: 네이버 회로차단 상태.
+   *  true 일 때 "지금 검증" 을 눌러도 모든 셀이 단락되어 결과가 안 쌓이므로
+   *  프론트는 노란 배너로 "약 2분 후 다시 시도" 를 안내한다. */
+  naver_circuit_open?: boolean
 }
 
 /* ─────────── API 함수 ─────────── */
