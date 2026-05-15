@@ -27,8 +27,8 @@ import { Card } from '@/components/ui/Card'
 import { VerdictBadge } from './VerdictBadge'
 import { usePlacesList } from '@/hooks/usePlaces'
 import { useSchedulerStatus } from '@/hooks/useEvents'
-import { useQueryClient } from '@tanstack/react-query'
-import { runLiveCheck, listPlaces } from '@/api/places'
+import { useQueryClient, useQuery } from '@tanstack/react-query'
+import { runLiveCheck, listPlaces, getVerifyProgress } from '@/api/places'
 import { ApiError } from '@/api/client'
 import type { VerificationResult } from '@/api/types'
 import { placeKeys } from '@/hooks/usePlaces'
@@ -172,8 +172,52 @@ export default function LiveCheckTab() {
     return () => window.removeEventListener('storage', handler)
   }, [])
 
-  // "백단이 돌고 있다고 봐야 하는가" — 로컬 진행 중 OR 새로고침 후 추정 모드
-  const backendBusy = running || persistedRun !== null
+  // ─── Option B: 백엔드 progress polling (3초 주기) ───────────────────
+  //   GET /api/v1/verify/progress — 사용자별 락 + 청크 진행 메타.
+  //   이 응답이 추정 모드(persistedRun)보다 우선이며, 동기화의 진실 원천(SoT).
+  //   running 이거나 추정 모드일 때만 빠르게 폴링하고, 그 외에는 일시 정지하여
+  //   불필요한 트래픽을 절감한다 (refetchInterval = 새로고침 후 30초간만 활성).
+  //
+  // 응답 의미:
+  //   · data.running=true  → 백엔드가 실제로 락을 잡고 있거나 30초 이내 마지막 청크 응답
+  //   · data.kind/chunk_index/total_chunks/done/total → UI 표시용 진행 메타
+  //
+  // 페일오버: 네트워크 단절 시 useQuery 가 stale data 를 유지 → 추정 모드(persistedRun)
+  // 가 백업으로 작동.
+  const { data: backendProgress } = useQuery({
+    queryKey: ['verify', 'progress'],
+    queryFn: getVerifyProgress,
+    refetchInterval: (q) => {
+      // running 일 때는 3초, 추정 모드일 때도 3초, 그 외는 일시 정지.
+      // q.state.data?.running 이 true 면 백엔드가 진행 중 → 계속 폴링.
+      const isBackendRunning = (q.state.data as { running?: boolean } | undefined)?.running
+      if (running || isBackendRunning || persistedRun !== null) return 3000
+      return false
+    },
+    refetchOnWindowFocus: true,
+    staleTime: 1000,
+  })
+
+  // "백단이 돌고 있다고 봐야 하는가" — 우선순위:
+  //   1) 백엔드 progress.running === true     (실제 사실 — 최고 우선)
+  //   2) 로컬 running                          (현재 탭에서 진행 중)
+  //   3) localStorage 추정 모드(persistedRun)  (새로고침 직후 백엔드 응답 도착 전 안전망)
+  const backendBusy =
+    (backendProgress?.running ?? false) || running || persistedRun !== null
+
+  // 백엔드가 'idle' 을 명확히 보고하면 좀비 추정 모드를 자동 정리 (5초 grace)
+  useEffect(() => {
+    if (!persistedRun) return
+    if (!backendProgress) return
+    if (backendProgress.running) return
+    // 백엔드가 idle 인데 추정 모드가 살아있다 — 시작한 지 5초 이상 지났다면 정리.
+    // (시작 직후 0~1초는 백엔드가 미처 락을 잡지 못한 상태일 수 있음)
+    const elapsed = Date.now() - persistedRun.startedAt
+    if (elapsed > 5000) {
+      clearPersistedRunState()
+      setPersistedRun(null)
+    }
+  }, [backendProgress, persistedRun])
 
   // ── 검증 후 쿨다운 (네이버 captcha/차단 회피) ──────────────────────
   //   localStorage 에서 epoch(ms) 를 읽어 초기화. 만료되면 0.
@@ -380,11 +424,17 @@ export default function LiveCheckTab() {
         let resp: Awaited<ReturnType<typeof runLiveCheck>>
         try {
           // 두 단계 모두 정밀(full) 모드. 재체크는 only_pending 으로 백엔드에서도 한 번 더 필터.
+          // Option B: 청크 메타를 함께 전송 — 백엔드 /verify/progress 가 정확한 진행 상태
+          //   (몇 번째 청크 / 전체 청크 수 / 누적 건수)를 다른 탭/새로고침 후에도 노출 가능.
           resp = await runLiveCheck(
             {
               place_ids: chunk,
               mode: 'full',
               only_pending: checkKind === 'recheck',
+              kind: checkKind,
+              chunk_index: i,
+              total_chunks: chunks.length,
+              total_targets: targetIds.length,
             },
             { signal: abortRef.current?.signal },
           )
@@ -490,6 +540,8 @@ export default function LiveCheckTab() {
       setPersistedRun(null)
       // 부분 결과의 verdict/place 상태 반영을 위해 캐시 무효화
       qc.invalidateQueries({ queryKey: placeKeys.all })
+      // Option B: 백엔드 progress 도 즉시 재조회 — UI 가 빠르게 idle 로 전환되도록
+      qc.invalidateQueries({ queryKey: ['verify', 'progress'] })
       // 검증 직후 쿨다운(5분) 시작 — 사용자가 즉시 다시 누르는 것을 방지
       // (사용자 취소 시에는 쿨다운을 걸지 않음 — 의도적으로 멈춘 것이므로)
       if (!cancelRef.current) {
@@ -549,8 +601,13 @@ export default function LiveCheckTab() {
        *   Option A: 새로고침 후 running=false 이지만 localStorage 에
        *   최근 시작 기록이 있으면 추정 모드로 별도 안내 배너를 띄운다.
        * ───────────────────────────────────────────────────────────── */}
-      {/* 새로고침 후 추정 모드 — 로컬은 끝났지만 백단은 아직 돌 수 있음 안내 */}
-      {!running && persistedRun && (
+      {/* 새로고침 후 / 다른 탭에서 백엔드가 검증 중 — 통합 안내 배너.
+       *   우선순위:
+       *     · backendProgress.running === true 가 진실 원천 (다른 탭/기기 포함)
+       *     · 그것이 없을 때만 추정 모드(persistedRun)로 폴백
+       *
+       *   running=true 일 때는 본 카드 대신 아래 진행 카드가 떠 있으므로 숨김. */}
+      {!running && (backendProgress?.running || persistedRun) && (
         <Card variant="dark" className="min-h-[120px] !bg-amber-900/30 border border-amber-400/40">
           <div className="flex items-start gap-3">
             <div className="shrink-0 mt-0.5">
@@ -558,31 +615,69 @@ export default function LiveCheckTab() {
             </div>
             <div className="flex-1">
               <h3 className="text-h3 text-amber-100 mb-1">
-                이전 {persistedRun.kind === 'recheck' ? '재체크' : '등록 체크'}가 아직 백에서 진행 중일 수 있어요
+                {backendProgress?.running ? (
+                  <>
+                    {backendProgress.kind === 'recheck' ? '재체크' : backendProgress.kind === 'register' ? '등록 체크' : '검증'}
+                    가 백에서 진행 중이에요
+                  </>
+                ) : (
+                  <>이전 {persistedRun?.kind === 'recheck' ? '재체크' : '등록 체크'}가 아직 백에서 진행 중일 수 있어요</>
+                )}
               </h3>
               <p className="text-body-sm text-amber-100/85">
-                <span className="font-bold">{persistedRun.totalTargets}건</span>을 {persistedRun.totalChunks}개 청크로 분할해 호출했고,
-                {' '}
-                <span className="tabular-nums">
-                  {Math.floor((Date.now() - persistedRun.startedAt) / 60000)}분 경과
-                </span>
-                {' '}
-                상태입니다. 중복 실행을 막기 위해 등록 체크 / 재체크 버튼을 잠시 잠그어 둡니다.
+                {backendProgress?.running && backendProgress.total > 0 ? (
+                  // 백엔드가 정확한 진행 상태를 보고 — 청크/건수까지 표시
+                  <>
+                    청크{' '}
+                    <span className="font-bold tabular-nums">
+                      {backendProgress.chunk_index ?? '—'}/{backendProgress.total_chunks ?? '—'}
+                    </span>
+                    {' '}·{' '}
+                    <span className="font-bold tabular-nums">
+                      {backendProgress.done}/{backendProgress.total}건
+                    </span>
+                    {' '}처리 중입니다.
+                    {backendProgress.started_at && (
+                      <>
+                        {' '}
+                        <span className="tabular-nums text-amber-100/70">
+                          (시작 후 {Math.floor((Date.now() - backendProgress.started_at) / 60000)}분 경과)
+                        </span>
+                      </>
+                    )}
+                  </>
+                ) : persistedRun ? (
+                  // 백엔드 응답이 아직 안 왔거나 idle 인데 추정 모드만 살아있을 때
+                  <>
+                    <span className="font-bold">{persistedRun.totalTargets}건</span>을 {persistedRun.totalChunks}개 청크로 분할해 호출했고,
+                    {' '}
+                    <span className="tabular-nums">
+                      {Math.floor((Date.now() - persistedRun.startedAt) / 60000)}분 경과
+                    </span>
+                    {' '}상태입니다.
+                  </>
+                ) : null}
                 <br />
                 <span className="text-caption text-amber-100/70">
-                  · 최대 30분 후 자동 해제되며, 지금 해제하려면 아래 버튼을 눌러주세요.
+                  중복 실행을 막기 위해 등록 체크 / 재체크 버튼을 잠시 잠그어 둡니다.
+                  {backendProgress?.running
+                    ? ' · 백엔드 완료가 감지되면 자동 해제됩니다.'
+                    : ' · 최대 30분 후 자동 해제되며, 지금 해제하려면 아래 버튼을 눌러주세요.'}
                 </span>
               </p>
-              <button
-                type="button"
-                onClick={() => {
-                  clearPersistedRunState()
-                  setPersistedRun(null)
-                }}
-                className="mt-3 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-pill bg-amber-100/15 hover:bg-amber-100/25 text-amber-100 text-caption font-semibold transition-colors"
-              >
-                <RefreshCw size={12} /> 이제 끝났어요 — 버튼 잠금 해제
-              </button>
+              {/* 백엔드가 실제로 진행 중이면 강제 해제 버튼은 숨김 (위험) — 추정 모드일 때만 표시 */}
+              {!backendProgress?.running && persistedRun && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    clearPersistedRunState()
+                    setPersistedRun(null)
+                  }}
+                  className="mt-3 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-pill bg-amber-100/15 hover:bg-amber-100/25 text-amber-100 text-caption font-semibold transition-colors"
+                >
+                  <RefreshCw size={12} /> 이제 끝났어요 — 버튼 잠금 해제
+                </button>
+              )}
             </div>
           </div>
         </Card>

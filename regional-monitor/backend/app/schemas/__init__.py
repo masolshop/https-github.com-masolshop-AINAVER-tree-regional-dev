@@ -21,6 +21,7 @@ from .verification import (
     VerificationResult,
     LiveCheckRequest,
     LiveCheckResponse,
+    VerifyProgress,
 )
 from .extract import ExtractRequest, ExtractResponse
 from .auth import (
@@ -60,6 +61,7 @@ __all__ = [
     "VerificationResult",
     "LiveCheckRequest",
     "LiveCheckResponse",
+    "VerifyProgress",
     "ExtractRequest",
     "ExtractResponse",
     "UserOut",

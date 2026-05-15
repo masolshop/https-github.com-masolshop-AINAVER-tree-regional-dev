@@ -23,6 +23,7 @@ from app.schemas import (
     VerifyJobCreate,
     VerifyJobOut,
     VerifyJobCancelResponse,
+    VerifyProgress,
 )
 from app.core.config import settings
 from app.services import verify_batch, summarize_results
@@ -54,6 +55,131 @@ def _get_user_lock(user_id: int) -> asyncio.Lock:
         lock = asyncio.Lock()
         _user_verify_locks[user_id] = lock
     return lock
+
+
+# ──────────────────────────────────────────────────────────────
+# Verify Progress 추적 (Option B — Phase 6 — 2026-05-16)
+#
+# 프론트(`LiveCheckTab.tsx`)가 청크 단위로 POST /verify/live 를 호출할 때,
+# 백엔드는 청크 메타(kind/chunk_index/total_chunks/total_targets)를 메모리에
+# 저장한다. GET /verify/progress 가 이 dict 를 읽어 사용자 UI 에 노출한다.
+#
+# 왜 메모리(in-process) dict 인가:
+#   · 단일 uvicorn 워커 환경 (현재 라이트세일 배포는 1 worker) — race 없음.
+#   · 진행 상태는 휘발성이라 DB 까지 갈 필요가 없음 (재시작 시 사라져도 OK).
+#   · 향후 워커가 늘면 Redis 로 교체 (인터페이스만 동일하게 유지).
+#
+# Stale 판정 — running 으로 보일지 판단하는 규칙:
+#   · 사용자 락이 점유 중이면 → running=True
+#   · 락이 풀려 있어도 last_updated_at 이 STALE_THRESHOLD_SEC 이내면 → True
+#       (마지막 청크가 막 끝났고 다음 청크 호출이 0.8초 후에 올 거라서,
+#        그 사이 빠른 폴링이 'false' 로 깜빡이지 않게 한다)
+#   · 그 외 → False (자동으로 None 으로 reset 됨)
+#
+# Memory leak 방지:
+#   · 사용자별 1 entry, 사이즈 작음 (~256 bytes).
+#   · 사용자 락도 동일 패턴으로 영구 보관 중이므로 위험 미미.
+# ──────────────────────────────────────────────────────────────
+_user_verify_progress: dict[int, dict] = {}
+
+# stale 판정 임계치 — last_updated_at 이 이 시간보다 오래되면 running=False 로 본다.
+#   · CHUNK_DELAY_MS=800 (프론트) + 청크 처리 ~10초 + 네트워크 지연 여유.
+#   · 30초면 정상 청크 간격은 모두 커버하면서, 좀비 락이 영원히 살아남지도 않는다.
+_PROGRESS_STALE_SEC = 30
+
+
+def _now_ms() -> int:
+    """현재 epoch ms (UTC 기준)."""
+    return int(time.time() * 1000)
+
+
+def _begin_verify_progress(
+    user_id: int,
+    *,
+    kind: str | None,
+    chunk_index: int | None,
+    total_chunks: int | None,
+    total_targets: int | None,
+) -> None:
+    """청크 시작 시 호출 — 첫 청크면 started_at 을 설정, 이후 청크는 last_updated_at 만 갱신.
+
+    호출 시점: `_run_live_check_locked` 진입 직후 (락 안에서 호출).
+    """
+    now = _now_ms()
+    cur = _user_verify_progress.get(user_id)
+    if (
+        cur is None
+        # 30분 이상 지난 좀비 진행 상태는 새 세션으로 간주
+        or (cur.get("started_at") or 0) < now - 30 * 60 * 1000
+        # 청크 인덱스가 줄어들면 새 검증 세션 시작 (이전 세션이 끝나고 새로 누름)
+        or (chunk_index is not None and (cur.get("chunk_index") or 99999) > chunk_index)
+    ):
+        cur = {
+            "started_at": now,
+            "done": 0,
+        }
+    cur["kind"] = kind
+    cur["chunk_index"] = chunk_index
+    cur["total_chunks"] = total_chunks
+    cur["total_targets"] = total_targets
+    cur["last_updated_at"] = now
+    _user_verify_progress[user_id] = cur
+
+
+def _update_verify_progress_done(user_id: int, *, chunk_size: int) -> None:
+    """청크 처리 완료 시 호출 — done 누적 + last_updated_at 갱신.
+
+    호출 시점: `_run_live_check_locked` 의 마지막 부분 (verify_batch 가 끝난 후).
+    """
+    cur = _user_verify_progress.get(user_id)
+    if cur is None:
+        return
+    cur["done"] = int(cur.get("done") or 0) + chunk_size
+    cur["last_updated_at"] = _now_ms()
+
+
+def _clear_verify_progress(user_id: int) -> None:
+    """진행 상태 명시적 제거 (전 청크 완료 시 프론트가 호출 가능)."""
+    _user_verify_progress.pop(user_id, None)
+
+
+def _read_verify_progress(user_id: int) -> VerifyProgress:
+    """현재 사용자의 진행 상태 스냅샷.
+
+    락 점유 여부 + stale 임계치를 합쳐 running 을 결정한다.
+    오래된 stale entry 는 자동으로 정리 후 빈 응답 반환.
+    """
+    lock = _user_verify_locks.get(user_id)
+    locked = bool(lock and lock.locked())
+    cur = _user_verify_progress.get(user_id)
+    now = _now_ms()
+
+    if cur is None:
+        return VerifyProgress(running=locked)
+
+    last = int(cur.get("last_updated_at") or 0)
+    is_recent = (now - last) < _PROGRESS_STALE_SEC * 1000
+    running = locked or is_recent
+
+    # 너무 오래되었으면 자동 cleanup
+    if not running and (now - last) > 60 * 60 * 1000:
+        _user_verify_progress.pop(user_id, None)
+
+    total_chunks = cur.get("total_chunks")
+    chunk_index_0based = cur.get("chunk_index")
+    # 프론트는 1-based 청크 번호를 기대 — 0-based 입력을 +1 해서 노출
+    chunk_index_1based = (chunk_index_0based + 1) if isinstance(chunk_index_0based, int) else None
+
+    return VerifyProgress(
+        running=running,
+        kind=cur.get("kind"),
+        chunk_index=chunk_index_1based,
+        total_chunks=total_chunks,
+        done=int(cur.get("done") or 0),
+        total=int(cur.get("total_targets") or 0),
+        started_at=cur.get("started_at"),
+        last_updated_at=last or None,
+    )
 
 # Verdict 한글 라벨 (XLSX 다운로드용)
 _VERDICT_LABEL_KO = {
@@ -113,6 +239,26 @@ def _job_to_out(job: VerifyJob) -> VerifyJobOut:
     )
 
 
+@router.get("/progress", response_model=VerifyProgress)
+async def get_verify_progress(
+    user: User = Depends(get_current_user),
+) -> VerifyProgress:
+    """현재 사용자의 수동 검증(POST /verify/live) 진행 상태.
+
+    프론트(`LiveCheckTab.tsx`)가 3초 간격으로 폴링하여 다음 UX 를 구현:
+      · running=True 이면 등록 체크/재체크 버튼을 비활성화
+        (페이지 새로고침/다른 탭에서도 일관된 상태 유지)
+      · chunk_index/total_chunks 로 진행률 표시
+      · done/total 로 누적 완료 건수 표시
+
+    인증된 사용자만 자기 자신의 진행 상태를 조회한다 (관리자라도 다른 사용자
+    상태를 조회하려면 별도 엔드포인트가 필요 — 현재는 본인만).
+
+    DB 접근 없음 — 메모리 dict 만 조회하므로 매우 빠름 (~1ms).
+    """
+    return _read_verify_progress(user.id)
+
+
 @router.post("/live", response_model=LiveCheckResponse)
 @limiter.limit("20/minute")
 async def run_live_check(
@@ -154,6 +300,16 @@ async def _run_live_check_locked(
     db: AsyncSession,
 ) -> LiveCheckResponse:
     """실제 검증 본체. lock 안에서만 호출됨."""
+    # ── Option B: 청크 진행 메타 기록 — 클라이언트가 함께 보냈을 때만 ──
+    # 누락 시 진행 상태는 partial 로만 채워지지만, 락 상태로 running 은 여전히 True.
+    _begin_verify_progress(
+        user.id,
+        kind=req.kind,
+        chunk_index=req.chunk_index,
+        total_chunks=req.total_chunks,
+        total_targets=req.total_targets,
+    )
+
     query = select(RegisteredPlace).where(RegisteredPlace.user_id == user.id)
     if req.place_ids:
         query = query.where(RegisteredPlace.id.in_(req.place_ids))
@@ -252,6 +408,9 @@ async def _run_live_check_locked(
         pass  # 회차 기록 실패해도 검증 응답은 정상 반환
 
     await db.commit()
+
+    # ── Option B: 청크 완료 — done 누적 갱신 (락 안에서) ──
+    _update_verify_progress_done(user.id, chunk_size=len(raw_results))
 
     # ── 변경 이벤트가 발생했을 때만 알림 발송 (best-effort) ──
     # 즉시 검증에서도 변경이 감지되면 사용자에게 Email/Slack 알림을 즉시 전송.

@@ -24,6 +24,7 @@ import type {
   VerifyJob,
   VerifyJobCancelResponse,
   VerifyJobCreateRequest,
+  VerifyProgress,
 } from './types'
 
 /* ─────────── Extract ─────────── */
@@ -84,6 +85,13 @@ export const runLiveCheck = (
     signal: opts.signal,
   })
 }
+
+/** 현재 사용자의 수동 검증 진행 상태 조회 (3초 주기 폴링 — Option B).
+ *  · 락 점유 여부 + 청크 진행 메타를 묶어 반환.
+ *  · DB 접근 없음 — 매우 빠름 (~1ms). 자주 폴링해도 안전.
+ *  · 인증 필요 (본인 진행 상태만). */
+export const getVerifyProgress = () =>
+  api.get<VerifyProgress>('/api/v1/verify/progress')
 
 /* ─────────── Bulk Verification (대용량 청크 작업) ─────────── */
 /** 새 검증 작업 생성 (사용자당 동시 1개). place_ids 비우면 전체. */

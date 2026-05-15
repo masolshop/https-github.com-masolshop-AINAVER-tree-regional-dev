@@ -173,6 +173,28 @@ export interface LiveCheckRequest {
    * 1단계 "등록 체크" 후 일시 차단(429/403)으로 보류된 항목을 풀어주는 용도.
    */
   only_pending?: boolean
+  /* ── 청크 진행 메타 (Option B — backend progress sync) ──
+   *   프론트가 100건씩 분할 호출할 때, 백엔드 GET /verify/progress 가
+   *   진행 상태를 정확히 노출할 수 있도록 메타데이터를 함께 보낸다.
+   *   누락되어도 동작에는 영향 없음 (구버전 호환). */
+  kind?: 'register' | 'recheck'
+  chunk_index?: number       // 0-based
+  total_chunks?: number
+  total_targets?: number
+}
+
+/* ─────────── /api/v1/verify/progress ─────────── */
+/** 현재 사용자의 수동 검증 진행 상태 — `LiveCheckTab.tsx` 가 3초 주기 폴링. */
+export interface VerifyProgress {
+  running: boolean
+  kind: 'register' | 'recheck' | null
+  /** 1-based 청크 번호 (백엔드가 0-based 입력을 +1 해서 노출) */
+  chunk_index: number | null
+  total_chunks: number | null
+  done: number
+  total: number
+  started_at: number | null         // epoch ms
+  last_updated_at: number | null    // epoch ms
 }
 
 export interface VerificationDetail {
