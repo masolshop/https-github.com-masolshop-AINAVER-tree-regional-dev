@@ -8,7 +8,7 @@ import re
 from datetime import date, timedelta
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core import get_db
@@ -775,17 +775,34 @@ async def reset_all_data(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> ResetAllResponse:
-    """현재 사용자의 RankTracker 데이터를 전부 삭제.
+    """현재 사용자의 RankTracker **순위 데이터**만 초기화.
 
-    삭제 대상:
-      · 본인 user_id 의 RegisteredPlace 전체
-      · 위 places 의 PlaceRankHistory 전체 (FK CASCADE 이지만 명시적으로 한 번 더 실행)
+    🚨 중요: `registered_places` 테이블은 `/monitor` 페이지와 **공유**되는 테이블이다.
+    따라서 DELETE 하면 안 되고, RankTracker 전용 컬럼만 NULL/False 로 리셋해야 한다.
+
+    삭제 대상 (진짜 DELETE):
+      · 본인 places 의 PlaceRankHistory 전체 (키워드별 일별 순위 이력 — 순위 전용)
+
+    초기화 대상 (UPDATE → NULL/False, DELETE 금지):
+      · tracking_keywords  : 추적 키워드 CSV
+      · match_status       : AUTO_MATCHED / NEEDS_MANUAL / PENDING_MATCH
+      · match_confidence   : 자동 매칭 신뢰도
+      · match_candidates   : 후보 JSON
+      · matched_at         : 매칭 시각
+      · dong_changed       : 변경 노출 플래그
+      · actual_dong        : 실제 노출 동
+
+    보존 대상 (절대 건드리지 않음 — /monitor 등록 정보):
+      · phone, place_id, registered_dong, business_name
+      · full_address, category
+      · current_verdict, last_checked_at
+      · in_latest_upload, excluded_at, created_at, updated_at
 
     사용 시나리오:
-      · 업로드 도중 매칭/순위 결과가 꼬여서 처음부터 다시 올리고 싶을 때
+      · 매칭/순위 결과가 꼬여서 다시 매칭하고 싶을 때
       · 다른 사용자 데이터에는 영향 없음 (user_id 필터)
     """
-    # 1) 본인 plac_pk 목록 확보
+    # 1) 본인 place_pk 목록 확보 (PlaceRankHistory 삭제 대상 추출용)
     q_ids = await db.execute(
         select(RegisteredPlace.id).where(RegisteredPlace.user_id == user.id)
     )
@@ -793,7 +810,7 @@ async def reset_all_data(
 
     deleted_history = 0
     if place_ids:
-        # 2) PlaceRankHistory 먼저 삭제 (FK 안전)
+        # 2) PlaceRankHistory 삭제 (순위 이력 — 진짜 삭제 대상)
         res_hist = await db.execute(
             delete(PlaceRankHistory).where(
                 PlaceRankHistory.place_pk.in_(place_ids)
@@ -801,23 +818,38 @@ async def reset_all_data(
         )
         deleted_history = int(res_hist.rowcount or 0)
 
-    # 3) RegisteredPlace 삭제
+    # 3) RegisteredPlace 의 RankTracker 전용 컬럼만 NULL/False 로 초기화
+    #    🛑 DELETE 금지 — /monitor 페이지가 같은 테이블을 사용하므로 등록 정보가 사라진다.
     res_place = await db.execute(
-        delete(RegisteredPlace).where(RegisteredPlace.user_id == user.id)
+        update(RegisteredPlace)
+        .where(RegisteredPlace.user_id == user.id)
+        .values(
+            tracking_keywords=None,
+            match_confidence=None,
+            match_status=None,
+            match_candidates=None,
+            matched_at=None,
+            dong_changed=False,
+            actual_dong=None,
+        )
     )
-    deleted_places = int(res_place.rowcount or 0)
+    reset_places = int(res_place.rowcount or 0)
 
     await db.commit()
 
     log.info(
-        "reset-all: user_id=%s deleted_places=%d deleted_history=%d",
-        user.id, deleted_places, deleted_history,
+        "reset-all: user_id=%s reset_places=%d deleted_history=%d (places preserved, rank-only columns cleared)",
+        user.id, reset_places, deleted_history,
     )
 
     return ResetAllResponse(
-        deleted_places=deleted_places,
+        reset_places=reset_places,
         deleted_history=deleted_history,
-        message=f"전체 초기화 완료 — 플레이스 {deleted_places}건, 순위이력 {deleted_history}건 삭제",
+        message=(
+            f"순위 데이터 초기화 완료 — 플레이스 {reset_places}건의 "
+            f"추적 키워드/매칭 결과 초기화, 순위이력 {deleted_history}건 삭제 "
+            f"(등록 플레이스 정보는 보존)"
+        ),
     )
 
 

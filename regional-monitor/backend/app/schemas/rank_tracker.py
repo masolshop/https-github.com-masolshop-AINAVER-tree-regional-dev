@@ -357,13 +357,18 @@ class RankCheckProgress(BaseModel):
 # 전체 초기화 (사용자 본인의 데이터 비우기)
 # ─────────────────────────────────────────────────────────
 class ResetAllResponse(BaseModel):
-    """DELETE /reset-all 응답 — 삭제된 행 수 요약.
+    """DELETE /reset-all 응답 — 순위 데이터 초기화 결과 요약.
 
-    사용자가 "재업로드하기 위해 초기화" 할 때 호출한다.
-    본인 user_id 의 RegisteredPlace + PlaceRankHistory 만 삭제하며,
-    다른 사용자의 데이터에는 영향 없음.
+    🚨 중요: registered_places 테이블은 /monitor 페이지와 공유되므로
+    플레이스 자체는 절대 삭제하지 않는다. RankTracker 전용 컬럼
+    (tracking_keywords / match_* / dong_changed / actual_dong) 만
+    NULL/False 로 리셋하고, PlaceRankHistory 만 진짜 DELETE 한다.
+
+    필드:
+      · reset_places    : 추적 키워드/매칭 결과가 초기화된 플레이스 수 (UPDATE rowcount)
+      · deleted_history : 삭제된 일별 순위 이력 행 수 (DELETE rowcount)
     """
-    deleted_places: int
+    reset_places: int
     deleted_history: int
     message: str
 

@@ -290,9 +290,14 @@ export const triggerManualRankCheck = (placeIds: number[] = []) =>
 export const getRankProgress = () =>
   api.get<RankCheckProgress>('/api/v1/rank-tracker/progress')
 
-/* ─────────── 전체 초기화 (재업로드 전 데이터 비우기) ─────────── */
+/* ─────────── 순위 데이터 초기화 (등록 플레이스는 보존) ───────────
+ * 🚨 registered_places 테이블은 /monitor 페이지와 공유되므로
+ * 플레이스 자체는 삭제하지 않고, RankTracker 전용 컬럼만 NULL/False 로 리셋.
+ *   - reset_places    : 추적 키워드/매칭 결과가 초기화된 플레이스 수 (UPDATE rowcount)
+ *   - deleted_history : 삭제된 일별 순위 이력 행 수 (DELETE rowcount)
+ */
 export interface ResetAllResponse {
-  deleted_places: number
+  reset_places: number
   deleted_history: number
   message: string
 }

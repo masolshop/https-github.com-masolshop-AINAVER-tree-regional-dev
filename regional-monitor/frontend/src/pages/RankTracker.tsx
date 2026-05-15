@@ -287,19 +287,20 @@ export default function RankTracker() {
     }
   }, [fetchAll, showToast])
 
-  /* ── 전체 초기화 (재업로드 전) ── */
+  /* ── 순위 데이터 초기화 (등록 플레이스는 보존) ── */
   const handleResetAll = useCallback(async () => {
     setResetting(true)
     try {
       const r = await resetAllRankData()
       showToast(r.message)
       setResetModalOpen(false)
-      // 로컬 상태 즉시 비우기
-      setList(null)
+      // 순위/매칭 관련 로컬 상태만 즉시 비우기.
+      // ⚠️ setList(null) 은 일부러 호출하지 않는다 — 등록 플레이스는 보존되므로
+      //    refetch 직후 같은 289건이 다시 그려져야 "안 사라졌음" 이 시각적으로 확인된다.
       setDongChanged(null)
       setProgress(null)
       setMatrixReloadTick(0)
-      // 그 후 서버에서 새로 fetch (전부 0 으로 갱신)
+      // 서버에서 새로 fetch — 플레이스 목록은 그대로, 키워드/매칭만 비어있을 것
       await fetchAll()
       await fetchProgress()
     } catch (e) {
@@ -446,7 +447,7 @@ function ResetConfirmModal(props: {
       <div className="bg-white rounded-xl shadow-2xl max-w-md w-full">
         <div className="flex items-center gap-2 px-5 py-4 border-b border-slate-200">
           <AlertTriangle className="text-rose-600" size={20} />
-          <h3 className="text-base font-bold text-rose-900">전체 초기화</h3>
+          <h3 className="text-base font-bold text-rose-900">순위 데이터 초기화</h3>
           <button
             onClick={onCancel}
             disabled={resetting}
@@ -458,17 +459,37 @@ function ResetConfirmModal(props: {
 
         <div className="px-5 py-4 space-y-3 text-sm">
           <p>
-            현재 등록된 <strong className="text-rose-700">{totalPlaces}건</strong>의
-            플레이스와 모든 키워드별 순위 이력이 <strong>영구 삭제</strong>됩니다.
+            등록된 <strong className="text-rose-700">{totalPlaces}건</strong>의 플레이스에서{' '}
+            <strong>추적 키워드 / 매칭 결과 / 순위 이력</strong>만 초기화됩니다.
+            <br />
+            <span className="text-xs text-emerald-700">
+              ✓ 등록 플레이스(070전화·주소·상호)는 그대로 유지됩니다.
+            </span>
           </p>
-          <ul className="text-xs text-ink-2 space-y-1 bg-slate-50 rounded-lg px-3 py-2">
-            <li>· 등록 플레이스 (070전번 / 등록동 / 상호 / 추적키워드)</li>
-            <li>· 매칭 결과 (place_id, 매칭상태, 변경노출 플래그)</li>
-            <li>· 키워드별 순위 이력 (30일 추이 그래프 데이터)</li>
-          </ul>
+
+          <div className="text-xs space-y-2">
+            <div className="bg-rose-50 ring-1 ring-rose-200 rounded-lg px-3 py-2">
+              <div className="font-semibold text-rose-800 mb-1">🗑 초기화 대상</div>
+              <ul className="text-rose-900/80 space-y-0.5">
+                <li>· 추적 키워드 (tracking_keywords)</li>
+                <li>· 매칭 결과 (place_id 매칭상태 / 신뢰도 / 후보)</li>
+                <li>· 변경노출 플래그 (dong_changed / actual_dong)</li>
+                <li>· 키워드별 순위 이력 (30일 추이 그래프 데이터)</li>
+              </ul>
+            </div>
+            <div className="bg-emerald-50 ring-1 ring-emerald-200 rounded-lg px-3 py-2">
+              <div className="font-semibold text-emerald-800 mb-1">✓ 보존 (삭제 안 함)</div>
+              <ul className="text-emerald-900/80 space-y-0.5">
+                <li>· 070 전화번호 / 등록동 / 상호 / 주소 / 카테고리</li>
+                <li>· /monitor 페이지의 노출관리 판정 결과</li>
+                <li>· 가장 최근 업로드 표시 (in_latest_upload)</li>
+              </ul>
+            </div>
+          </div>
+
           <p className="text-xs text-amber-700 bg-amber-50 rounded-lg px-3 py-2 ring-1 ring-amber-200">
-            <strong>주의:</strong> 추적 키워드와 모든 순위 이력이 삭제됩니다.
-            (monitor 에 등록된 업체 자체는 그대로 유지됩니다.)
+            <strong>주의:</strong> 추적 키워드를 다시 입력해야 매칭/순위 체크가 재개됩니다.
+            등록 플레이스 자체는 /monitor 에서 계속 노출관리 됩니다.
           </p>
 
           <label className="flex items-start gap-2 pt-1 cursor-pointer select-none">
@@ -480,7 +501,7 @@ function ResetConfirmModal(props: {
               className="mt-0.5"
             />
             <span className="text-xs text-ink-1">
-              위 내용을 확인했으며, 모든 데이터를 삭제하는 데 동의합니다.
+              위 내용을 확인했으며, 추적 키워드/매칭/순위이력을 초기화하는 데 동의합니다.
             </span>
           </label>
         </div>
@@ -503,7 +524,7 @@ function ResetConfirmModal(props: {
             ) : (
               <Trash2 size={14} />
             )}
-            영구 삭제
+            순위 데이터 초기화
           </button>
         </div>
       </div>
@@ -1477,10 +1498,10 @@ function SummaryBar(props: {
         <button
           onClick={onReset}
           className="text-xs font-semibold px-3 py-1.5 rounded-md bg-rose-50 hover:bg-rose-100 text-rose-700 ring-1 ring-rose-200 inline-flex items-center gap-1"
-          title="등록된 모든 플레이스와 순위 이력을 삭제하고 처음부터 다시 업로드합니다"
+          title="추적 키워드 / 매칭 결과 / 순위 이력만 초기화합니다. 등록 플레이스(070·주소·상호)는 그대로 유지됩니다."
         >
           <Trash2 size={14} />
-          전체 초기화
+          순위 데이터 초기화
         </button>
       </div>
       <div className="flex flex-wrap gap-2">
