@@ -110,8 +110,22 @@ _circuit = _CircuitBreaker()
 
 
 def is_circuit_open() -> bool:
-    """현재 회로차단 상태가 OPEN 인지 확인 (rank_checker 가 워커 진입 전 단락용)."""
-    return _circuit.state == "OPEN"
+    """현재 회로차단이 후속 호출을 단락시킬 상태인지 확인.
+
+    [2026-05-16 fix] 단순히 state 만 보면 cooldown 만료 후에도 영원히 OPEN 으로
+    노출되는 버그가 있었다 (`_CircuitBreaker.allow()` 는 OPEN→HALF_OPEN 전이를
+    내부적으로만 처리하므로, 후속 호출이 없으면 state 가 영원히 "OPEN" 으로 남음).
+
+    프런트엔드 청크 루프가 `progress.naver_circuit_open` 을 폴링해 자동 재개를
+    결정하기 때문에, cooldown 이 만료됐다면 즉시 False 를 반환해 자동 재개가
+    트리거되도록 한다 (실제 첫 호출이 HALF_OPEN probe 가 됨).
+    """
+    if _circuit.state != "OPEN":
+        return False
+    # OPEN 이지만 cooldown 만료 → effectively recoverable.
+    if time.monotonic() - _circuit._opened_at >= CB_COOLDOWN_SEC:
+        return False
+    return True
 
 
 # ─────────────────────────────────────────────────────────────────────────────
