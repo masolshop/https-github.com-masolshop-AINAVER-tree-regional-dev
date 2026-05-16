@@ -55,11 +55,18 @@ const CHUNK_SIZE = 100              // 청크당 100건 — 진행률 자주 업
 //   · 800ms 면 충분히 "쿨다운중" 라벨이 보이고 총 시간 영향은 청크당 0.8초 (전체로 수십초)
 const CHUNK_DELAY_MS = 800
 
-// 검증 직후 쿨다운(초) — 네이버 IP 차단(captcha) 회피용
-//   · 등록 체크 / 재체크가 끝난 직후 같은 버튼을 연타하면 차단이 더 길어진다.
-//   · 5분(300초) 동안 버튼을 비활성화하고 "잠시 후 재시도" 안내 표시.
-//   · 새로고침해도 유지되도록 localStorage 에 다음 가능 시각(epoch ms)을 저장.
-const COOLDOWN_SEC = 300
+// 검증 직후 쿨다운(초) — 사용자 결정 (2026-05-16): 사실상 비활성화.
+//   · 이전 정책: 5분(300초) 강제 쿨다운으로 "네이버 IP 차단 회피".
+//   · 문제: 실측상 현재 사용량(296건 ≈ 3~5분)에서는 백엔드 SOLO_LIMIT=2/MULTI=1
+//          글로벌 세마포어 + 직렬 청크 + captcha/429/403 PENDING 회수만으로도
+//          진짜 네이버 차단이 발생하지 않음 → 300초 쿨다운은 사용자에게
+//          "버튼이 막혀있다" 는 false positive 경험만 줌.
+//   · 새 정책: 클라이언트 쿨다운은 0초로 비활성화. 실제 차단 신호는 백엔드의
+//             naver_blocked_captcha/http_403/http_429 가 PENDING 으로 잡고
+//             다음 사이클에서 자동 재검증한다.
+//   · 코드는 유지 — 미래에 진짜 차단이 발생하면 COOLDOWN_SEC 만 양수로 바꾸면
+//     기존 UI/로직이 즉시 다시 동작한다.
+const COOLDOWN_SEC = 0
 const COOLDOWN_KEY = 'liveCheck.cooldownUntil'
 
 // ── Option A: 백단 진행 상태 "추정" 백업 ─────────────────────────
@@ -221,8 +228,15 @@ export default function LiveCheckTab() {
 
   // ── 검증 후 쿨다운 (네이버 captcha/차단 회피) ──────────────────────
   //   localStorage 에서 epoch(ms) 를 읽어 초기화. 만료되면 0.
+  //   COOLDOWN_SEC===0 정책일 땐 localStorage 의 옛 값을 즉시 정리하여
+  //   "이전 버전에서 받아둔 5분 쿨다운" 이 새로고침 후에도 살아남는 것을 방지.
   const [cooldownLeft, setCooldownLeft] = useState<number>(() => {
     if (typeof window === 'undefined') return 0
+    if (COOLDOWN_SEC <= 0) {
+      // 옛 잔여 값 정리 — 정책이 비활성화로 바뀐 사용자에게 영향 없도록.
+      window.localStorage.removeItem(COOLDOWN_KEY)
+      return 0
+    }
     const raw = window.localStorage.getItem(COOLDOWN_KEY)
     if (!raw) return 0
     const until = parseInt(raw, 10)
@@ -240,8 +254,20 @@ export default function LiveCheckTab() {
     return () => window.clearInterval(id)
   }, [cooldownLeft])
 
-  /** 쿨다운 시작 — 검증이 끝난 직후 호출 */
+  /** 쿨다운 시작 — 검증이 끝난 직후 호출
+   *
+   *  sec<=0 이면 (2026-05-16 정책) 아무것도 하지 않고 기존 localStorage 값까지
+   *  정리한다. 이전 버전에서 켜진 쿨다운이 남아있는 사용자도 다음 검증 종료
+   *  시점에 자동 해제된다.
+   */
   const startCooldown = (sec = COOLDOWN_SEC) => {
+    if (sec <= 0) {
+      if (typeof window !== 'undefined') {
+        window.localStorage.removeItem(COOLDOWN_KEY)
+      }
+      setCooldownLeft(0)
+      return
+    }
     const until = Date.now() + sec * 1000
     if (typeof window !== 'undefined') {
       window.localStorage.setItem(COOLDOWN_KEY, String(until))
