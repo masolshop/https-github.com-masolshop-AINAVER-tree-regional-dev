@@ -146,6 +146,28 @@ def _csv_to_keywords(raw: str | None) -> list[str]:
     return [k.strip() for k in raw.split(",") if k.strip()]
 
 
+# 자주 등장하는 네이버 카테고리 suffix — DOM 추출에서 category 가 비었을 때
+# 마지막 보조 휴리스틱으로 name 끝에서 떼어낸다.
+# DOM 추출 측 KNOWN_CATEGORY_SUFFIXES 와 동기화. 더 긴 suffix 부터 시도해야
+# "공사,공단" 이 "공단" 보다 먼저 매칭됨 (greedy longest-first).
+_KNOWN_CATEGORY_SUFFIXES = (
+    "공사,공단",
+    "견인운송", "화물운송", "자동차운송", "이사운송", "특수운송",
+    "심부름센터", "흥신소", "출장세차", "출장수리",
+    "하수구막힘", "수도수리", "보일러수리", "도배", "장판",
+    "청소대행", "입주청소", "이사청소", "사무실청소",
+    "줄눈시공", "탄성코트", "에폭시", "방수공사",
+    "인테리어", "리모델링",
+    # NOTE: 단독 2글자 suffix("운송", "시공", "공사", "공단", "수리", "도배" 등)
+    # 는 의도적으로 제외. "견인운송" 같이 정상 카테고리 자체가 4자인 케이스에서
+    # 잘못된 trailing 매칭이 발생할 수 있고 ("견인운송" → "견인"), false-positive
+    # 비용이 false-negative 비용보다 크다.
+)
+
+# strip 후 남은 결과가 이 길이 미만이면 false-positive 가능성이 높으므로 원본 유지.
+_STRIP_MIN_REMAINING = 2
+
+
 def _strip_category_suffix(name: str, category: str) -> str:
     """네이버 노출명 끝에 붙은 카테고리 suffix 를 제거하고 순수 상호만 반환.
 
@@ -154,31 +176,49 @@ def _strip_category_suffix(name: str, category: str) -> str:
          → 노출명 "24시대형렉카.연합렉카견인운송"
     이 함수는 노출명 끝에서 카테고리 문자열을 떼어내어 순수 상호를 복원한다.
 
+    [2단계 매칭 (2026-05-16)]
+      1차) DOM 에서 별도로 추출한 category 가 있고 name 끝과 매칭되면 그것을 제거.
+      2차) 1차 실패 시 잘 알려진 카테고리 suffix 사전(_KNOWN_CATEGORY_SUFFIXES)으로
+           name 끝을 longest-first 로 검사해 매칭되는 가장 긴 토큰 제거.
+           (DOM 추출이 카테고리 분리에 실패하는 모바일 레이아웃 케이스 보완.)
+
     안전장치:
-      · category 가 비어있거나 name 과 동일하면 원본 name 그대로 반환.
       · suffix 제거 후 빈 문자열이 되면 원본 name 으로 fallback
         (= 잘못된 휴리스틱으로 빈 상호 노출 방지).
-      · name 끝이 category 로 끝나지 않으면 원본 그대로 (false positive 방지).
+      · name 길이가 suffix 와 같으면 제거하지 않음 (= name 이 카테고리 그 자체).
+      · category 가 18자 초과면 카테고리로 보지 않고 무시 (오추출 방어).
 
     Args:
         name:     네이버에서 추출한 노출명 (예: "대형렉카화물운송").
-        category: 같은 li 에서 추출한 카테고리 (예: "화물운송").
+        category: 같은 li 에서 추출한 카테고리 (예: "화물운송"). 비어 있어도 OK.
 
     Returns:
         카테고리 suffix 가 제거된 순수 상호. 모호한 경우 원본 name.
     """
     n = (name or "").strip()
+    if not n:
+        return n
+
+    # ── 1차: DOM 에서 추출한 category 와 매칭 시도.
     c = (category or "").strip()
-    if not n or not c:
-        return n
-    # 카테고리 자체가 이름이면 제거하지 않음 (빈 상호 회피)
-    if n == c:
-        return n
-    if not n.endswith(c):
-        return n
-    stripped = n[: -len(c)].rstrip()
-    # 제거 후 비었으면 원본 유지 (예: name="견인운송", category="견인운송")
-    return stripped or n
+    if c and c != n and len(c) <= 18:
+        # 공백 변형 흡수: name 끝의 공백 제거 후 비교
+        n_no_trail = n.rstrip()
+        if n_no_trail.endswith(c) and len(n_no_trail) > len(c):
+            stripped = n_no_trail[: -len(c)].rstrip()
+            if len(stripped) >= _STRIP_MIN_REMAINING:
+                return stripped
+
+    # ── 2차: 알려진 카테고리 사전으로 longest-first 매칭.
+    # _KNOWN_CATEGORY_SUFFIXES 는 의도적으로 긴 토큰부터 정렬되어 있음.
+    n_no_trail = n.rstrip()
+    for suf in _KNOWN_CATEGORY_SUFFIXES:
+        if len(n_no_trail) > len(suf) and n_no_trail.endswith(suf):
+            stripped = n_no_trail[: -len(suf)].rstrip()
+            if len(stripped) >= _STRIP_MIN_REMAINING:
+                return stripped
+
+    return n
 
 
 def _place_to_out(p: RegisteredPlace) -> RankPlaceOut:

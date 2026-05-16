@@ -80,8 +80,11 @@ LI_WAIT_MS = 10_000  # li.VLTHu 첫 등장 대기 (ms)
 #                 띄엄띄엄 실패하거나, 사이에 1건이라도 성공하면 카운터 리셋.
 #   on_success 가 한 번이라도 호출되면 두 카운터 모두 즉시 0 으로.
 CB_STRONG_THRESHOLD = 3            # 강한 신호: 연속 3회면 즉시 OPEN
-CB_WEAK_THRESHOLD = 12             # 약한 신호: 연속 12회 + 윈도 내일 때만 OPEN
-CB_WEAK_WINDOW_SEC = 60.0          # 약한 신호의 연속성 윈도
+CB_WEAK_THRESHOLD = 25             # 약한 신호: 윈도 내 25회 누적이어야 OPEN
+                                   # (2026-05-16 3차 완화 — 12→25. rerun-out-of-range
+                                   #  잡에서 외곽 키워드의 goto/no_list_items 일시 실패가
+                                   #  60초 안에 12회 쉽게 누적되어 false OPEN 발생.)
+CB_WEAK_WINDOW_SEC = 90.0          # 약한 신호의 연속성 윈도 (60→90초)
 CB_COOLDOWN_SEC = 120              # OPEN 유지 시간 (그대로)
 
 # 약한(weak) 에러 prefix 화이트리스트. 이 prefix 로 시작하는 res.error 는
@@ -326,12 +329,83 @@ class MapSearchResult:
 # ─────────────────────────────────────────────────────────────────────────────
 _EXTRACT_JS = r"""
 () => {
-    const lis = document.querySelectorAll('li.VLTHu');
+    // li.VLTHu 가 1차 셀렉터. fallback 으로 a[href*="/place/"] 를 가진
+    // li 도 함께 잡아 클래스 이름 변경에 대비한다.
+    let lis = Array.from(document.querySelectorAll('li.VLTHu'));
+    if (lis.length === 0) {
+        const anchors = document.querySelectorAll(
+            'a[href*="/place/"], a[href*="/restaurant/"], a[href*="/hairshop/"]'
+        );
+        const seen = new Set();
+        anchors.forEach((a) => {
+            const li = a.closest('li');
+            if (li && !seen.has(li)) {
+                seen.add(li);
+                lis.push(li);
+            }
+        });
+    }
+
+    // 잘 알려진 카테고리 suffix 후보 (네이버 분류 체계에서 빈출).
+    // _EXTRACT_JS 안에서 name/category 추출이 실패했을 때 마지막 보조 휴리스틱으로 사용.
+    // 백엔드 _KNOWN_CATEGORY_SUFFIXES 와 동기화. 단독 2글자 suffix("운송"/"시공"/
+    // "공사"/"공단") 는 의도적으로 제외 — false-positive 위험 큼.
+    const KNOWN_CATEGORY_SUFFIXES = [
+        '공사,공단',
+        '견인운송','화물운송','자동차운송','이사운송','특수운송',
+        '심부름센터','흥신소','출장세차','출장수리',
+        '하수구막힘','수도수리','보일러수리','도배','장판',
+        '청소대행','입주청소','이사청소','사무실청소',
+        '줄눈시공','탄성코트','에폭시','방수공사',
+        '인테리어','리모델링',
+    ];
+
+    // 한 element 의 직계 텍스트(자식 element 내용 제외) 만 모아주는 헬퍼.
+    // 인접 span/strong 텍스트가 줄바꿈 없이 결합되는 모바일 레이아웃 문제를 우회.
+    function elementOwnText(el) {
+        if (!el) return '';
+        let s = '';
+        for (const node of el.childNodes) {
+            if (node.nodeType === Node.TEXT_NODE) {
+                s += node.textContent || '';
+            }
+        }
+        return s.trim();
+    }
+
+    // li 내부에서 텍스트를 가진 inline element 들의 텍스트를 순서대로 수집.
+    // - <a href="/place/..."> 안에 보통 <span>상호</span><span>카테고리</span> 구조.
+    // - 같은 a 내에서 element 단위로 분리해야 "상호+카테고리"가 한 덩어리로
+    //   합쳐지는 문제를 피할 수 있다.
+    function collectInlineTexts(root) {
+        const out = [];
+        const SKIP_TAGS = new Set(['SCRIPT', 'STYLE', 'NOSCRIPT']);
+        const walk = (el) => {
+            if (!el || SKIP_TAGS.has(el.tagName)) return;
+            const own = elementOwnText(el);
+            if (own) out.push(own);
+            for (const child of el.children) walk(child);
+        };
+        walk(root);
+        return out;
+    }
+
+    // 텍스트가 카테고리 suffix 후보인지 검사 (단독 카테고리 토큰).
+    function looksLikeCategory(t) {
+        if (!t) return false;
+        const s = t.trim();
+        if (!s) return false;
+        if (s.length > 18) return false; // 너무 길면 카테고리 아님 (보통 ≤10)
+        return KNOWN_CATEGORY_SUFFIXES.some((suf) => s === suf || s.endsWith(suf));
+    }
+
     const out = [];
     lis.forEach((li, idx) => {
         // place_id 추출 — /place/{id}, /restaurant/{id}, /hairshop/{id}
         let pid = '';
-        const a = li.querySelector('a[href*="/place/"], a[href*="/restaurant/"], a[href*="/hairshop/"]');
+        const a = li.querySelector(
+            'a[href*="/place/"], a[href*="/restaurant/"], a[href*="/hairshop/"]'
+        );
         if (a) {
             const href = a.getAttribute('href') || '';
             const m = href.match(/\/(?:place|restaurant|hairshop)\/(\d+)/);
@@ -340,21 +414,54 @@ _EXTRACT_JS = r"""
 
         const fullText = (li.innerText || '').trim();
         const isAd = fullText.includes('광고');
-        const lines = fullText.split('\n').map(s => s.trim()).filter(Boolean);
 
-        // name: 첫 비어있지 않고 '광고' 가 아닌 줄.
+        // ── 1차: anchor 내부 inline element 단위로 텍스트 수집.
+        //    name = 첫 비-광고 텍스트 (보통 <span>상호</span>)
+        //    category = 두 번째 텍스트 (보통 <span>카테고리</span>)
         let name = '';
-        for (const ln of lines) {
-            if (ln === '광고') continue;
-            name = ln;
-            break;
+        let category = '';
+        const anchorTexts = a ? collectInlineTexts(a) : [];
+        const cleaned = anchorTexts
+            .map((t) => t.replace(/\s+/g, ' ').trim())
+            .filter((t) => t && t !== '광고');
+
+        if (cleaned.length >= 1) name = cleaned[0];
+        if (cleaned.length >= 2) {
+            // 두 번째 텍스트가 카테고리 형태이면 채택. 아니면 더 뒤를 스캔.
+            for (let i = 1; i < cleaned.length; i++) {
+                if (looksLikeCategory(cleaned[i])) {
+                    category = cleaned[i];
+                    break;
+                }
+            }
+            // 그래도 못 찾았으면 그냥 두 번째 텍스트 채택 (기존 동작과 호환).
+            if (!category) category = cleaned[1];
         }
 
-        // category: name 다음 줄에서 추론 (간단 휴리스틱). 실패해도 OK.
-        let category = '';
-        const nameIdx = lines.indexOf(name);
-        if (nameIdx >= 0 && nameIdx + 1 < lines.length) {
-            category = lines[nameIdx + 1];
+        // ── 2차: 1차에서 name 이 비어있으면 li 의 innerText 첫 줄로 fallback.
+        if (!name) {
+            const lines = fullText.split('\n').map((s) => s.trim()).filter(Boolean);
+            for (const ln of lines) {
+                if (ln === '광고') continue;
+                name = ln;
+                break;
+            }
+            if (!category) {
+                const ni = lines.indexOf(name);
+                if (ni >= 0 && ni + 1 < lines.length) category = lines[ni + 1];
+            }
+        }
+
+        // ── 3차 보조: category 가 비었거나 name 에 안 붙어 있을 때,
+        //    name 끝이 KNOWN_CATEGORY_SUFFIXES 중 하나로 끝나면 그것을 category 로 채택.
+        //    (백엔드 _strip_category_suffix 의 매칭 성공률을 높이는 보험.)
+        if (!category && name) {
+            for (const suf of KNOWN_CATEGORY_SUFFIXES) {
+                if (name.endsWith(suf) && name.length > suf.length) {
+                    category = suf;
+                    break;
+                }
+            }
         }
 
         out.push({
@@ -489,24 +596,56 @@ async def _do_search(query: str) -> MapSearchResult:
             pass
 
         url = f"https://m.place.naver.com/place/list?query={q}"
-        try:
-            await page.goto(url, wait_until="domcontentloaded", timeout=NAV_TIMEOUT_MS)
-        except Exception as e:  # noqa: BLE001
+        # 1차 시도 — domcontentloaded 까지만 대기 (빠름).
+        # 실패 시 1회 재시도 — 모바일 네트워크/CPU 일시 느림 케이스 흡수.
+        goto_err: str | None = None
+        for attempt in (1, 2):
+            try:
+                await page.goto(url, wait_until="domcontentloaded", timeout=NAV_TIMEOUT_MS)
+                goto_err = None
+                break
+            except Exception as e:  # noqa: BLE001
+                goto_err = f"goto: {type(e).__name__}"
+                if attempt == 1:
+                    await page.wait_for_timeout(500)  # 짧은 백오프 후 재시도
+        if goto_err is not None:
             return MapSearchResult(
                 query=q, total_count=0,
-                error=f"goto: {type(e).__name__}",
+                error=goto_err,
                 elapsed_ms=int((time.time() - t0) * 1000),
             )
 
-        # li.VLTHu 등장 대기 — 모바일은 SSR 로 첫 페이지에 ~100건 prefetch 됨
+        # 리스트 등장 대기 — 다중 셀렉터로 클래스 이름 변경 / 0건 결과 페이지 모두 커버.
+        #   · li.VLTHu               : 정상 결과 페이지의 카드
+        #   · a[href*="/place/"]     : 결과 카드 내부의 anchor (fallback)
+        #   · .no_result, .empty     : "결과 없음" 안내 영역 (= 정상 0건 응답)
+        # 어느 하나라도 잡히면 페이지 로드 성공으로 간주하고 진행한다.
+        # 이렇게 하면 "0건 결과 페이지" 는 no_list_items 가 아니라
+        # empty_items 로 정확히 분류되어 회로차단 카운터에서 제외된다.
+        list_wait_selectors = (
+            "li.VLTHu, "
+            "a[href*='/place/'], "
+            "a[href*='/restaurant/'], "
+            "a[href*='/hairshop/'], "
+            "[class*='no_result'], "
+            "[class*='noResult'], "
+            "[class*='empty']"
+        )
         try:
-            await page.wait_for_selector("li.VLTHu", timeout=LI_WAIT_MS)
+            await page.wait_for_selector(list_wait_selectors, timeout=LI_WAIT_MS)
         except Exception as e:  # noqa: BLE001
-            return MapSearchResult(
-                query=q, total_count=0,
-                error=f"no_list_items: {type(e).__name__}",
-                elapsed_ms=int((time.time() - t0) * 1000),
-            )
+            # 한 번 더 시도 — SPA 가 느리게 SSR 마운트되는 케이스 흡수.
+            try:
+                await page.wait_for_timeout(800)
+                await page.wait_for_selector(
+                    list_wait_selectors, timeout=LI_WAIT_MS // 2
+                )
+            except Exception as e2:  # noqa: BLE001
+                return MapSearchResult(
+                    query=q, total_count=0,
+                    error=f"no_list_items: {type(e2).__name__}",
+                    elapsed_ms=int((time.time() - t0) * 1000),
+                )
 
         await page.wait_for_timeout(300)
 

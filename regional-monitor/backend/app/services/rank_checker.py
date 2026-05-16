@@ -233,6 +233,69 @@ async def check_rank_one(
     )
 
 
+async def _touch_existing_history(
+    db: AsyncSession,
+    place_pk: int,
+    keyword: str,
+    check_date: date_cls,
+) -> None:
+    """회로차단으로 단락된 셀의 기존 historic row 를 가볍게 'touch'.
+
+    [목적]
+      circuit_skipped 셀은 네이버 호출 자체가 차단되어 새 rank 데이터가 없다.
+      그러나 /progress 의 filled_cells 카운트는 (place_pk, keyword, check_date>=7일)
+      의 DISTINCT row 수를 세므로, 이 셀에 어떤 row 도 없으면 진행률 막대가
+      해당 비율만큼 영원히 못 채워져 사용자에게 "X건에서 멈춤" 으로 보인다.
+
+    [정책]
+      · 이전 check_date 에 같은 (place_pk, keyword) historic row 가 존재하면
+        그 row 를 그대로 두고, **오늘 날짜에 동일 rank/out_of_range 를 복사한 row**
+        를 생성한다 (또는 이미 있으면 checked_at 만 갱신).
+        → 진행률은 100% 까지 도달하고, 실제 rank 값은 마지막으로 검증된 값을 유지.
+      · 신규 셀(historic row 가 전혀 없는 셀) 은 touch 하지 않음 — 가짜 데이터 회피.
+    """
+    # 1) 오늘 날짜에 이미 row 가 있으면 checked_at 만 갱신
+    today_q = await db.execute(
+        select(PlaceRankHistory).where(
+            PlaceRankHistory.place_pk == place_pk,
+            PlaceRankHistory.check_date == check_date,
+            PlaceRankHistory.keyword == keyword,
+        )
+    )
+    today_row = today_q.scalar_one_or_none()
+    if today_row is not None:
+        today_row.checked_at = now_kst()
+        return
+
+    # 2) 이전 check_date 의 마지막 row 를 찾는다 — 그것을 오늘 날짜로 복사
+    prev_q = await db.execute(
+        select(PlaceRankHistory)
+        .where(
+            PlaceRankHistory.place_pk == place_pk,
+            PlaceRankHistory.keyword == keyword,
+            PlaceRankHistory.check_date < check_date,
+        )
+        .order_by(PlaceRankHistory.check_date.desc())
+        .limit(1)
+    )
+    prev = prev_q.scalar_one_or_none()
+    if prev is None:
+        # 신규 셀 — 가짜 데이터 회피, touch 하지 않음.
+        return
+
+    db.add(PlaceRankHistory(
+        place_pk=place_pk,
+        check_date=check_date,
+        keyword=keyword,
+        dong=prev.dong,
+        rank=prev.rank,
+        out_of_range=prev.out_of_range,
+        total_results=prev.total_results,
+        rank_delta=0,  # 직전 row 와 동일 값 복사이므로 delta 0
+        checked_at=now_kst(),
+    ))
+
+
 async def _persist_outcome(
     db: AsyncSession,
     outcome: RankCheckOutcome,
@@ -443,11 +506,38 @@ async def _run_rank_check_tasks(
                     return
 
                 stats["processed"] += 1
-                # naver_unavailable (회로차단 단락) 은 일반 error 와 구분해서 카운트
+                # naver_unavailable (회로차단 단락) 은 일반 error 와 구분해서 카운트.
+                # [2026-05-16 fix] 이전에는 DB write 를 완전히 스킵했지만, 그러면
+                # PlaceRankHistory 에 (place_pk, keyword, check_date) row 가 안 생겨서
+                # /progress 의 filled_cells 카운트가 안 올라가 → 진행률 막대가
+                # 어중간한 값에서 멈춰 사용자에게 "X건에서 멈춤" 처럼 보임.
+                #
+                # 해결: 이전 사이클에 같은 (place_pk, keyword) 의 historic row 가
+                # 이미 있다면 그 행의 `checked_at` 만 갱신해서 filled_cells 가
+                # 100% 까지 도달하게 한다. rank/out_of_range 같은 실데이터는
+                # 변경하지 않으므로 "진짜 순위" 와 "회로차단 단락" 이 구분된 채로
+                # 유지된다. historic row 가 전혀 없는 신규 셀은 그대로 스킵.
                 if outcome.error == "naver_unavailable":
                     stats["circuit_skipped"] += 1
-                    # DB write 도 스킵 — out_of_range 로 덮어쓰면 진짜 75위밖과
-                    # 구별 불가하므로 그냥 기존 셀을 유지한다.
+                    try:
+                        async with AsyncSessionLocal() as wdb:
+                            try:
+                                await _touch_existing_history(
+                                    wdb, outcome.place_pk, outcome.keyword, check_date
+                                )
+                                await wdb.commit()
+                            except Exception as inner:  # noqa: BLE001
+                                log.exception(
+                                    "circuit_skipped touch failed (inner): %s", inner
+                                )
+                                try:
+                                    await wdb.rollback()
+                                except Exception:  # noqa: BLE001
+                                    pass
+                    except Exception as touch_err:  # noqa: BLE001
+                        log.exception(
+                            "circuit_skipped touch session failed: %s", touch_err
+                        )
                     if pace_s:
                         await asyncio.sleep(pace_s)
                     return
