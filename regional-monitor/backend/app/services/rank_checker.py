@@ -381,9 +381,38 @@ async def run_rank_check_for_places(
                     )
                 except Exception as e:  # noqa: BLE001
                     # check_rank_one 자체에서 예외가 새어나온 경우 (이론상 없음).
+                    # Phase 7 fix: 예외 발생 시에도 synthetic outcome 으로 persist 해야
+                    # PlaceRankHistory 에 (place_pk, keyword, check_date) 행이 생겨서
+                    # /progress 의 filled_cells 카운트가 100% 까지 도달할 수 있다.
+                    # 없으면 그 셀이 영구히 비어있어 진행률이 93% 같은 어중간한 값에서 멈춤.
+                    # rank=None 이므로 매트릭스에서는 자연스럽게 "—" 로 표시된다.
                     log.exception("check_rank_one crashed for pk=%s kw=%s: %s", pk, keyword, e)
                     stats["processed"] += 1
                     stats["error"] += 1
+                    synthetic = RankCheckOutcome(
+                        place_pk=pk,
+                        keyword=keyword,
+                        dong=dong,
+                        rank=None,
+                        out_of_range=False,
+                        total_results=0,
+                        error="exception",
+                    )
+                    try:
+                        async with AsyncSessionLocal() as wdb:
+                            try:
+                                await _persist_outcome(wdb, synthetic, check_date)
+                                await wdb.commit()
+                            except Exception as inner:  # noqa: BLE001
+                                log.exception("synthetic persist failed (inner): %s", inner)
+                                try:
+                                    await wdb.rollback()
+                                except Exception:  # noqa: BLE001
+                                    pass
+                    except Exception as persist_err:  # noqa: BLE001
+                        log.exception("synthetic persist session failed: %s", persist_err)
+                    if pace_s:
+                        await asyncio.sleep(pace_s)
                     return
 
                 stats["processed"] += 1

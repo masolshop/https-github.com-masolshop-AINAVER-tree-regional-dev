@@ -470,7 +470,7 @@ export default function RankTracker() {
 
       {/* 진행 배너 — 매칭/순위체크 백그라운드 진행 중일 때 표시 */}
       {progress && progress.in_progress && (
-        <ProgressBanner progress={progress} />
+        <ProgressBanner progress={progress} chunkPhase={chunkPhase} />
       )}
 
       {/* 수동확인 필요 — NEEDS_MANUAL 행 직접 해결
@@ -1349,8 +1349,16 @@ function KeywordRegistryRow(props: {
  *  - 업로드 직후 매칭 + 순위체크가 백그라운드 진행 중일 때 표시
  *  - 매칭 진행률 / 순위 채워짐 비율 시각화
  * ──────────────────────────────────────────────────────────── */
-function ProgressBanner(props: { progress: RankCheckProgress }) {
-  const { progress } = props
+function ProgressBanner(props: {
+  progress: RankCheckProgress
+  /** Phase 7 New Issue — 매트릭스와 동일한 청크 단계 표시 */
+  chunkPhase?: {
+    current: number
+    total: number
+    phase: 'checking' | 'cooldown'
+  } | null
+}) {
+  const { progress, chunkPhase = null } = props
   const matchTotal = progress.total_places
   const matchDone = progress.auto_matched + progress.needs_manual
   const matchPct =
@@ -1397,7 +1405,28 @@ function ProgressBanner(props: { progress: RankCheckProgress }) {
       {/* 순위 채워짐 진행률 */}
       <div>
         <div className="flex items-center justify-between text-[11px] text-blue-900 mb-1">
-          <span className="font-semibold">② 네이버 순위 검증</span>
+          <span className="font-semibold inline-flex items-center gap-1.5">
+            ② 네이버 순위 검증
+            {/* Phase 7 New Issue — 청크 진행 표시 (검증 중일 때만) */}
+            {chunkPhase && (
+              <span
+                className={clsx(
+                  'inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[10px] font-bold',
+                  chunkPhase.phase === 'cooldown'
+                    ? 'bg-amber-100 text-amber-800'
+                    : 'bg-emerald-100 text-emerald-800',
+                )}
+              >
+                {chunkPhase.phase === 'cooldown' ? (
+                  <Loader2 size={9} className="animate-spin" />
+                ) : (
+                  <CheckCircle2 size={9} />
+                )}
+                청크 {chunkPhase.current}/{chunkPhase.total}
+                {chunkPhase.phase === 'cooldown' ? ' · 쿨다운' : ''}
+              </span>
+            )}
+          </span>
           <span className="font-mono">
             {progress.filled_cells} / {progress.total_cells} 셀 ({cellPct}%)
           </span>
@@ -1728,6 +1757,26 @@ function RankMatrix(props: {
   const filledCells = progress?.filled_cells ?? 0
   const cellPct = totalCells > 0 ? Math.min(100, Math.round((filledCells / totalCells) * 100)) : 0
 
+  // Phase 7 New Issue — 행별 완료 진행률 (filled / total tracking_keywords).
+  // 매트릭스 셀이 무작위 순서로 채워져 사용자가 답답해하는 문제 (verbatim:
+  // "100% 검증하고 매트릭스에 채우고 있는데 유저 입장에서는 답답해") 를 완화하기 위해
+  // 행마다 "3/5 ✓" 식의 배지를 노출. rankMap 에 키가 존재(=DB persist 완료) 하면
+  // 채워진 것으로 간주 — 75위밖(null) 도 PlaceRankHistory 행이 있으면 진척으로 본다.
+  const perPlaceCompletion = useMemo(() => {
+    const map: Record<number, { filled: number; total: number }> = {}
+    for (const p of items) {
+      const total = p.tracking_keywords.length
+      let filled = 0
+      for (const kw of p.tracking_keywords) {
+        if (Object.prototype.hasOwnProperty.call(rankMap, `${p.id}::${kw}`)) {
+          filled += 1
+        }
+      }
+      map[p.id] = { filled, total }
+    }
+    return map
+  }, [items, rankMap])
+
   let btnLabel = '지금 검증'
   let btnTitle =
     '타지역 정책상 자동 순위 추적이 비활성화되어 있습니다. 이 버튼으로 명시적으로 순위 검증을 시작하세요.'
@@ -1853,8 +1902,38 @@ function RankMatrix(props: {
                 )}
               >
                 <td className="px-3 py-2 sticky left-0 bg-white z-10 border-r border-slate-100">
-                  <div className="font-semibold text-blue-700 hover:underline">
-                    {p.business_name || '-'}
+                  <div className="flex items-center gap-1.5">
+                    <div className="font-semibold text-blue-700 hover:underline">
+                      {p.business_name || '-'}
+                    </div>
+                    {/* Phase 7 New Issue — 행별 완료 배지 */}
+                    {(() => {
+                      const c = perPlaceCompletion[p.id]
+                      if (!c || c.total === 0) return null
+                      const complete = c.filled >= c.total
+                      return (
+                        <span
+                          className={clsx(
+                            'inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[10px] font-bold',
+                            complete
+                              ? 'bg-emerald-100 text-emerald-800'
+                              : 'bg-amber-100 text-amber-800',
+                          )}
+                          title={
+                            complete
+                              ? '이 업체의 모든 키워드 검증 완료'
+                              : `이 업체 ${c.total}개 키워드 중 ${c.filled}개 검증 완료`
+                          }
+                        >
+                          {complete ? (
+                            <CheckCircle2 size={10} />
+                          ) : (
+                            <Loader2 size={10} className="animate-spin" />
+                          )}
+                          {c.filled}/{c.total}
+                        </span>
+                      )
+                    })()}
                   </div>
                   <div className="text-[11px] text-ink-2 flex items-center gap-1 mt-0.5">
                     <span className="px-1 rounded bg-slate-100">
