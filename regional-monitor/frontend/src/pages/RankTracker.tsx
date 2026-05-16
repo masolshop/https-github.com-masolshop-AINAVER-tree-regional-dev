@@ -1778,9 +1778,21 @@ function RankMatrix(props: {
       const resp: LatestRanksResponse = await listLatestRanks()
       const next: Record<string, number | null> = {}
       for (const cell of resp.cells) {
+        // [2026-05-16] "미검증" vs "순위권 없음" 의미 분리.
+        // 백엔드 list_latest_ranks 는 (place×keyword) 모든 조합을 응답하되,
+        // 히스토리 자체가 없으면 check_date=null 로 표시한다. 그 셀은 rankMap 에
+        // 키를 *추가하지 않음* → useMemo 가 hasOwnProperty 로 미검증을 정확히 카운트.
+        // (이전엔 null 로 저장 → 통계가 "검증됨 + 순위권 없음" 으로 잘못 분류돼서
+        //  "578/578 검증 완료" 가 거짓이 되고, 키워드별 "없음" 카운트가 부풀려졌음.)
+        if (cell.check_date == null) {
+          // 진짜 미검증 — 키 자체를 넣지 않는다 → 매트릭스 셀은 "—" (rankCell(undefined)), 통계는 unchecked++
+          continue
+        }
         // out_of_range = top 20 밖(순위권 없음). UI 표시 마킹용으로 999 사용.
         if (cell.rank == null) {
-          next[`${cell.place_pk}::${cell.keyword}`] = null
+          // 검증은 됐는데 rank=null (out_of_range=false) — 이전 정책 잔재 / 결측 데이터.
+          // 안전하게 999 (순위권 없음) 으로 처리: hasOwnProperty=true → checked++, bucket=out
+          next[`${cell.place_pk}::${cell.keyword}`] = 999
         } else if (cell.out_of_range) {
           next[`${cell.place_pk}::${cell.keyword}`] = 999
         } else {
