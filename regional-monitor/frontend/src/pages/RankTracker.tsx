@@ -141,7 +141,10 @@ export default function RankTracker() {
 
   // ── 동적 폴링 (Phase 7) ──────────────────────────────────────
   // 폴링 트리거:
-  //   · progress.in_progress     : 매칭 대기 OR 빈 셀 존재 (기존)
+  //   · progress.in_progress     : 매칭 대기 OR 수동 검증 잡 실행 중
+  //                                (Phase 7 New Issue 부터는 "빈 셀 존재" 만으로는
+  //                                 in_progress=True 가 되지 않음 — 워커가 stuck 셀을
+  //                                 만들어도 무한 폴링이 발생하지 않도록 변경)
   //   · progress.manual_running  : 사용자가 '지금 검증' 으로 백그라운드 잡 실행 중 (Phase 7 신규)
   // 폴링 주기:
   //   · manual_running 일 때는 3초 (사용자가 직접 트리거 → 즉각적 피드백 우선)

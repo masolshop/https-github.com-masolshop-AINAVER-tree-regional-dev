@@ -1406,11 +1406,6 @@ async def get_rank_progress(
         )
         filled_cells = len(list(hist_q.all()))
 
-    # 진행 중 판단:
-    #   - 매칭 대기가 남아있거나
-    #   - AUTO_MATCHED 인데 아직 채워지지 않은 셀이 있는 경우
-    in_progress = (pending > 0) or (filled_cells < total_cells)
-
     # Phase 5 - Fix A: 네이버 회로차단 상태 노출.
     # OPEN 상태에서 "지금 검증" 을 눌러도 모든 셀이 단락되므로 프론트가
     # 즉시 노란 배너로 안내해서 사용자 혼란을 줄인다.
@@ -1429,6 +1424,20 @@ async def get_rank_progress(
     manual_running = busy is not None
     manual_started = int(busy["started"]) if busy else 0
     manual_started_at = str(busy["started_at"]) if busy else None
+
+    # 진행 중 판단:
+    #   - 매칭 대기가 남아있거나
+    #   - 수동 검증 잡이 실제로 실행 중인 경우
+    #
+    # Phase 7 New Issue (93% 무한 루프 fix):
+    #   예전에는 "AUTO_MATCHED 인데 아직 채워지지 않은 셀이 있는 경우" 도 in_progress 로
+    #   봤지만, rank_checker 워커가 예외로 셀을 영구히 미채움 상태로 남기면 사용자 화면이
+    #   영원히 "처리 중 — 순위 검증 중" 배너에 갇혔다 (예: 광주 광산구 농촌 동 42개 셀).
+    #   이제는 활성 잡 (manual_running) 이 없으면 unfilled 셀은 "이번 잡 종료 후
+    #   남은 잔량" 으로 간주하고 in_progress=False 를 반환한다. 매트릭스의 "—" 셀은
+    #   사용자가 "지금 검증" 으로 재시도 가능 (또한 워커도 이제 예외 발생 시 NULL 로
+    #   persist 하므로 같은 셀이 다시 stuck 되지 않는다).
+    in_progress = (pending > 0) or manual_running
 
     return RankCheckProgress(
         total_places=total_places,
