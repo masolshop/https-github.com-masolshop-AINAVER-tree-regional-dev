@@ -1205,7 +1205,7 @@ async def list_latest_ranks(
     )
     places = list(q_places.scalars().all())
     if not places:
-        return LatestRanksResponse(count=0, cells=[])
+        return LatestRanksResponse(count=0, total_cells=0, missing_count=0, cells=[])
 
     place_ids = [p.id for p in places]
 
@@ -1230,30 +1230,35 @@ async def list_latest_ranks(
         if key not in latest:
             latest[key] = h
 
-    # 4) 모든 (place × tracked_keyword) 조합으로 셀 채움 (기록 없으면 rank=None)
+    # 4) 검증된 (place × keyword) 조합만 cells 로 반환. 히스토리가 없는 셀은
+    #    제외하되 total_cells / missing_count 메타로 정확한 개수 노출.
+    #    [2026-05-16] 이전: placeholder(rank=None, check_date=None) 로 채워 응답 →
+    #    프론트가 "검증됨"으로 오해해 '578/578 검증 완료' 거짓말 발생. 슬림화로 해결.
     cells: list[LatestRankCell] = []
+    total_cells = 0
     for p in places:
         kws = _csv_to_keywords(p.tracking_keywords)
         for kw in kws:
+            total_cells += 1
             h = latest.get((p.id, kw))
             if h is None:
-                cells.append(LatestRankCell(
-                    place_pk=p.id,
-                    keyword=kw,
-                    rank=None,
-                    out_of_range=False,
-                    check_date=None,
-                ))
-            else:
-                cells.append(LatestRankCell(
-                    place_pk=p.id,
-                    keyword=kw,
-                    rank=h.rank,
-                    out_of_range=bool(h.out_of_range),
-                    check_date=h.check_date,
-                ))
+                # 미검증 셀 — 응답에서 제외 (메타 카운트만 증가)
+                continue
+            cells.append(LatestRankCell(
+                place_pk=p.id,
+                keyword=kw,
+                rank=h.rank,
+                out_of_range=bool(h.out_of_range),
+                check_date=h.check_date,
+            ))
 
-    return LatestRanksResponse(count=len(cells), cells=cells)
+    missing_count = total_cells - len(cells)
+    return LatestRanksResponse(
+        count=len(cells),
+        total_cells=total_cells,
+        missing_count=missing_count,
+        cells=cells,
+    )
 
 
 # ─────────────────────────────────────────────────────────

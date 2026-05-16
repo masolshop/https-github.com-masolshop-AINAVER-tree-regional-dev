@@ -1776,22 +1776,16 @@ function RankMatrix(props: {
     try {
       // 벌크 엔드포인트 1회 호출 (이전: place 수만큼 /history 호출 → 429 폭주)
       const resp: LatestRanksResponse = await listLatestRanks()
+      // [2026-05-16] 백엔드가 미검증 (place, keyword) 셀을 응답에서 제외해 보내준다.
+      // (이전: placeholder 로 채워서 보냈고 프론트가 그것을 검증 완료로 오해 → "578/578" 거짓)
+      // 추가로 missing_count 메타 필드로 미검증 셀 수를 명시. 우리는 cells 만 보고
+      // rankMap 을 구성하면 됨 — useMemo 가 hasOwnProperty 로 자연스럽게 unchecked 셈.
       const next: Record<string, number | null> = {}
       for (const cell of resp.cells) {
-        // [2026-05-16] "미검증" vs "순위권 없음" 의미 분리.
-        // 백엔드 list_latest_ranks 는 (place×keyword) 모든 조합을 응답하되,
-        // 히스토리 자체가 없으면 check_date=null 로 표시한다. 그 셀은 rankMap 에
-        // 키를 *추가하지 않음* → useMemo 가 hasOwnProperty 로 미검증을 정확히 카운트.
-        // (이전엔 null 로 저장 → 통계가 "검증됨 + 순위권 없음" 으로 잘못 분류돼서
-        //  "578/578 검증 완료" 가 거짓이 되고, 키워드별 "없음" 카운트가 부풀려졌음.)
-        if (cell.check_date == null) {
-          // 진짜 미검증 — 키 자체를 넣지 않는다 → 매트릭스 셀은 "—" (rankCell(undefined)), 통계는 unchecked++
-          continue
-        }
-        // out_of_range = top 20 밖(순위권 없음). UI 표시 마킹용으로 999 사용.
+        // 안전망: 구버전 백엔드 호환 — check_date=null 이면 미검증이므로 skip
+        if (cell.check_date == null) continue
         if (cell.rank == null) {
-          // 검증은 됐는데 rank=null (out_of_range=false) — 이전 정책 잔재 / 결측 데이터.
-          // 안전하게 999 (순위권 없음) 으로 처리: hasOwnProperty=true → checked++, bucket=out
+          // 검증됐는데 rank=null (out_of_range=false) — 레거시 결측. 안전하게 999 처리.
           next[`${cell.place_pk}::${cell.keyword}`] = 999
         } else if (cell.out_of_range) {
           next[`${cell.place_pk}::${cell.keyword}`] = 999

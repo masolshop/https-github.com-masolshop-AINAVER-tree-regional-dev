@@ -189,7 +189,13 @@ export interface LatestRankCell {
 }
 
 export interface LatestRanksResponse {
+  /** cells.length — 검증 히스토리가 있는 셀 수만 */
   count: number
+  /** [2026-05-16+] 사용자가 등록한 모든 (place × tracked_keyword) 조합 수.
+   *  미검증 셀까지 포함하는 진짜 전체 개수. UI 의 "전체 셀" 분모. */
+  total_cells?: number
+  /** [2026-05-16+] 한 번도 검증되지 않은 (place, keyword) 조합 수 = total_cells - count */
+  missing_count?: number
   cells: LatestRankCell[]
 }
 

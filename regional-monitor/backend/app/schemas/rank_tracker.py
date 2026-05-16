@@ -325,8 +325,20 @@ class LatestRanksResponse(BaseModel):
 
     프론트엔드 매트릭스가 N개 플레이스에 대해 개별 /history 호출하던 것을
     이 단일 엔드포인트로 치환 (네이버 검색 호출 없음, DB SELECT 1회).
+
+    [2026-05-16] 응답 슬림화 — 히스토리가 없는 (place, keyword) placeholder
+    셀은 cells 에서 제외하고, 대신 total_cells / missing_count 메타 필드로
+    노출 정보를 명시한다. 프론트는 이 메타로 "미검증 N" 배지를 정확히 표시.
+    Backward compat: 기존 클라이언트는 count/cells 만 보고도 동작 가능
+    (단 "검증 완료 N/N" 표시는 미검증 셀 수만큼 부족하게 보일 수 있음).
     """
+    # cells.length — 실제 히스토리가 있는 셀 수 (기존 의미와 동일)
     count: int
+    # 사용자가 등록한 모든 (place × tracked_keyword) 조합 수 (placeholder 포함하던
+    # 이전 버전의 count 값과 동일한 의미). UI 의 "전체 셀" 표시 분모.
+    total_cells: int = 0
+    # 한 번도 검증되지 않은 (place, keyword) 조합 수 = total_cells - count
+    missing_count: int = 0
     cells: list[LatestRankCell]
 
 
