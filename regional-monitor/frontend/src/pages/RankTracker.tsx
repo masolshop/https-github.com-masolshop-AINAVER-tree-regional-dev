@@ -35,6 +35,7 @@ import {
   Plus,
   Tag,
   ArrowRight,
+  Users,
 } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import clsx from 'clsx'
@@ -1862,6 +1863,80 @@ function RankMatrix(props: {
     return map
   }, [items, rankMap])
 
+  // ── Phase 8: 매트릭스 통계 ──────────────────────────────────────
+  // A) 검증 진행: 전체 셀(=업체 × 등록키워드) 중 검증 완료/미검증
+  // C) 순위 분포: 1위/2위/3위/4위/5위/6~10위/11~20위/순위권없음 buckets
+  // D) 업체 단위 요약: 모든 키워드 1~3위 / 부분 노출 (일부만 top 20) / 전혀 안 잡힘
+  //
+  // 모두 rankMap 만으로 계산 — 추가 API 호출 0회. items 또는 rankMap 변경 시만 재계산.
+  const matrixStats = useMemo(() => {
+    // A: 전체 셀 = sum of (each place의 tracking_keywords 개수)
+    let totalCellsAll = 0
+    let checked = 0 // rank 값이 있거나 999(순위권 없음 sentinel) 포함 — null 만 미검증
+    let unchecked = 0
+    // C: rank 분포 (검증된 셀만 카운트)
+    const buckets = { r1: 0, r2: 0, r3: 0, r4: 0, r5: 0, r6_10: 0, r11_20: 0, out: 0 }
+    // D: 업체 단위
+    let bizAllTop3 = 0 // 모든 키워드가 1~3위
+    let bizPartial = 0 // 일부만 top 20
+    let bizNone = 0 // 전체가 순위권 없음 (검증된 키워드 기준)
+
+    for (const p of items) {
+      const kws = p.tracking_keywords
+      totalCellsAll += kws.length
+      // 이 업체의 키워드별 상태 집계 — D 계산용
+      let bizCheckedCount = 0
+      let bizInTop20 = 0
+      let bizInTop3 = 0
+      for (const kw of kws) {
+        const key = `${p.id}::${kw}`
+        const has = Object.prototype.hasOwnProperty.call(rankMap, key)
+        if (!has) {
+          unchecked += 1
+          continue
+        }
+        const r = rankMap[key]
+        checked += 1
+        bizCheckedCount += 1
+        // r === null   → 검증은 됐으나 PlaceRankHistory 가 null (이전 정책 잔재. mobile route 정책에선 999 sentinel 사용)
+        // r === 999    → top 20 밖 (순위권 없음)
+        // 1 <= r <= 20 → 순위
+        if (r == null || r > 20) {
+          buckets.out += 1
+        } else {
+          bizInTop20 += 1
+          if (r === 1) buckets.r1 += 1
+          else if (r === 2) buckets.r2 += 1
+          else if (r === 3) buckets.r3 += 1
+          else if (r === 4) buckets.r4 += 1
+          else if (r === 5) buckets.r5 += 1
+          else if (r <= 10) buckets.r6_10 += 1
+          else buckets.r11_20 += 1
+          if (r <= 3) bizInTop3 += 1
+        }
+      }
+      // D 분류 — 키워드가 0개인 업체는 모든 분류에서 제외
+      if (kws.length === 0) continue
+      // 검증된 키워드 기준으로만 분류 (미검증 상태에서 D 통계가 출렁이지 않게)
+      if (bizCheckedCount === 0) continue
+      if (bizInTop3 === bizCheckedCount) {
+        bizAllTop3 += 1
+      } else if (bizInTop20 === 0) {
+        bizNone += 1
+      } else {
+        bizPartial += 1
+      }
+    }
+
+    return {
+      totalCells: totalCellsAll,
+      checked,
+      unchecked,
+      buckets,
+      biz: { allTop3: bizAllTop3, partial: bizPartial, none: bizNone },
+    }
+  }, [items, rankMap])
+
   let btnLabel = '지금 검증'
   let btnTitle =
     '타지역 정책상 자동 순위 추적이 비활성화되어 있습니다. 이 버튼으로 명시적으로 순위 검증을 시작하세요.'
@@ -1956,6 +2031,88 @@ function RankMatrix(props: {
               />
             </div>
           )}
+        </div>
+      )}
+
+      {/* Phase 7 — 매트릭스 통계 패널 (A: 검증 진행 / C: 순위 분포 / D: 업체 단위 요약) */}
+      {matrixStats.totalCells > 0 && (
+        <div className="px-4 py-2 bg-slate-50 border-b border-slate-200 space-y-1.5">
+          {/* Row A — 검증 진행 */}
+          <div className="flex items-center gap-3 text-[11px] text-slate-700 flex-wrap">
+            <span className="inline-flex items-center gap-1 font-semibold text-slate-600">
+              <CheckCircle2 size={11} className="text-emerald-600" />
+              검증 진행
+            </span>
+            <span className="font-mono">
+              <b className="text-emerald-700">{matrixStats.checked}</b>
+              <span className="text-slate-400"> / </span>
+              <span className="text-slate-700">{matrixStats.totalCells}</span>
+              <span className="text-slate-400 ml-0.5">셀 검증 완료</span>
+            </span>
+            {matrixStats.unchecked > 0 && (
+              <span className="font-mono text-slate-500">
+                미검증 <b className="text-slate-700">{matrixStats.unchecked}</b>
+              </span>
+            )}
+          </div>
+
+          {/* Row C — 순위별 분포 (검증된 셀만, top-N=20 기준) */}
+          {matrixStats.checked > 0 && (
+            <div className="flex items-center gap-1.5 text-[11px] flex-wrap">
+              <span className="inline-flex items-center gap-1 font-semibold text-slate-600 mr-1">
+                <TrendingUp size={11} className="text-blue-600" />
+                순위 분포
+              </span>
+              <span className="px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800 font-mono">
+                1위 <b>{matrixStats.buckets.r1}</b>
+              </span>
+              <span className="px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 font-mono">
+                2위 <b>{matrixStats.buckets.r2}</b>
+              </span>
+              <span className="px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 font-mono">
+                3위 <b>{matrixStats.buckets.r3}</b>
+              </span>
+              <span className="px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 font-mono">
+                4위 <b>{matrixStats.buckets.r4}</b>
+              </span>
+              <span className="px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 font-mono">
+                5위 <b>{matrixStats.buckets.r5}</b>
+              </span>
+              <span className="px-1.5 py-0.5 rounded bg-blue-100 text-blue-800 font-mono">
+                6~10위 <b>{matrixStats.buckets.r6_10}</b>
+              </span>
+              <span className="px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 font-mono">
+                11~20위 <b>{matrixStats.buckets.r11_20}</b>
+              </span>
+              <span className="px-1.5 py-0.5 rounded bg-rose-100 text-rose-800 font-mono">
+                순위권 없음 <b>{matrixStats.buckets.out}</b>
+              </span>
+            </div>
+          )}
+
+          {/* Row D — 업체 단위 요약 (검증된 키워드 기준) */}
+          {matrixStats.checked > 0 &&
+            matrixStats.biz.allTop3 + matrixStats.biz.partial + matrixStats.biz.none > 0 && (
+              <div className="flex items-center gap-3 text-[11px] text-slate-700 flex-wrap">
+                <span className="inline-flex items-center gap-1 font-semibold text-slate-600">
+                  <Users size={11} className="text-violet-600" />
+                  업체 단위
+                </span>
+                <span className="font-mono">
+                  모든 키워드 1~3위{' '}
+                  <b className="text-emerald-700">{matrixStats.biz.allTop3}</b>
+                  <span className="text-slate-400"> 업체</span>
+                </span>
+                <span className="text-slate-300">·</span>
+                <span className="font-mono">
+                  부분 노출 <b className="text-blue-700">{matrixStats.biz.partial}</b>
+                </span>
+                <span className="text-slate-300">·</span>
+                <span className="font-mono">
+                  전혀 안 잡힘 <b className="text-rose-700">{matrixStats.biz.none}</b>
+                </span>
+              </div>
+            )}
         </div>
       )}
 
