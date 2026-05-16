@@ -299,6 +299,28 @@ export default function RankTracker() {
           // ─── A) 청크 트리거 직전 회로차단 사전 체크
           // OPEN 이면 차단 풀릴 때까지 폴링하면서 같은 인덱스 재시도
           const preFresh = await fetchProgress()
+
+          // [2026-05-16] 100% 완료 시 청크 루프 조기 종료
+          //   배경: 사용자가 큰 잡을 트리거하면 청크 10개로 분할되는데, 청크 2까지
+          //         진행되어 (place×keyword) 누적 진행률이 100% 가 되면 나머지 8개
+          //         청크는 같은 place들에 대해 같은 검증을 또 돌리게 됨 →
+          //         (1) 불필요한 Naver 호출, (2) 회로차단 재트립 위험, (3) UX 답답.
+          //   조건: total_cells > 0 (백엔드가 잡 메타 set 한 상태) AND
+          //         filled_cells >= total_cells (모든 셀 검증 완료).
+          //   첫 청크(idx=0)는 무조건 트리거 — 그 전에 total_cells 가 0 일 수 있음.
+          if (
+            idx > 0 &&
+            preFresh &&
+            preFresh.total_cells > 0 &&
+            preFresh.filled_cells >= preFresh.total_cells &&
+            !preFresh.manual_running
+          ) {
+            showToast(
+              `검증 완료 — 남은 ${totalChunks - idx}개 청크는 이미 결과가 있어 생략합니다.`,
+            )
+            break
+          }
+
           if (preFresh?.naver_circuit_open) {
             setChunkPhase({
               current: idx + 1,
@@ -399,20 +421,29 @@ export default function RankTracker() {
     [fetchAll, fetchProgress, showToast],
   )
 
-  // ─── chunkPhase 안전 cleanup (2026-05-16) ───
+  // ─── chunkPhase 안전 cleanup (2026-05-16, 강화) ───
   // 청크 루프가 try/finally 에서 setChunkPhase(null) 까지 잘 도달하면 문제 없지만,
   // 이론상의 race (예: 사용자가 탭을 별도로 이동하여 setTimeout/await 체인이 끊긴 경우)
-  // 를 대비해, "백엔드 idle + 회로차단 CLOSED 인데 chunkPhase 가 남아있으면"
-  // 8초 후 자동 cleanup. "청크 X/Y 쿨다운" 의 영원 박제 경우에 대비.
+  // 를 대비한 안전망. 2단계 분리:
+  //
+  // Case 1) 검증 100% 완료 + idle → 즉시 cleanup (3초)
+  //   filled_cells >= total_cells 면 더 할 일이 없음. 진행 배너를 빨리 닫는다.
+  //
+  // Case 2) 단순 idle (검증 미완료지만 백엔드 idle, 회로차단 CLOSED) → 8초 후 cleanup
+  //   청크 1→2 사이 정상 쿨다운(1.5초) 시 일시적으로 둘 다 false 가 될 수 있으므로
+  //   바로 cleanup 하면 정상 동작을 깬다. 충분한 grace period 부여.
   useEffect(() => {
     if (chunkPhase == null) return
     if (progress == null) return
     const idle = !progress.manual_running && !progress.naver_circuit_open
     if (!idle) return
+    const fullyDone =
+      progress.total_cells > 0 && progress.filled_cells >= progress.total_cells
+    const delayMs = fullyDone ? 3000 : 8000
     const t = window.setTimeout(() => {
       setChunkPhase(null)
       setManualLocal(false)
-    }, 8000)
+    }, delayMs)
     return () => window.clearTimeout(t)
   }, [chunkPhase, progress])
 
