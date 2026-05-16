@@ -1880,6 +1880,20 @@ function RankMatrix(props: {
     let bizAllTop3 = 0 // 모든 키워드가 1~3위
     let bizPartial = 0 // 일부만 top 20
     let bizNone = 0 // 전체가 순위권 없음 (검증된 키워드 기준)
+    // E: 키워드 단위 — 키워드별 총/검증/1위/5위↓/없음 카운트 + 최고/평균/노출률
+    //    분포는 4 그룹으로 압축: top1 / top2-5 / top6-20 / out (none)
+    //    노출률 = top20 검증된 셀 / 그 키워드를 추적하는 업체수 (등록 기준)
+    type PerKw = {
+      total: number // 이 키워드를 추적하는 업체 수
+      checked: number // 검증된 셀 수
+      top1: number
+      top2_5: number
+      top6_20: number
+      out: number // 순위권 없음 (검증된 것만)
+      sumRank: number // top20 안에 든 셀들의 rank 합 (평균 계산용)
+      bestRank: number | null // 1..20 중 최솟값
+    }
+    const perKw: Record<string, PerKw> = {}
 
     for (const p of items) {
       const kws = p.tracking_keywords
@@ -1889,6 +1903,21 @@ function RankMatrix(props: {
       let bizInTop20 = 0
       let bizInTop3 = 0
       for (const kw of kws) {
+        // 키워드별 누산기 초기화
+        if (!perKw[kw]) {
+          perKw[kw] = {
+            total: 0,
+            checked: 0,
+            top1: 0,
+            top2_5: 0,
+            top6_20: 0,
+            out: 0,
+            sumRank: 0,
+            bestRank: null,
+          }
+        }
+        perKw[kw].total += 1
+
         const key = `${p.id}::${kw}`
         const has = Object.prototype.hasOwnProperty.call(rankMap, key)
         if (!has) {
@@ -1898,11 +1927,13 @@ function RankMatrix(props: {
         const r = rankMap[key]
         checked += 1
         bizCheckedCount += 1
+        perKw[kw].checked += 1
         // r === null   → 검증은 됐으나 PlaceRankHistory 가 null (이전 정책 잔재. mobile route 정책에선 999 sentinel 사용)
         // r === 999    → top 20 밖 (순위권 없음)
         // 1 <= r <= 20 → 순위
         if (r == null || r > 20) {
           buckets.out += 1
+          perKw[kw].out += 1
         } else {
           bizInTop20 += 1
           if (r === 1) buckets.r1 += 1
@@ -1913,6 +1944,15 @@ function RankMatrix(props: {
           else if (r <= 10) buckets.r6_10 += 1
           else buckets.r11_20 += 1
           if (r <= 3) bizInTop3 += 1
+          // perKw 분포 (4-bucket 압축)
+          if (r === 1) perKw[kw].top1 += 1
+          else if (r <= 5) perKw[kw].top2_5 += 1
+          else perKw[kw].top6_20 += 1
+          // 평균/최고 계산용
+          perKw[kw].sumRank += r
+          if (perKw[kw].bestRank === null || r < perKw[kw].bestRank!) {
+            perKw[kw].bestRank = r
+          }
         }
       }
       // D 분류 — 키워드가 0개인 업체는 모든 분류에서 제외
@@ -1934,6 +1974,7 @@ function RankMatrix(props: {
       unchecked,
       buckets,
       biz: { allTop3: bizAllTop3, partial: bizPartial, none: bizNone },
+      perKw,
     }
   }, [items, rankMap])
 
@@ -2113,6 +2154,95 @@ function RankMatrix(props: {
                 </span>
               </div>
             )}
+
+          {/* Row E — 키워드별 미니 분포 (1위 · 2~5위 · 6~20위 · 없음) */}
+          {matrixStats.checked > 0 && allKeywords.length > 0 && (
+            <div className="flex items-start gap-1.5 text-[10px] flex-wrap">
+              <span className="inline-flex items-center gap-1 font-semibold text-slate-600 mr-1 mt-0.5 text-[11px]">
+                <Tag size={11} className="text-amber-600" />
+                키워드별 분포
+              </span>
+              {allKeywords.map((kw) => {
+                const s = matrixStats.perKw[kw]
+                if (!s || s.checked === 0) {
+                  return (
+                    <span
+                      key={kw}
+                      className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-slate-100 text-slate-500 font-mono"
+                    >
+                      <b className="text-slate-700">{kw}</b>
+                      <span className="text-slate-400">미검증</span>
+                    </span>
+                  )
+                }
+                return (
+                  <span
+                    key={kw}
+                    className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-white border border-slate-200 font-mono"
+                  >
+                    <b className="text-slate-800">{kw}</b>
+                    <span className="text-emerald-700">1위 {s.top1}</span>
+                    <span className="text-slate-300">·</span>
+                    <span className="text-blue-700">2~5위 {s.top2_5}</span>
+                    <span className="text-slate-300">·</span>
+                    <span className="text-amber-700">6~20위 {s.top6_20}</span>
+                    <span className="text-slate-300">·</span>
+                    <span className="text-rose-700">없음 {s.out}</span>
+                  </span>
+                )
+              })}
+            </div>
+          )}
+
+          {/* Row F — 키워드별 최고/평균/노출률 */}
+          {matrixStats.checked > 0 && allKeywords.length > 0 && (
+            <div className="flex items-start gap-1.5 text-[10px] flex-wrap">
+              <span className="inline-flex items-center gap-1 font-semibold text-slate-600 mr-1 mt-0.5 text-[11px]">
+                <TrendingUp size={11} className="text-violet-600" />
+                키워드별 요약
+              </span>
+              {allKeywords.map((kw) => {
+                const s = matrixStats.perKw[kw]
+                if (!s || s.checked === 0) return null
+                const inTop20 = s.top1 + s.top2_5 + s.top6_20
+                // 노출률 = 검증된 셀 중 top20 안에 든 비율 (미검증 셀은 분모에서 제외해서 검증 진행 중에도 안정)
+                const exposureRate = s.checked > 0 ? Math.round((inTop20 / s.checked) * 100) : 0
+                const avg = inTop20 > 0 ? (s.sumRank / inTop20).toFixed(1) : '—'
+                const best = s.bestRank ?? null
+                // 노출률 색상 톤
+                const rateTone =
+                  exposureRate >= 80
+                    ? 'text-emerald-700'
+                    : exposureRate >= 50
+                      ? 'text-blue-700'
+                      : exposureRate >= 20
+                        ? 'text-amber-700'
+                        : 'text-rose-700'
+                return (
+                  <span
+                    key={kw}
+                    className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-white border border-slate-200 font-mono"
+                  >
+                    <b className="text-slate-800">{kw}</b>
+                    <span className="text-slate-600">
+                      최고{' '}
+                      <b className={best === null ? 'text-slate-400' : 'text-emerald-700'}>
+                        {best === null ? '—' : `${best}위`}
+                      </b>
+                    </span>
+                    <span className="text-slate-300">·</span>
+                    <span className="text-slate-600">
+                      평균 <b className="text-slate-800">{avg === '—' ? '—' : `${avg}위`}</b>
+                    </span>
+                    <span className="text-slate-300">·</span>
+                    <span className="text-slate-600">
+                      노출률 <b className={rateTone}>{exposureRate}%</b>
+                    </span>
+                  </span>
+                )
+              })}
+            </div>
+          )}
         </div>
       )}
 
@@ -2133,14 +2263,33 @@ function RankMatrix(props: {
               <th className="px-3 py-2 text-left font-semibold sticky left-0 bg-slate-50 z-10 min-w-[180px]">
                 상호 / 등록동
               </th>
-              {allKeywords.map((kw) => (
-                <th
-                  key={kw}
-                  className="px-3 py-2 text-center font-semibold whitespace-nowrap"
-                >
-                  {kw}
-                </th>
-              ))}
+              {allKeywords.map((kw) => {
+                const s = matrixStats.perKw[kw]
+                const hasChecked = s && s.checked > 0
+                return (
+                  <th
+                    key={kw}
+                    className="px-3 py-2 text-center font-semibold whitespace-nowrap"
+                  >
+                    <div className="leading-tight">{kw}</div>
+                    {hasChecked && (
+                      <div className="mt-1 inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-white border border-slate-200 text-[9.5px] font-mono font-normal">
+                        <span className="text-emerald-700">
+                          1위 <b>{s.top1}</b>
+                        </span>
+                        <span className="text-slate-300">·</span>
+                        <span className="text-blue-700">
+                          5위↓ <b>{s.top2_5 + s.top6_20}</b>
+                        </span>
+                        <span className="text-slate-300">·</span>
+                        <span className="text-rose-700">
+                          없음 <b>{s.out}</b>
+                        </span>
+                      </div>
+                    )}
+                  </th>
+                )
+              })}
             </tr>
           </thead>
           <tbody>
@@ -3079,10 +3228,6 @@ function CompetitionList(props: { comp: CompetitionResponse }) {
                 순위
               </th>
               <th className="px-2 py-1.5 text-left font-semibold">상호</th>
-              <th className="px-2 py-1.5 text-left font-semibold">카테고리</th>
-              <th className="px-2 py-1.5 text-left font-semibold hidden sm:table-cell">
-                주소
-              </th>
               <th className="px-2 py-1.5 text-center font-semibold w-12">
                 {/* link */}
               </th>
@@ -3123,17 +3268,6 @@ function CompetitionList(props: { comp: CompetitionResponse }) {
                       </span>
                     )}
                   </div>
-                  {(it.phone || it.virtual_phone) && (
-                    <div className="text-[10px] text-ink-2 font-mono">
-                      {it.phone || it.virtual_phone}
-                    </div>
-                  )}
-                </td>
-                <td className="px-2 py-1.5 text-ink-2 text-[11px]">
-                  {it.category || '-'}
-                </td>
-                <td className="px-2 py-1.5 text-ink-2 text-[11px] hidden sm:table-cell">
-                  {it.address || '-'}
                 </td>
                 <td className="px-2 py-1.5 text-center">
                   {it.place_id && (
