@@ -1976,6 +1976,22 @@ function RankMatrix(props: {
   const filledCells = progress?.filled_cells ?? 0
   const cellPct = totalCells > 0 ? Math.min(100, Math.round((filledCells / totalCells) * 100)) : 0
 
+  // ── (2026-05-16) 잡 단위 진행률 표시 분기 ─────────────────────────
+  // 일반 manual-rank-check (place 단위, 전체 매트릭스) 는 분모/분자가
+  // total_cells/filled_cells 로 의미 있게 매핑되지만, rerun-out-of-range
+  // (셀 단위) 는 그렇지 않다 — filled_cells 는 *전체 매트릭스* 의 7일 누적
+  // distinct 카운트라 잡 시작 시점부터 다시 카운트하지 않는다.
+  //
+  // 따라서 rerun 잡일 때는:
+  //   · 명시적 분모: progress.manual_target_total (= 105)
+  //   · 분자: 모름 (진척률 정확 추적 불가) → indeterminate 표시
+  //   · 텍스트: "순위권 없음 N건 재검증 중 — 약 N×4초 예상"
+  //
+  // 'rerun-out-of-range' 라벨이 set 되면 위 분기 적용.
+  const jobLabel = progress?.manual_label ?? null
+  const jobTargetTotal = progress?.manual_target_total ?? null
+  const isRerunJob = jobLabel === 'rerun-out-of-range' && (jobTargetTotal ?? 0) > 0
+
   // Phase 7 New Issue — 행별 완료 진행률 (filled / total tracking_keywords).
   // 매트릭스 셀이 무작위 순서로 채워져 사용자가 답답해하는 문제 (verbatim:
   // "100% 검증하고 매트릭스에 채우고 있는데 유저 입장에서는 답답해") 를 완화하기 위해
@@ -2127,8 +2143,13 @@ function RankMatrix(props: {
       btnTitle = '네이버 부하 분산을 위해 청크 단위로 나누어 진행 중입니다.'
     }
   } else if (manualChecking) {
-    btnLabel = totalCells > 0 ? `검증 중... (${filledCells}/${totalCells} 셀)` : '검증 중...'
-    btnTitle = '백그라운드에서 검증이 진행 중입니다. 완료될 때까지 다시 누를 수 없습니다.'
+    if (isRerunJob) {
+      btnLabel = `재검증 중... (${jobTargetTotal}건)`
+      btnTitle = '순위권 없음 셀만 백그라운드에서 재검증 중입니다.'
+    } else {
+      btnLabel = totalCells > 0 ? `검증 중... (${filledCells}/${totalCells} 셀)` : '검증 중...'
+      btnTitle = '백그라운드에서 검증이 진행 중입니다. 완료될 때까지 다시 누를 수 없습니다.'
+    }
   }
 
   return (
@@ -2202,34 +2223,55 @@ function RankMatrix(props: {
           <div className="flex items-center justify-between text-[11px] text-blue-900 mb-1">
             <span className="font-semibold inline-flex items-center gap-1.5">
               <Loader2 size={11} className="animate-spin" />
-              {chunkPhase?.phase === 'naver_paused'
-                ? `네이버 일시차단 감지 — 자동 재개 대기 중 (청크 ${chunkPhase.current}/${chunkPhase.total})`
-                : chunkPhase?.phase === 'cooldown'
-                  ? `청크 ${chunkPhase.current}/${chunkPhase.total} 완료 — 다음 청크 준비 중...`
-                  : chunkPhase
-                    ? `청크 ${chunkPhase.current}/${chunkPhase.total} 검증 중`
-                    : '백그라운드에서 순위 검증 중'}
+              {isRerunJob
+                ? `순위권 없음 ${jobTargetTotal}건 재검증 중 — 잠시만 기다려주세요`
+                : chunkPhase?.phase === 'naver_paused'
+                  ? `네이버 일시차단 감지 — 자동 재개 대기 중 (청크 ${chunkPhase.current}/${chunkPhase.total})`
+                  : chunkPhase?.phase === 'cooldown'
+                    ? `청크 ${chunkPhase.current}/${chunkPhase.total} 완료 — 다음 청크 준비 중...`
+                    : chunkPhase
+                      ? `청크 ${chunkPhase.current}/${chunkPhase.total} 검증 중`
+                      : '백그라운드에서 순위 검증 중'}
             </span>
-            {totalCells > 0 && (
-              <span className="font-mono">
-                {filledCells} / {totalCells} 셀 ({cellPct}%)
-              </span>
+            {/* 진행률 텍스트 분기:
+                · rerun-out-of-range : 분자(잡 처리량) 추적 어려우므로 분모만 표시
+                · 그 외             : filled/total 기존 동작 */}
+            {isRerunJob ? (
+              <span className="font-mono text-blue-700">잡 크기: {jobTargetTotal}건</span>
+            ) : (
+              totalCells > 0 && (
+                <span className="font-mono">
+                  {filledCells} / {totalCells} 셀 ({cellPct}%)
+                </span>
+              )
             )}
           </div>
-          {totalCells > 0 && (
+          {/* 프로그레스 바:
+              · rerun-out-of-range : indeterminate (왔다갔다 애니메이션) — 정확한 % 모름
+              · 그 외             : cellPct 기반 determinate */}
+          {isRerunJob ? (
             <div className="h-1.5 rounded-full bg-blue-100 overflow-hidden">
               <div
-                className={clsx(
-                  'h-full transition-all duration-500',
-                  chunkPhase?.phase === 'naver_paused'
-                    ? 'bg-rose-400'
-                    : chunkPhase?.phase === 'cooldown'
-                      ? 'bg-amber-400'
-                      : 'bg-emerald-500',
-                )}
-                style={{ width: `${cellPct}%` }}
+                className="h-full bg-amber-400 rounded-full animate-pulse"
+                style={{ width: '40%' }}
               />
             </div>
+          ) : (
+            totalCells > 0 && (
+              <div className="h-1.5 rounded-full bg-blue-100 overflow-hidden">
+                <div
+                  className={clsx(
+                    'h-full transition-all duration-500',
+                    chunkPhase?.phase === 'naver_paused'
+                      ? 'bg-rose-400'
+                      : chunkPhase?.phase === 'cooldown'
+                        ? 'bg-amber-400'
+                        : 'bg-emerald-500',
+                  )}
+                  style={{ width: `${cellPct}%` }}
+                />
+              </div>
+            )
           )}
         </div>
       )}

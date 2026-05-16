@@ -83,15 +83,33 @@ router = APIRouter(prefix="/rank-tracker", tags=["rank-tracker"])
 _user_rank_busy: dict[int, dict[str, object]] = {}
 
 
-def _mark_rank_busy(user_id: int, started: int, label: str = "manual") -> None:
-    """`started` = 이번 잡에 투입된 RegisteredPlace 개수.
-    label 은 후일 다른 트리거(스케줄러 등) 와 구분이 필요할 때 사용.
+def _mark_rank_busy(
+    user_id: int,
+    started: int,
+    label: str = "manual",
+    target_total: int | None = None,
+) -> None:
+    """이번 잡의 메타데이터를 사용자별 busy dict 에 저장한다.
+
+    Args:
+      started      : 이번 잡에 투입된 단위 개수 (place 단위 잡이면 place 수,
+                     셀 단위 잡이면 셀 수). 프론트의 "검증 중 — N건" 표시용.
+      label        : 잡 유형 — "manual" / "rerun-out-of-range" 등.
+                     프론트가 진행 배너 텍스트를 분기하는 데 사용.
+      target_total : (2026-05-16) 이번 잡이 검증하는 셀 총수.
+                     manual-rank-check(place 단위) 는 None — 프론트는 전체
+                     매트릭스 total_cells 를 분모로 사용.
+                     rerun-out-of-range(셀 단위) 는 정확한 셀 개수 (예: 105)
+                     를 지정 — 프론트가 "X / 105 셀" 로 표시.
     """
-    _user_rank_busy[user_id] = {
+    payload: dict[str, object] = {
         "started_at": now_kst().isoformat(),
         "started": int(started),
         "label": label,
     }
+    if target_total is not None:
+        payload["target_total"] = int(target_total)
+    _user_rank_busy[user_id] = payload
 
 
 def _clear_rank_busy(user_id: int) -> None:
@@ -475,8 +493,14 @@ async def _run_rank_check_for_cells(
             "rerun-cells starting: user_id=%s cells=%d (sample=%s)",
             user_id, len(cells), cells[:3],
         )
-        # busy 마크는 엔드포인트에서 이미 set 했지만 멱등으로 갱신
-        _mark_rank_busy(user_id, started=len(cells), label="manual")
+        # busy 마크는 엔드포인트에서 이미 set 했지만 멱등으로 갱신.
+        # 같은 label/target_total 을 유지해야 /progress 응답이 일관됨.
+        _mark_rank_busy(
+            user_id,
+            started=len(cells),
+            label="rerun-out-of-range",
+            target_total=len(cells),
+        )
         stats = await run_rank_check_for_cells(cells)
         log.info("rerun-cells done: user_id=%s stats=%s", user_id, stats)
     finally:
@@ -1476,6 +1500,12 @@ async def get_rank_progress(
     manual_running = busy is not None
     manual_started = int(busy["started"]) if busy else 0
     manual_started_at = str(busy["started_at"]) if busy else None
+    # (2026-05-16) 셀 단위 잡(rerun-out-of-range 등)이면 target_total 이 set 되어 있음.
+    # 프론트는 이 값을 분모로 써서 "X / 105 셀" 처럼 정확한 진행률을 그릴 수 있다.
+    # 일반 manual-rank-check(place 단위) 는 target_total 미설정 → None 그대로.
+    _target_raw = busy.get("target_total") if busy else None
+    manual_target_total = int(_target_raw) if _target_raw is not None else None
+    manual_label = str(busy["label"]) if busy and busy.get("label") else None
 
     # 진행 중 판단:
     #   - 매칭 대기가 남아있거나
@@ -1503,6 +1533,8 @@ async def get_rank_progress(
         manual_running=manual_running,
         manual_started=manual_started,
         manual_started_at=manual_started_at,
+        manual_target_total=manual_target_total,
+        manual_label=manual_label,
     )
 
 
@@ -1691,8 +1723,15 @@ async def rerun_out_of_range(
             message="재검증 대상 셀이 없습니다.",
         )
 
-    # 2) 셀 단위 워커 디스패치 — 정확히 이 cells 만 재검증
-    _mark_rank_busy(user.id, started=cells_to_recheck, label="manual")
+    # 2) 셀 단위 워커 디스패치 — 정확히 이 cells 만 재검증.
+    #    target_total=cells_to_recheck 를 함께 set → /progress 가 manual_target_total
+    #    필드로 노출 → 프론트가 진행률을 "X / 105 셀" 로 정확히 표시.
+    _mark_rank_busy(
+        user.id,
+        started=cells_to_recheck,
+        label="rerun-out-of-range",
+        target_total=cells_to_recheck,
+    )
     background_tasks.add_task(_run_rank_check_for_cells, user.id, cells)
 
     # place 개수도 참고용으로 계산

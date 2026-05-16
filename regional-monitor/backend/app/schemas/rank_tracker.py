@@ -367,12 +367,20 @@ class RankCheckProgress(BaseModel):
     # Phase 7 — 사용자별 "수동 검증 잡이 백그라운드에서 실행 중" 플래그.
     # /manual-rank-check 가 호출되면 set, 워커가 try/finally 로 종료 시 unset.
     # 프론트는 이 값을 신뢰해서 '지금 검증' 버튼을 비활성화하고 진행률 텍스트를 표시.
-    #   · manual_running    : 실행 중 여부 (단일 권위 신호)
-    #   · manual_started    : 이 잡에 투입된 플레이스 개수 (시작 시점 스냅샷)
-    #   · manual_started_at : 시작 시각 ISO8601 (경과 시간 계산용)
+    #   · manual_running       : 실행 중 여부 (단일 권위 신호)
+    #   · manual_started       : 이 잡에 투입된 플레이스/셀 개수 (시작 시점 스냅샷)
+    #   · manual_started_at    : 시작 시각 ISO8601 (경과 시간 계산용)
+    #   · manual_target_total  : (2026-05-16) 이번 잡이 검증하는 셀 총수 (분모).
+    #                            rerun-out-of-range 같이 "셀 단위" 잡일 때 진행률을
+    #                            "X / target_total" 로 정확히 표시하기 위함.
+    #                            None 이면 프론트는 total_cells 를 분모로 사용.
+    #   · manual_label         : "manual" / "rerun-out-of-range" 등 잡 유형 라벨.
+    #                            프론트가 진행률 텍스트를 분기 (예: "재검증 N건") 하는 데 사용.
     manual_running: bool = False
     manual_started: int = 0
     manual_started_at: str | None = None
+    manual_target_total: int | None = None
+    manual_label: str | None = None
 
 
 # ─────────────────────────────────────────────────────────

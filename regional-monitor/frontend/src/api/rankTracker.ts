@@ -272,6 +272,13 @@ export interface RankCheckProgress {
   manual_started?: number
   /** 잡 시작 시각 ISO8601 (경과 시간/추정 잔여 시간 계산용). */
   manual_started_at?: string | null
+  /** (2026-05-16) 이번 잡이 검증하는 셀 총수.
+   *  rerun-out-of-range 같은 셀 단위 잡은 정확한 값(예: 105) 이 들어옴.
+   *  manual-rank-check (place 단위) 는 null 이며, 프론트는 total_cells 를 분모로 사용. */
+  manual_target_total?: number | null
+  /** (2026-05-16) 잡 유형 라벨. 'manual' / 'rerun-out-of-range' 등.
+   *  프론트가 진행 배너 텍스트를 분기 ("재검증 중 …") 하는 데 사용. */
+  manual_label?: string | null
 }
 
 /* ─────────── API 함수 ─────────── */
