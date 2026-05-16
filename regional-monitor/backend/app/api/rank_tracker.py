@@ -44,6 +44,7 @@ from app.schemas.rank_tracker import (
     RunRankCheckResponse,
     ManualRankCheckRequest,
     ManualRankCheckResponse,
+    RerunOutOfRangeResponse,
     UpdateKeywordsRequest,
     UpdateKeywordsResponse,
 )
@@ -1575,5 +1576,96 @@ async def trigger_manual_rank_check(
             f"{started}개 업체에 대해 순위 검증을 시작했습니다. 잠시 후 매트릭스에 반영됩니다."
             if started > 0
             else "검증 가능한 업체가 없습니다. (매칭 완료 + 키워드 등록 후 다시 시도)"
+        ),
+    )
+
+
+# ─────────────────────────────────────────────────────────
+# "순위권 없음" 셀 재검증 (2026-05-16)
+# ─────────────────────────────────────────────────────────
+# 매트릭스에 "순위권 없음 N" 으로 잡힌 셀들 중 상당수가
+# 실제로는 검증 당시의 일시 오류 (네이버 IP 차단, 페이지 로딩 실패 등) 로 인해
+# rank_checker 가 out_of_range=True, total_results=NULL 로 저장한 케이스다.
+# 사용자가 매트릭스에서 "순위권 없음 N건 재검증" 버튼을 눌렀을 때 호출.
+#
+# 동작
+#   1) 최근 7일 내 본인 소유 place 의 PlaceRankHistory 중 out_of_range=True 행 조회
+#      (필터: out_of_range=True 만. total_results IS NULL 추가 필터는 일부러 두지 않음.
+#       사용자 관찰상 total_results 가 채워진 채로 out_of_range=True 인 셀도
+#       재검증하면 실제 순위가 잡히는 경우가 대다수.)
+#   2) 그 row 들의 place_pk 집합 → 자격 조건(AUTO_MATCHED/CONFIRMED + place_id + keyword) 필터
+#   3) _run_rank_check_for_ids 로 디스패치 (manual-rank-check 와 동일 워커)
+#
+# 멱등성
+#   같은 (place, keyword, today_kst) 셀에 대한 재검증은 UNIQUE(place_pk, check_date, keyword)
+#   제약을 통해 upsert 되므로 안전. 같은 사용자가 이미 검증 잡 실행 중이면 409 거절.
+# ─────────────────────────────────────────────────────────
+@router.post("/rerun-out-of-range", response_model=RerunOutOfRangeResponse)
+async def rerun_out_of_range(
+    background_tasks: BackgroundTasks,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> RerunOutOfRangeResponse:
+    """매트릭스에서 '순위권 없음 (out_of_range=True)' 으로 잡힌 셀 전체 재검증."""
+    # busy 가드 — manual-rank-check 와 같은 키 공유. 잡 끝나면 자동 해제.
+    if _get_rank_busy(user.id) is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="이미 검증 중입니다. 잠시 후 다시 시도해주세요.",
+        )
+
+    # 1) 최근 7일 내 out_of_range=True 인 본인 셀 조회
+    #    JOIN 으로 user_id 필터를 같이 걸어 race(다른 사용자 row 가 끼는 일) 차단
+    today = now_kst().date()
+    since = today - timedelta(days=7)
+    q = await db.execute(
+        select(PlaceRankHistory.place_pk, PlaceRankHistory.keyword)
+        .join(RegisteredPlace, RegisteredPlace.id == PlaceRankHistory.place_pk)
+        .where(
+            RegisteredPlace.user_id == user.id,
+            PlaceRankHistory.out_of_range.is_(True),
+            PlaceRankHistory.check_date >= since,
+        )
+    )
+    rows = q.all()  # list[Row(place_pk, keyword)]
+    cells_to_recheck = len(rows)
+
+    if cells_to_recheck == 0:
+        return RerunOutOfRangeResponse(
+            started=0,
+            cells_to_recheck=0,
+            message="재검증 대상 셀이 없습니다.",
+        )
+
+    # 2) place_pk 집합 → 자격 조건 필터
+    candidate_ids = list({r.place_pk for r in rows})
+    eligibility = await db.execute(
+        select(RegisteredPlace.id).where(
+            RegisteredPlace.id.in_(candidate_ids),
+            RegisteredPlace.user_id == user.id,
+            RegisteredPlace.match_status.in_(("AUTO_MATCHED", "CONFIRMED")),
+            RegisteredPlace.place_id.is_not(None),
+            RegisteredPlace.tracking_keywords.is_not(None),
+        )
+    )
+    eligible_ids = [pk for (pk,) in eligibility.all()]
+    started = len(eligible_ids)
+
+    if started == 0:
+        return RerunOutOfRangeResponse(
+            started=0,
+            cells_to_recheck=cells_to_recheck,
+            message="재검증 가능한 업체가 없습니다. (매칭/키워드 상태 확인 필요)",
+        )
+
+    # 3) 워커 디스패치 — manual-rank-check 와 동일 패턴
+    _mark_rank_busy(user.id, started=started, label="manual")
+    background_tasks.add_task(_run_rank_check_for_ids, user.id, eligible_ids)
+
+    return RerunOutOfRangeResponse(
+        started=started,
+        cells_to_recheck=cells_to_recheck,
+        message=(
+            f"{started}개 업체의 순위권 없음 셀 {cells_to_recheck}건을 재검증합니다."
         ),
     )

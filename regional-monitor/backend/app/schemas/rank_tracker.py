@@ -428,6 +428,34 @@ class ManualRankCheckResponse(BaseModel):
 
 
 # ─────────────────────────────────────────────────────────
+# "순위권 없음" 셀 재검증 트리거 (2026-05-16)
+# ─────────────────────────────────────────────────────────
+# 배경
+#   현재 매트릭스에서 "순위권 없음 N" 으로 집계되는 셀들 중 상당수가
+#   "TOP_N(20) 밖 진짜 순위권 외" 가 아니라 검증 당시의 일시 오류
+#   (페이지 로딩 실패, 네이버 IP 차단으로 응답 0건 등) 로 인해
+#   rank_checker._search_and_rank 가 out_of_range=True, total_results=NULL
+#   로 저장한 케이스. 사용자 관찰상 타지역(서울 외)은 본인이 실제로
+#   20위권 밖인 경우가 극소수이고, 대부분 재검증하면 진짜 순위가 잡힌다.
+#
+# 동작
+#   - 최근 7일 내 out_of_range=True 인 PlaceRankHistory 를 본인 소유 한정으로 조회
+#   - 해당 place_pk 집합을 자격 조건(AUTO_MATCHED/CONFIRMED + place_id + keyword 보유)으로 필터
+#   - _run_rank_check_for_ids 로 디스패치 (manual-rank-check 와 동일 워커)
+#
+# 필터 정책
+#   total_results IS NULL 만 재시도하는 게 더 안전해 보이지만, 사용자 관찰상
+#   total_results 가 채워진 채로 out_of_range=True 인 셀들도 대부분 재검증하면
+#   실제 순위가 잡힘. 따라서 out_of_range=True 전체를 대상으로 함.
+# ─────────────────────────────────────────────────────────
+class RerunOutOfRangeResponse(BaseModel):
+    """순위권 없음 셀 재검증 트리거 응답."""
+    started: int                # 백그라운드 큐에 들어간 place 수
+    cells_to_recheck: int       # 대상이 된 (place, keyword) 셀 누계 (참고용)
+    message: str | None = None
+
+
+# ─────────────────────────────────────────────────────────
 # 경쟁업체 스냅샷 (모달에서 키워드 클릭 시)
 # ─────────────────────────────────────────────────────────
 class CompetitionItem(BaseModel):

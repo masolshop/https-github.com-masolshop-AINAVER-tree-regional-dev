@@ -55,6 +55,7 @@ import {
   updateKeywords,
   bulkApplyKeywords,
   triggerManualRankCheck,
+  triggerRerunOutOfRange,
   type RankPlaceOut,
   type RankPlaceListOut,
   type DongChangedListOut,
@@ -421,6 +422,45 @@ export default function RankTracker() {
     [fetchAll, fetchProgress, showToast],
   )
 
+  // ─── "순위권 없음" 셀 재검증 핸들러 (2026-05-16) ───
+  // 매트릭스 헤더의 "순위권 없음 N건 재검증" 버튼에서 호출. 백엔드가
+  // 최근 7일 내 out_of_range=True 셀들의 place 를 추려 _run_rank_check_for_ids 로
+  // 디스패치. handleManualRankCheck 와 달리 클라이언트 측 청크 분할은 하지 않고,
+  // 단일 잡으로 트리거한 뒤 폴링(manual_running) 에 결과를 맡긴다. 백엔드는 동일
+  // busy-mark 키를 사용하므로 manual_running=true 가 켜져 UI 가 자동으로 busy 됨.
+  const handleRerunOutOfRange = useCallback(async () => {
+    const fresh = await fetchProgress()
+    if (fresh?.manual_running) {
+      showToast('이미 백그라운드에서 검증 중입니다. 완료 후 다시 시도해주세요.')
+      return
+    }
+    setManualLocal(true)
+    try {
+      const resp = await triggerRerunOutOfRange()
+      if (resp.started === 0) {
+        showToast(resp.message ?? '재검증 대상이 없습니다.')
+        setManualLocal(false)
+        return
+      }
+      showToast(
+        resp.message ??
+          `${resp.started}개 업체의 순위권 없음 셀 ${resp.cells_to_recheck}건을 재검증합니다.`,
+      )
+      // 백엔드 busy 플래그가 켜질 시간 — 짧게 대기 후 progress 폴링이 인계
+      await new Promise((r) => setTimeout(r, 500))
+      await fetchProgress()
+    } catch (err) {
+      const msg =
+        (err as { message?: string })?.message ??
+        '재검증 트리거에 실패했습니다.'
+      showToast(msg)
+      setManualLocal(false)
+    } finally {
+      // manualLocal 은 polling 에서 manual_running=false 가 관측되면
+      // (또는 cleanup useEffect 가) 알아서 내림. 여기서는 일찍 끄지 않음.
+    }
+  }, [fetchProgress, showToast])
+
   // ─── chunkPhase 안전 cleanup (2026-05-16, 강화) ───
   // 청크 루프가 try/finally 에서 setChunkPhase(null) 까지 잘 도달하면 문제 없지만,
   // 이론상의 race (예: 사용자가 탭을 별도로 이동하여 setTimeout/await 체인이 끊긴 경우)
@@ -446,6 +486,29 @@ export default function RankTracker() {
     }, delayMs)
     return () => window.clearTimeout(t)
   }, [chunkPhase, progress])
+
+  // ─── "rerun-out-of-range" 경로용 manualLocal cleanup (2026-05-16) ───
+  // 이 경로는 청크 분할 없이 단발성으로 트리거하므로 chunkPhase 를 set 하지 않는다.
+  // 백엔드 잡이 완료(manual_running=false)되면 manualLocal 도 함께 내려야 매트릭스
+  // 헤더의 "검증 중..." 버튼이 해제된다. chunkPhase 가 있는 경우는 위 useEffect 가
+  // 처리하므로 여기서는 chunkPhase 가 null 인 경우에만 작동.
+  useEffect(() => {
+    if (chunkPhase != null) return
+    if (!manualLocal) return
+    if (progress == null) return
+    // 백엔드가 아직 잡을 set 하지 않은 상태(트리거 직후 짧은 윈도) 는 무시
+    if (progress.manual_running) return
+    // 백엔드 idle 확인됨 → 약간의 grace 후 manualLocal 해제.
+    //   grace 를 충분히 길게(5초) 잡는 이유: 트리거 직후 ~700ms 윈도 동안 백엔드
+    //   busy 플래그가 아직 폴링에 반영 안 됐을 수 있는데, 그 사이 이 useEffect 가
+    //   먼저 발화하면 잘못된 타이머가 set 된다. 다음 progress 폴링(3초 간격)에서
+    //   manual_running=true 가 관측되면 위 guard 에 막혀 timer 가 clearTimeout 된다.
+    //   5초면 충분한 안전 마진.
+    const t = window.setTimeout(() => {
+      setManualLocal(false)
+    }, 5000)
+    return () => window.clearTimeout(t)
+  }, [chunkPhase, manualLocal, progress])
 
   /* ── 결과 Excel 다운로드 ── */
   const exportResults = useCallback(async () => {
@@ -597,6 +660,7 @@ export default function RankTracker() {
           reloadTick={matrixReloadTick}
           onRowClick={(p) => setDetailPlace(p)}
           onManualCheck={handleManualRankCheck}
+          onRerunOutOfRange={handleRerunOutOfRange}
           manualChecking={manualChecking}
           progress={progress}
           chunkPhase={chunkPhase}
@@ -1767,6 +1831,8 @@ function RankMatrix(props: {
   reloadTick?: number
   onRowClick?: (place: RankPlaceOut) => void
   onManualCheck?: (placeIds: number[]) => void | Promise<void>
+  /** 2026-05-16 — "순위권 없음" 셀만 재검증 */
+  onRerunOutOfRange?: () => void | Promise<void>
   manualChecking?: boolean
   /** Phase 7 — 백엔드 잡 진행률 표시용 */
   progress?: RankCheckProgress | null
@@ -1782,6 +1848,7 @@ function RankMatrix(props: {
     reloadTick = 0,
     onRowClick,
     onManualCheck,
+    onRerunOutOfRange,
     manualChecking = false,
     progress = null,
     chunkPhase = null,
@@ -2090,6 +2157,32 @@ function RankMatrix(props: {
                 <Search size={12} />
               )}
               {btnLabel}
+            </button>
+          )}
+          {/* 2026-05-16 — "순위권 없음 N건 재검증" 버튼.
+              매트릭스에서 out_of_range=True 로 잡힌 셀들이 대부분 검증 당시의
+              일시 오류(네이버 IP 차단, 페이지 로딩 실패) 로 인한 false positive 라는
+              관찰에 따라, 그 셀들의 place 만 골라 다시 검증한다. 백엔드는
+              POST /rerun-out-of-range 가 처리. matrixStats.buckets.out 이 0 이면 비활성. */}
+          {onRerunOutOfRange && matrixStats.buckets.out > 0 && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation()
+                onRerunOutOfRange()
+              }}
+              disabled={manualChecking}
+              className="text-xs font-semibold px-3 py-1.5 rounded-md bg-amber-500 text-white hover:bg-amber-600 inline-flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
+              title={
+                '매트릭스에 "순위권 없음" 으로 잡힌 셀들을 다시 검증합니다. ' +
+                '대부분 검증 당시의 일시 오류(네이버 차단 등) 라서 재검증하면 실제 순위가 잡힐 가능성이 높습니다.'
+              }
+            >
+              {manualChecking ? (
+                <Loader2 size={12} className="animate-spin" />
+              ) : (
+                <RefreshCw size={12} />
+              )}
+              순위권 없음 {matrixStats.buckets.out}건 재검증
             </button>
           )}
           <button
