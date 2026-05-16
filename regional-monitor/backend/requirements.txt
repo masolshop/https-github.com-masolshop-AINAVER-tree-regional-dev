@@ -24,3 +24,6 @@ python-dotenv==1.0.1
 # ── DDoS / 브루트포스 2차 방어 (nginx 우회/내부 호출 보호) ──
 slowapi==0.1.9
 limits==3.13.0
+# ── 네이버 지도 SPA 렌더링 (captcha 우회용 headless Chromium) ──
+# 설치 후 반드시: `playwright install chromium && playwright install-deps chromium`
+playwright==1.49.0

@@ -30,14 +30,14 @@ from app.services.region_loader import lookup_region_by_dong
 log = logging.getLogger(__name__)
 
 # 차단 회피를 위한 순위 체크 호출 페이스
-# competition 솔루션과 동일한 수준으로 끌어올림 (이전 0.8s/3concurrency → 너무 보수적)
-RANK_PACE_SEC = 0.2
-# 동시성 (competition 의 CHUNK_CONCURRENCY=10 보다 약간 보수적)
 #
-# [DB pool 과의 관계] core/database.py 의 PostgreSQL pool_size=20, max_overflow=20 → 최대 40 connection.
-# 워커마다 자체 AsyncSession (1 connection) 을 발급하므로 RANK_CONCURRENCY <= 16 이면 안전.
-# 8 은 (네이버 차단 회피용) + (다른 API 요청을 위한 풀 여유분) 의 절충점.
-RANK_CONCURRENCY = 8
+# [2026-05-16] naver_map.search_map() 이 HTTP 에서 Playwright 헤드리스 Chromium 으로
+# 전면 전환되면서 호출당 비용이 ~5-6초 + 메모리 무거움으로 바뀌었다.
+# - 동시성 8 → 2 (Playwright context 1개당 chromium 프로세스 분리 + ~150MB RAM, 서버 3.7GB 한계 고려)
+# - pace 0.2s → 0.5s (호출 사이에 브라우저가 GC 할 여유)
+RANK_PACE_SEC = 0.5
+# Playwright 기반에서는 동시성 2~3 가 안정. 4 이상은 RAM 압박 + 큰 효과 없음.
+RANK_CONCURRENCY = 2
 
 
 @dataclass
@@ -148,7 +148,9 @@ async def _search_and_rank(
     client: httpx.AsyncClient | None,
 ) -> tuple[int | None, int | None, str | None]:
     """단일 쿼리로 네이버 지도 검색 → (rank, total_count, error) 반환."""
-    res = await search_map(query, display=75, client=client)
+    # [2026-05-16] Playwright 기반 search_map 은 항상 top 20 만 반환 (display 인자 무시).
+    # rank 1~20 안에 없으면 "순위권 없음" (= out_of_range) 으로 표시.
+    res = await search_map(query, display=20, client=client)
     if res.error:
         return None, None, res.error
     for idx, it in enumerate(res.items, start=1):

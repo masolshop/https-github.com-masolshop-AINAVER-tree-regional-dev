@@ -1693,7 +1693,7 @@ function RankMatrix(props: {
       const resp: LatestRanksResponse = await listLatestRanks()
       const next: Record<string, number | null> = {}
       for (const cell of resp.cells) {
-        // out_of_range = 75위 밖. UI 표시 마킹용으로 999 사용.
+        // out_of_range = top 20 밖(순위권 없음). UI 표시 마킹용으로 999 사용.
         if (cell.rank == null) {
           next[`${cell.place_pk}::${cell.keyword}`] = null
         } else if (cell.out_of_range) {
@@ -1733,8 +1733,10 @@ function RankMatrix(props: {
 
   const rankCell = (rank: number | null | undefined) => {
     if (rank == null) return <span className="text-ink-2 text-xs">—</span>
-    if (rank > 75)
-      return <span className="text-rose-600 font-semibold text-xs">75위 밖</span>
+    // [2026-05-16] top 20 정책: 21위 이상은 추적 의미 없음 → "순위권 없음"
+    // (rank > 20 으로 비교하되, 999 sentinel 도 자연스럽게 잡힘)
+    if (rank > 20)
+      return <span className="text-rose-600 font-semibold text-xs">순위권 없음</span>
     const tone =
       rank <= 3
         ? 'bg-emerald-100 text-emerald-800'
@@ -1764,7 +1766,7 @@ function RankMatrix(props: {
   // 매트릭스 셀이 무작위 순서로 채워져 사용자가 답답해하는 문제 (verbatim:
   // "100% 검증하고 매트릭스에 채우고 있는데 유저 입장에서는 답답해") 를 완화하기 위해
   // 행마다 "3/5 ✓" 식의 배지를 노출. rankMap 에 키가 존재(=DB persist 완료) 하면
-  // 채워진 것으로 간주 — 75위밖(null) 도 PlaceRankHistory 행이 있으면 진척으로 본다.
+  // 채워진 것으로 간주 — 순위권 없음(null) 도 PlaceRankHistory 행이 있으면 진척으로 본다.
   const perPlaceCompletion = useMemo(() => {
     const map: Record<number, { filled: number; total: number }> = {}
     for (const p of items) {
@@ -2302,7 +2304,7 @@ function MultiLineChart(props: { series: KeywordSeriesEntry[] }) {
                 {ln.lastRank}위
               </span>
             ) : (
-              <span className="text-rose-600 font-semibold">75위 밖</span>
+              <span className="text-rose-600 font-semibold">순위권 없음</span>
             )}
           </div>
         ))}
@@ -2405,7 +2407,7 @@ function PlaceDetailModal(props: {
     const byKw = new Map(history.series.map((s) => [s.keyword, s.points]))
     return place.tracking_keywords.map((kw) => {
       const pts = byKw.get(kw) ?? []
-      const filled = pts.filter((p) => p.rank != null) // 75위 밖이어도 out_of_range로 표기됨
+      const filled = pts.filter((p) => p.rank != null) // 순위권 없음이어도 out_of_range로 표기됨
       const last = pts[pts.length - 1] ?? null
       const latest = last?.rank ?? null
       const latestOOR = !!last?.out_of_range
@@ -2450,10 +2452,10 @@ function PlaceDetailModal(props: {
     if (rank == null && !oor) {
       return <span className="text-ink-2 text-xs">—</span>
     }
-    if (oor || (rank != null && rank > 75)) {
+    if (oor || (rank != null && rank > 20)) {
       return (
         <span className="px-2 py-0.5 rounded font-bold text-xs bg-rose-100 text-rose-700">
-          75위 밖
+          순위권 없음
         </span>
       )
     }
@@ -2625,7 +2627,7 @@ function PlaceDetailModal(props: {
                 />
               )}
               <span className="text-[10px] text-ink-2 normal-case tracking-normal font-normal ml-1">
-                · 행 클릭 시 경쟁업체 1~75위 펼치기
+                · 행 클릭 시 경쟁업체 1~20위 펼치기
               </span>
             </h4>
             {error ? (
@@ -2731,8 +2733,8 @@ function PlaceDetailModal(props: {
                   </tbody>
                 </table>
                 <p className="text-[11px] text-ink-2 mt-2">
-                  ▲ 상승(과거보다 좋은 순위) · ▼ 하락 · 75위 밖은 비교에서
-                  제외됨. 행 클릭 시 그 키워드의 동×키워드 검색 결과 1~75위가
+                  ▲ 상승(과거보다 좋은 순위) · ▼ 하락 · 순위권 없음은 비교에서
+                  제외됨. 행 클릭 시 그 키워드의 동×키워드 검색 결과 1~20위가
                   펼쳐집니다.
                 </p>
               </div>
@@ -2759,8 +2761,8 @@ function PlaceDetailModal(props: {
 
 /* ────────────────────────────────────────────────────────────
  * 컴포넌트: 경쟁업체 리스트 (모달 안에서 키워드 펼치기 시)
- *  - 1~75위 전체 표시, 내 업체는 강조 배경
- *  - 1~3위 emerald, 4~10 blue, 11~30 slate, 31~75 amber 배지
+ *  - 1~20위 전체 표시, 내 업체는 강조 배경
+ *  - 1~3위 emerald, 4~10 blue, 11~20 slate 배지 (광고 제외 organic top 20)
  *  - 네이버 플레이스 직링크 외부 아이콘
  * ──────────────────────────────────────────────────────────── */
 function CompetitionList(props: { comp: CompetitionResponse }) {
@@ -2813,7 +2815,7 @@ function CompetitionList(props: { comp: CompetitionResponse }) {
             </span>
           ) : (
             <span className="px-1.5 py-0.5 rounded font-bold bg-rose-100 text-rose-700">
-              75위 밖
+              순위권 없음
             </span>
           )}
         </div>

@@ -19,6 +19,14 @@ git reset --hard origin/genspark_ai_developer
 echo -e "${BLUE}=== [2/5] Backend deps update ===${NC}"
 cd "$BACKEND_DIR"
 ./venv/bin/pip install -r requirements.txt --quiet 2>&1 | tail -3
+# Playwright Chromium 바이너리 + 시스템 deps (이미 설치돼 있으면 즉시 종료).
+# (sudo 없이 install-deps 는 실패하지만 이미 깔려있다면 무시 가능)
+if ./venv/bin/playwright --version >/dev/null 2>&1; then
+  echo "  → playwright detected, ensuring chromium binary…"
+  ./venv/bin/playwright install chromium 2>&1 | tail -3 || true
+  # install-deps 는 root 권한 필요. 실패해도 (이미 깔린 경우) 무시.
+  sudo ./venv/bin/playwright install-deps chromium 2>&1 | tail -3 || true
+fi
 
 echo -e "${BLUE}=== [3/5] Frontend build ===${NC}"
 cd "$FRONTEND_DIR"
