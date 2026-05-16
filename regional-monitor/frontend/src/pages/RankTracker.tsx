@@ -225,10 +225,16 @@ export default function RankTracker() {
    */
   const [manualLocal, setManualLocal] = useState(false)
   // 청크 진행 상태 — 매트릭스 버튼이 "청크 N/M" 표시할 때 사용
+  //
+  // [2026-05-16 phase 'naver_paused' 추가]
+  // 청크 루프 도중 백엔드 회로차단(OPEN)이 감지되면 다음 청크를 트리거하지 않고
+  // phase='naver_paused' 로 전환해서 차단 해제까지 대기한다. CLOSED 가 되면
+  // 같은 청크 인덱스를 재시도하여 자동으로 이어진다. 이렇게 하면 사용자가
+  // "청크 1/10 쿨다운" 상태로 영원히 멈춰 있다가 수동 새로고침할 필요가 없다.
   const [chunkPhase, setChunkPhase] = useState<{
     current: number
     total: number
-    phase: 'checking' | 'cooldown'
+    phase: 'checking' | 'cooldown' | 'naver_paused'
   } | null>(null)
 
   // 최종 권위 busy 신호: 로컬 즉시성 OR 백엔드 truth.
@@ -276,9 +282,44 @@ export default function RankTracker() {
 
       const totalChunks = chunks.length
       setManualLocal(true)
+      // [2026-05-16] 회로차단 대기 안전장치: cooldown=120s × 최대 5회 재시도 = 10분
+      const NAVER_PAUSE_POLL_MS = 5000
+      const NAVER_PAUSE_MAX_WAIT_MS = 10 * 60 * 1000
+
       try {
-        for (let idx = 0; idx < totalChunks; idx++) {
+        let idx = 0
+        while (idx < totalChunks) {
           const chunkIds = chunks[idx]
+
+          // ─── A) 청크 트리거 직전 회로차단 사전 체크
+          // OPEN 이면 차단 풀릴 때까지 폴링하면서 같은 인덱스 재시도
+          const preFresh = await fetchProgress()
+          if (preFresh?.naver_circuit_open) {
+            setChunkPhase({
+              current: idx + 1,
+              total: totalChunks,
+              phase: 'naver_paused',
+            })
+            const pauseDeadline = Date.now() + NAVER_PAUSE_MAX_WAIT_MS
+            let recovered = false
+            while (Date.now() < pauseDeadline) {
+              await new Promise((r) => window.setTimeout(r, NAVER_PAUSE_POLL_MS))
+              const p = await fetchProgress()
+              if (!p?.naver_circuit_open) {
+                recovered = true
+                break
+              }
+            }
+            if (!recovered) {
+              showToast(
+                '네이버 차단 해제 대기 시간이 초과되어 청크 루프를 종료합니다. 잠시 후 다시 시도해주세요.',
+              )
+              break
+            }
+            // 차단 풀렸음 — 같은 청크 인덱스로 재진입
+            continue
+          }
+
           setChunkPhase({ current: idx + 1, total: totalChunks, phase: 'checking' })
 
           try {
@@ -311,17 +352,28 @@ export default function RankTracker() {
             const deadline = Date.now() + POLL_TIMEOUT_MS
             // 첫 폴링은 짧은 지연 후 (백엔드가 busy=true set 할 시간을 줌)
             await new Promise((r) => window.setTimeout(r, 800))
+            let circuitTrippedMidway = false
             while (Date.now() < deadline) {
               const p = await fetchProgress()
               if (!p?.manual_running) break
+              // 청크가 도는 도중 회로차단이 OPEN 되면 즉시 빠져나와
+              // 다음 루프 헤드의 사전 체크에서 'naver_paused' 로 잡힘
+              if (p?.naver_circuit_open) {
+                circuitTrippedMidway = true
+                break
+              }
               await new Promise((r) => window.setTimeout(r, POLL_INTERVAL_MS))
             }
-            // 2) 네이버 부하 분산용 짧은 쿨다운
-            await new Promise((r) => window.setTimeout(r, CHUNK_COOLDOWN_MS))
+            // 2) 네이버 부하 분산용 짧은 쿨다운 (회로차단 trip 시엔 생략)
+            if (!circuitTrippedMidway) {
+              await new Promise((r) => window.setTimeout(r, CHUNK_COOLDOWN_MS))
+            }
             // 3) 매트릭스에 누적된 셀 반영
             setMatrixReloadTick((n) => n + 1)
             await fetchAll()
           }
+
+          idx += 1
         }
 
         // 모든 청크가 트리거되었음. 마지막 청크의 백엔드 잡 종료는 자동 폴링이
@@ -341,6 +393,23 @@ export default function RankTracker() {
     },
     [fetchAll, fetchProgress, showToast],
   )
+
+  // ─── chunkPhase 안전 cleanup (2026-05-16) ───
+  // 청크 루프가 try/finally 에서 setChunkPhase(null) 까지 잘 도달하면 문제 없지만,
+  // 이론상의 race (예: 사용자가 탭을 별도로 이동하여 setTimeout/await 체인이 끊긴 경우)
+  // 를 대비해, "백엔드 idle + 회로차단 CLOSED 인데 chunkPhase 가 남아있으면"
+  // 8초 후 자동 cleanup. "청크 X/Y 쿨다운" 의 영원 박제 경우에 대비.
+  useEffect(() => {
+    if (chunkPhase == null) return
+    if (progress == null) return
+    const idle = !progress.manual_running && !progress.naver_circuit_open
+    if (!idle) return
+    const t = window.setTimeout(() => {
+      setChunkPhase(null)
+      setManualLocal(false)
+    }, 8000)
+    return () => window.clearTimeout(t)
+  }, [chunkPhase, progress])
 
   /* ── 결과 Excel 다운로드 ── */
   const exportResults = useCallback(async () => {
@@ -1358,7 +1427,7 @@ function ProgressBanner(props: {
   chunkPhase?: {
     current: number
     total: number
-    phase: 'checking' | 'cooldown'
+    phase: 'checking' | 'cooldown' | 'naver_paused'
   } | null
 }) {
   const { progress, chunkPhase = null } = props
@@ -1415,18 +1484,26 @@ function ProgressBanner(props: {
               <span
                 className={clsx(
                   'inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[10px] font-bold',
-                  chunkPhase.phase === 'cooldown'
-                    ? 'bg-amber-100 text-amber-800'
-                    : 'bg-emerald-100 text-emerald-800',
+                  chunkPhase.phase === 'naver_paused'
+                    ? 'bg-rose-100 text-rose-800'
+                    : chunkPhase.phase === 'cooldown'
+                      ? 'bg-amber-100 text-amber-800'
+                      : 'bg-emerald-100 text-emerald-800',
                 )}
               >
-                {chunkPhase.phase === 'cooldown' ? (
+                {chunkPhase.phase === 'naver_paused' ? (
+                  <AlertTriangle size={9} />
+                ) : chunkPhase.phase === 'cooldown' ? (
                   <Loader2 size={9} className="animate-spin" />
                 ) : (
                   <CheckCircle2 size={9} />
                 )}
                 청크 {chunkPhase.current}/{chunkPhase.total}
-                {chunkPhase.phase === 'cooldown' ? ' · 쿨다운' : ''}
+                {chunkPhase.phase === 'naver_paused'
+                  ? ' · 네이버 차단 대기'
+                  : chunkPhase.phase === 'cooldown'
+                    ? ' · 쿨다운'
+                    : ''}
               </span>
             )}
           </span>
@@ -1658,7 +1735,7 @@ function RankMatrix(props: {
   chunkPhase?: {
     current: number
     total: number
-    phase: 'checking' | 'cooldown'
+    phase: 'checking' | 'cooldown' | 'naver_paused'
   } | null
 }) {
   const {
@@ -1786,11 +1863,17 @@ function RankMatrix(props: {
   let btnTitle =
     '타지역 정책상 자동 순위 추적이 비활성화되어 있습니다. 이 버튼으로 명시적으로 순위 검증을 시작하세요.'
   if (chunkPhase) {
-    btnLabel =
-      chunkPhase.phase === 'checking'
-        ? `검증 중 (${chunkPhase.current}/${chunkPhase.total} 청크)`
-        : `쿨다운 (${chunkPhase.current}/${chunkPhase.total})`
-    btnTitle = '네이버 부하 분산을 위해 청크 단위로 나누어 진행 중입니다.'
+    if (chunkPhase.phase === 'naver_paused') {
+      btnLabel = `네이버 차단 — 자동 재개 대기 (${chunkPhase.current}/${chunkPhase.total})`
+      btnTitle =
+        '네이버 회로차단이 해제되면 같은 청크부터 자동으로 이어서 검증합니다. 수동 조작 불필요.'
+    } else if (chunkPhase.phase === 'checking') {
+      btnLabel = `검증 중 (${chunkPhase.current}/${chunkPhase.total} 청크)`
+      btnTitle = '네이버 부하 분산을 위해 청크 단위로 나누어 진행 중입니다.'
+    } else {
+      btnLabel = `쿨다운 (${chunkPhase.current}/${chunkPhase.total})`
+      btnTitle = '네이버 부하 분산을 위해 청크 단위로 나누어 진행 중입니다.'
+    }
   } else if (manualChecking) {
     btnLabel = totalCells > 0 ? `검증 중... (${filledCells}/${totalCells} 셀)` : '검증 중...'
     btnTitle = '백그라운드에서 검증이 진행 중입니다. 완료될 때까지 다시 누를 수 없습니다.'
@@ -1841,11 +1924,13 @@ function RankMatrix(props: {
           <div className="flex items-center justify-between text-[11px] text-blue-900 mb-1">
             <span className="font-semibold inline-flex items-center gap-1.5">
               <Loader2 size={11} className="animate-spin" />
-              {chunkPhase?.phase === 'cooldown'
-                ? `청크 ${chunkPhase.current}/${chunkPhase.total} 완료 — 다음 청크 준비 중...`
-                : chunkPhase
-                  ? `청크 ${chunkPhase.current}/${chunkPhase.total} 검증 중`
-                  : '백그라운드에서 순위 검증 중'}
+              {chunkPhase?.phase === 'naver_paused'
+                ? `네이버 일시차단 감지 — 자동 재개 대기 중 (청크 ${chunkPhase.current}/${chunkPhase.total})`
+                : chunkPhase?.phase === 'cooldown'
+                  ? `청크 ${chunkPhase.current}/${chunkPhase.total} 완료 — 다음 청크 준비 중...`
+                  : chunkPhase
+                    ? `청크 ${chunkPhase.current}/${chunkPhase.total} 검증 중`
+                    : '백그라운드에서 순위 검증 중'}
             </span>
             {totalCells > 0 && (
               <span className="font-mono">
@@ -1858,9 +1943,11 @@ function RankMatrix(props: {
               <div
                 className={clsx(
                   'h-full transition-all duration-500',
-                  chunkPhase?.phase === 'cooldown'
-                    ? 'bg-amber-400'
-                    : 'bg-emerald-500',
+                  chunkPhase?.phase === 'naver_paused'
+                    ? 'bg-rose-400'
+                    : chunkPhase?.phase === 'cooldown'
+                      ? 'bg-amber-400'
+                      : 'bg-emerald-500',
                 )}
                 style={{ width: `${cellPct}%` }}
               />
