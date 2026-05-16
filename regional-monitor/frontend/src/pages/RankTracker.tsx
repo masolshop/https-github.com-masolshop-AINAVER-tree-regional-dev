@@ -1845,10 +1845,35 @@ function RankMatrix(props: {
 
   // Phase 7 — 버튼 라벨/툴팁 derivation
   // 우선순위: chunkPhase(쿨다운/검증중) > 백엔드 manual_running > 로컬 즉시 신호
-  const eligibleIds = useMemo(
-    () => items.filter((p) => p.tracking_keywords.length > 0).map((p) => p.id),
-    [items],
-  )
+  //
+  // [2026-05-16] "지금 검증" 클릭 시 미검증 셀이 많은 place 를 앞 청크에 배치한다.
+  //   배경: 한 사용자가 키워드를 새로 추가하면 그 keyword 만 PlaceRankHistory 가
+  //         없는 상태가 된다. 이전 정렬은 RegisteredPlace.id ASC 였기 때문에
+  //         새 키워드의 결과를 보려면 큐 끝까지 기다려야 했음.
+  //   정렬 키 (내림차순):
+  //     1) 미검증 셀 수 (total - filled)  — 많은 것 먼저
+  //     2) RegisteredPlace.id 오름차순     — 결정적 tie-break
+  //   미검증 0인 place 도 큐에는 포함된다 (재확인 의미) — 그저 우선순위만 낮춤.
+  const eligibleIds = useMemo(() => {
+    const candidates = items
+      .filter((p) => p.tracking_keywords.length > 0)
+      .map((p) => {
+        // perPlaceCompletion 은 이 useMemo 아래에 정의되므로 inline 으로 계산
+        let filled = 0
+        for (const kw of p.tracking_keywords) {
+          if (Object.prototype.hasOwnProperty.call(rankMap, `${p.id}::${kw}`)) {
+            filled += 1
+          }
+        }
+        const total = p.tracking_keywords.length
+        return { id: p.id, missing: total - filled }
+      })
+    candidates.sort((a, b) => {
+      if (b.missing !== a.missing) return b.missing - a.missing
+      return a.id - b.id
+    })
+    return candidates.map((c) => c.id)
+  }, [items, rankMap])
   const totalCells = progress?.total_cells ?? 0
   const filledCells = progress?.filled_cells ?? 0
   const cellPct = totalCells > 0 ? Math.min(100, Math.round((filledCells / totalCells) * 100)) : 0
