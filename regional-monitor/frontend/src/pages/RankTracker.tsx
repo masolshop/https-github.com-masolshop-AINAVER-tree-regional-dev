@@ -2204,12 +2204,16 @@ function RankMatrix(props: {
             </div>
           )}
 
-          {/* Row F — 키워드별 최고/평균/노출률 */}
+          {/* Row F — 키워드별 최고/평균/노출률 (분모 = 검증 완료된 셀만, 미검증 제외) */}
           {matrixStats.checked > 0 && allKeywords.length > 0 && (
             <div className="flex items-start gap-1.5 text-[12px] flex-wrap">
-              <span className="inline-flex items-center gap-1 font-semibold text-slate-600 mr-1 mt-0.5 text-[11px]">
+              <span
+                className="inline-flex items-center gap-1 font-semibold text-slate-600 mr-1 mt-0.5 text-[11px]"
+                title="노출률 분모는 검증 완료된 셀 기준입니다. 미검증 셀은 분모에서 제외됩니다."
+              >
                 <TrendingUp size={11} className="text-violet-600" />
                 키워드별 요약
+                <span className="text-slate-400 font-normal">(검증완료 기준)</span>
               </span>
               {allKeywords.map((kw) => {
                 const s = matrixStats.perKw[kw]
@@ -2228,10 +2232,13 @@ function RankMatrix(props: {
                       : exposureRate >= 20
                         ? 'text-amber-700'
                         : 'text-rose-700'
+                // 미검증 셀 수 = 이 키워드를 추적하는 업체 - 검증 완료
+                const kwUnchecked = s.total - s.checked
                 return (
                   <span
                     key={kw}
                     className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-white border border-slate-200 font-mono"
+                    title={`'${kw}' 키워드: 등록 ${s.total}건 · 검증 완료 ${s.checked}건${kwUnchecked > 0 ? ` · 미검증 ${kwUnchecked}건` : ''}`}
                   >
                     <b className="text-slate-800">{kw}</b>
                     <span className="text-slate-600">
@@ -2247,6 +2254,9 @@ function RankMatrix(props: {
                     <span className="text-slate-300">·</span>
                     <span className="text-slate-600">
                       노출률 <b className={rateTone}>{exposureRate}%</b>
+                      <span className="text-slate-400 ml-0.5 text-[10px]">
+                        ({inTop20}/{s.checked})
+                      </span>
                     </span>
                   </span>
                 )
