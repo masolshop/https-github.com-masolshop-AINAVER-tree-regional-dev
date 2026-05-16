@@ -245,20 +245,24 @@ export default function RankTracker() {
 
   const handleManualRankCheck = useCallback(
     async (placeIds: number[] = []) => {
-      // Phase 5 - Fix A: 네이버 회로차단 OPEN 이면 즉시 안내하고 호출 자체를 막는다.
+      // [2026-05-16 fix] 회로차단 OPEN 상태에서도 클릭을 받아들인다.
+      //   기존 정책: OPEN 이면 즉시 토스트 후 return → 사용자가 새로고침 + 다시 누르면
+      //              버튼이 안 눌린 것처럼 보이는 UX 버그.
+      //   신 정책:   pre-check 단계에서 'naver_paused' 로 진입해 cooldown 만료까지
+      //              자동 대기 → 풀리면 자동 시작. 사용자는 한 번만 누르면 됨.
       const fresh = await fetchProgress()
-      if (fresh?.naver_circuit_open) {
-        showToast(
-          '네이버가 일시 차단되어 검증을 시작할 수 없습니다. 약 2분 후 다시 시도해주세요.',
-        )
-        return
-      }
-      // Phase 7: 백엔드가 이미 잡을 돌리고 있다면 중복 트리거 금지.
+      // 백엔드가 이미 잡을 돌리고 있다면 중복 트리거만 금지.
       if (fresh?.manual_running) {
         showToast(
           '이미 백그라운드에서 검증 중입니다. 완료 후 다시 시도해주세요.',
         )
         return
+      }
+      if (fresh?.naver_circuit_open) {
+        // 안내만 한 번 — 그래도 루프는 진입해서 자동 재개 처리에 맡긴다.
+        showToast(
+          '네이버 일시 차단 상태입니다. 차단이 풀리면 자동으로 검증을 시작합니다.',
+        )
       }
 
       // 청크 분할 설정
