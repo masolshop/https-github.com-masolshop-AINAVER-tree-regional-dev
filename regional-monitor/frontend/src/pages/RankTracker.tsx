@@ -509,9 +509,6 @@ export default function RankTracker() {
         </div>
       )}
 
-      {/* 0a) 네이버 회로차단 배너 — Phase 5 Fix A */}
-      {progress?.naver_circuit_open && <NaverCircuitOpenBanner />}
-
       {/* 0) 변경 노출 배너 — 등록동≠실제 노출동 케이스 알림 */}
       {dongChanged && dongChanged.count > 0 && (
         <DongChangedBanner data={dongChanged} />
@@ -550,6 +547,12 @@ export default function RankTracker() {
        *  단일 후보일 때만). 끝까지 못 잡힌 NEEDS_MANUAL 은 매트릭스에서 제외만 하고 사용자
        *  입력 강요는 하지 않는다. (이전 UI 의 NeedsManualPanel 은 표시하지 않음)
        */}
+
+      {/* 3a) 네이버 회로차단 배너 — Phase 5 Fix A
+       *  매트릭스 박스 바로 위에 배치하여, 검증 진행 중인 매트릭스와 시각적으로
+       *  인접하게 노출 (이전엔 페이지 상단이라 매트릭스에서 멀리 떨어져 있었음).
+       */}
+      {progress?.naver_circuit_open && <NaverCircuitOpenBanner />}
 
       {/* 3) 등록동 × 키워드 매트릭스 — 현재 순위 한눈에 */}
       {list && list.items.length > 0 && (
