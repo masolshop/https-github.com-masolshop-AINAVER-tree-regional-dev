@@ -1,33 +1,34 @@
 """
-네이버 지도 SPA(map.naver.com/p/search/...) 검색 결과 파서.
+네이버 지도 모바일 플레이스 (m.place.naver.com) 검색 결과 파서.
 
-[2026-05-16 전면 재작성]
-이전 구현은 모바일 엔드포인트 `m.map.naver.com/search2/search.naver` 의
-HTML 응답에 임베드된 `__RQ_STREAMING_STATE__` 를 파싱했으나, 해당 엔드포인트가
-사실상 폐쇄되어 HTTP 500 만 반환한다 (5/5 trials, 10s timeout). 신규 모바일
-엔드포인트 `map.naver.com/p/api/search/allSearch` 는 서버 IP 가 captcha
-challenge 대상이라 `pageId:"ncaptcha-all-search-no-result"` 응답이 돌아온다.
+[2026-05-16 모바일 라우트 전환 — PoC mobile-final 검증 완료]
+이전 PC SPA (map.naver.com/p/search/) → pcmap iframe → __APOLLO_STATE__ 경로는
+작동했지만 다음 단점이 있었다:
+  · iframe 등장 대기 + 진입 비용 → 쿼리당 5~7초
+  · place_id 추출이 Apollo `__ref` cross-resolve 에 의존 → fragile
+  · "강남역 맛집" 같은 큰 로컬 키워드는 iframe 으로 라우팅되지 않아 실패
 
-→ Playwright 헤드리스 Chromium 으로 SPA 를 실제 렌더링해서 captcha 를
-우회한다. PoC4/5 (2026-05-16, 5/5 query 성공) 검증 완료.
+모바일 라우트 `https://m.place.naver.com/place/list?query=...` 가:
+  · iframe 없이 직접 `li.VLTHu` 렌더 → place_id 가 `<a href=".../place/{ID}...">` 로 노출
+  · 첫 페이지에 ~100건 prefetch → 별도 스크롤 불필요
+  · 쿼리당 2.0~3.3초 (PC 대비 2배 빠름)
+  · 5/5 query 검증 완료 (압구정 흥신소, 신사 하수구막힘, 역삼 줄눈, 청담 입주청소, 삼성 심부름센터)
+
+타지역 키워드 ("<지역> <서비스업>") 만 다루는 우리 도메인에 모바일 라우트가 최적.
 
 [수집 정책 — 사용자 확정 2026-05-16]
-- 우리 서비스는 **타지역 키워드**(예: "압구정동 흥신소", "신사동 하수구막힘")만
-  다룬다. 큰 로컬 키워드("강남역 맛집")와 달리 모두 `pcmap.place.naver.com/place/list`
-  iframe 으로 라우팅된다.
+- 우리 서비스는 **타지역 키워드**(예: "압구정동 흥신소", "신사동 하수구막힘")만 다룬다.
 - **상위 20위 까지만** 의미가 있다. 21위 밖은 "순위권 없음" 으로 통일.
-- 한 번의 SPA 로드 = 한 번의 첫 페이지(70건 prefetch 됨) → 페이지네이션 불필요.
+- 한 번의 페이지 로드로 100건 prefetch → 페이지네이션 불필요.
 
 [추출 알고리즘]
-1. `https://map.naver.com/p/search/{query}` 페이지 로드.
-2. `pcmap.place.naver.com/place/list` iframe 이 잡힐 때까지 대기.
-3. iframe 내부의 `window.__APOLLO_STATE__` 에서:
-   - `ROOT_QUERY['placeList({...})'].businesses.items` 의 `__ref` 배열이 **랭킹 순서**.
-   - 각 ref → `PlaceListBusinessesItem:<id>` 엔티티에서 id/name/category/address 추출.
-   - `ROOT_QUERY['adBusinesses({...})'].items` 또는 엔티티의 `adId != null` 이 광고.
-4. 동시에 iframe DOM `li.VLTHu` 에서 "광고" 텍스트 마커를 수집해 cross-check.
-   DOM 의 광고 인덱스 = Apollo items 인덱스 (PoC5 검증 완료).
-5. 광고 슬롯을 모두 제외한 organic 결과의 **상위 20개**가 rank 1~20.
+1. `https://m.place.naver.com/place/list?query={query}` 페이지 로드 (모바일 UA).
+2. `li.VLTHu` 등장 대기.
+3. 각 `li` 에서 추출:
+   - place_id: 내부 a[href] 에서 /place/{ID}, /restaurant/{ID}, /hairshop/{ID} 정규식 추출.
+   - name: 첫 줄 (단, 첫 줄이 "광고" 라면 두 번째 줄).
+   - is_ad: `li.innerText` 에 "광고" 문자열 존재 여부.
+4. 광고 제외 organic 결과의 DOM 순서가 곧 랭킹. 상위 20 까지만 반환.
 
 [브라우저 lifecycle]
 - 워커마다 새 브라우저를 띄우면 cold-start (~2초) 비용이 커지므로,
@@ -50,8 +51,7 @@ log = logging.getLogger(__name__)
 TOP_N = 20  # 상위 N위까지만 수집. 21위 이하는 "순위권 없음" 으로 통일.
 
 # Playwright 호출 타임아웃
-NAV_TIMEOUT_MS = 30_000  # page.goto 타임아웃 (ms)
-IFRAME_WAIT_MS = 12_000  # pcmap iframe 등장 대기 (ms)
+NAV_TIMEOUT_MS = 20_000  # page.goto 타임아웃 (ms) — 모바일은 PC 보다 가벼움
 LI_WAIT_MS = 10_000  # li.VLTHu 첫 등장 대기 (ms)
 
 # 회로차단 — Playwright 호출은 한 번 실패 시 비용이 크므로 임계치를 보수적으로.
@@ -171,72 +171,51 @@ class MapSearchResult:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Apollo state 추출 JS — iframe context 안에서 실행
+# DOM 추출 JS — m.place.naver.com 페이지 context 안에서 실행
+# li.VLTHu 가 DOM 순서로 곧 랭킹 순서. 광고는 li.innerText 에 "광고" 토큰.
 # ─────────────────────────────────────────────────────────────────────────────
 _EXTRACT_JS = r"""
 () => {
-    const apollo = window.__APOLLO_STATE__;
-    if (!apollo) return { error: 'no_apollo' };
-
-    // 1) Find placeList(...) and adBusinesses(...) keys in ROOT_QUERY
-    let placeListKey = null;
-    let adBusinessesKey = null;
-    for (const k of Object.keys(apollo.ROOT_QUERY || {})) {
-        if (k.startsWith('placeList(')) placeListKey = k;
-        else if (k.startsWith('adBusinesses(')) adBusinessesKey = k;
-    }
-    if (!placeListKey) return { error: 'no_placeList_key' };
-
-    const placeList = apollo.ROOT_QUERY[placeListKey];
-    const items = (placeList && placeList.businesses && placeList.businesses.items) || [];
-
-    // 2) Build ad ref set from adBusinesses ROOT_QUERY
-    const adRefs = new Set();
-    if (adBusinessesKey && apollo.ROOT_QUERY[adBusinessesKey]) {
-        const adObj = apollo.ROOT_QUERY[adBusinessesKey];
-        const adItems = (adObj && adObj.items) || [];
-        for (const r of adItems) {
-            if (r && r.__ref) adRefs.add(r.__ref);
-        }
-    }
-
-    // 3) Walk items in order, resolve __ref → entity, attach isAd
-    const ordered = [];
-    for (const r of items) {
-        const ref = r && r.__ref;
-        if (!ref) continue;
-        const ent = apollo[ref];
-        if (!ent) continue;
-        const isAdApollo = adRefs.has(ref) || (ent.adId != null);
-        ordered.push({
-            id: String(ent.id || ''),
-            name: String(ent.name || ''),
-            category: String(ent.category || ''),
-            address: String(ent.address || ''),
-            roadAddress: String(ent.roadAddress || ''),
-            phone: String(ent.phone || ent.tel || ''),
-            virtualPhone: String(ent.virtualPhone || ent.virtualTel || ''),
-            x: ent.x != null ? String(ent.x) : '',
-            y: ent.y != null ? String(ent.y) : '',
-            isAdApollo,
-        });
-    }
-
-    // 4) DOM 광고 마커 인덱스 (DOM index == items index, PoC5 검증)
     const lis = document.querySelectorAll('li.VLTHu');
-    const domAdFlags = [];
-    lis.forEach((li) => {
-        const t = li.innerText || '';
-        domAdFlags.push(t.includes('광고'));
-    });
+    const out = [];
+    lis.forEach((li, idx) => {
+        // place_id 추출 — /place/{id}, /restaurant/{id}, /hairshop/{id}
+        let pid = '';
+        const a = li.querySelector('a[href*="/place/"], a[href*="/restaurant/"], a[href*="/hairshop/"]');
+        if (a) {
+            const href = a.getAttribute('href') || '';
+            const m = href.match(/\/(?:place|restaurant|hairshop)\/(\d+)/);
+            if (m) pid = m[1];
+        }
 
-    return {
-        ordered,
-        domAdFlags,
-        domCount: lis.length,
-        placeListKey: placeListKey.slice(0, 220),
-        adBusinessesKey: adBusinessesKey ? adBusinessesKey.slice(0, 220) : null,
-    };
+        const fullText = (li.innerText || '').trim();
+        const isAd = fullText.includes('광고');
+        const lines = fullText.split('\n').map(s => s.trim()).filter(Boolean);
+
+        // name: 첫 비어있지 않고 '광고' 가 아닌 줄.
+        let name = '';
+        for (const ln of lines) {
+            if (ln === '광고') continue;
+            name = ln;
+            break;
+        }
+
+        // category: name 다음 줄에서 추론 (간단 휴리스틱). 실패해도 OK.
+        let category = '';
+        const nameIdx = lines.indexOf(name);
+        if (nameIdx >= 0 && nameIdx + 1 < lines.length) {
+            category = lines[nameIdx + 1];
+        }
+
+        out.push({
+            idx,
+            id: pid,
+            name,
+            category,
+            isAd,
+        });
+    });
+    return { items: out, total: lis.length };
 };
 """
 
@@ -254,10 +233,13 @@ _BROWSER_ARGS = [
     "--disable-blink-features=AutomationControlled",
     "--disable-gpu",
 ]
+# 모바일 UA + 모바일 viewport 로 m.place.naver.com 의 모바일 레이아웃 진입.
 _UA = (
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-    "(KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36"
+    "Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) "
+    "AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 "
+    "Mobile/15E148 Safari/604.1"
 )
+_MOBILE_VIEWPORT = {"width": 390, "height": 844}
 
 
 async def _get_browser():
@@ -304,59 +286,26 @@ async def shutdown_browser() -> None:
 # 본체 — 단일 쿼리 검색
 # ─────────────────────────────────────────────────────────────────────────────
 def _to_map_place(it: dict) -> MapPlace:
-    """Apollo entity → MapPlace."""
-    def _f(v: str) -> float | None:
-        try:
-            return float(v) if v else None
-        except (TypeError, ValueError):
-            return None
+    """DOM extract dict → MapPlace.
 
+    모바일 라우트는 phone/address/좌표를 DOM 에 노출하지 않으므로 빈값으로 둔다.
+    rank_checker 는 place_id 매칭만 보고, 나머지 필드는 RegisteredPlace 에서 가져오므로 OK.
+    """
     return MapPlace(
         place_id=str(it.get("id") or ""),
         name=str(it.get("name") or ""),
         category=str(it.get("category") or ""),
-        phone=str(it.get("phone") or ""),
-        virtual_phone=str(it.get("virtualPhone") or ""),
-        address=str(it.get("address") or ""),
-        road_address=str(it.get("roadAddress") or ""),
-        latitude=_f(it.get("y") or ""),
-        longitude=_f(it.get("x") or ""),
+        phone="",
+        virtual_phone="",
+        address="",
+        road_address="",
+        latitude=None,
+        longitude=None,
     )
 
 
-async def _scroll_to_load(frame, target: int = TOP_N + 5, max_scrolls: int = 8) -> int:
-    """top N+여유분이 DOM 에 로드될 때까지 스크롤. 실패해도 OK (Apollo 에서 데이터는 이미 가짐)."""
-    for _ in range(max_scrolls):
-        try:
-            n = await frame.locator("li.VLTHu").count()
-        except Exception:  # noqa: BLE001
-            return 0
-        if n >= target:
-            return n
-        try:
-            await frame.evaluate(
-                """
-                () => {
-                    const lis = document.querySelectorAll('li.VLTHu');
-                    if (lis.length) lis[lis.length - 1].scrollIntoView({ block: 'end' });
-                    const cs = document.querySelectorAll('div');
-                    for (const c of cs) {
-                        if (c.scrollHeight > c.clientHeight + 100) c.scrollTop = c.scrollHeight;
-                    }
-                }
-                """
-            )
-            await frame.wait_for_timeout(500)
-        except Exception:  # noqa: BLE001
-            break
-    try:
-        return await frame.locator("li.VLTHu").count()
-    except Exception:  # noqa: BLE001
-        return 0
-
-
 async def _do_search(query: str) -> MapSearchResult:
-    """Playwright 로 한 번 검색 → MapSearchResult."""
+    """Playwright + 모바일 UA 로 m.place.naver.com 검색 → MapSearchResult."""
     q = (query or "").strip()
     if not q:
         return MapSearchResult(query=q, total_count=0, error="empty query")
@@ -365,13 +314,16 @@ async def _do_search(query: str) -> MapSearchResult:
     browser = await _get_browser()
     ctx = await browser.new_context(
         user_agent=_UA,
-        viewport={"width": 1366, "height": 900},
+        viewport=_MOBILE_VIEWPORT,
+        device_scale_factor=3,
+        is_mobile=True,
+        has_touch=True,
         locale="ko-KR",
         timezone_id="Asia/Seoul",
     )
     try:
         page = await ctx.new_page()
-        # 자원 절약: 이미지/폰트/미디어 차단 (Apollo state 만 필요)
+        # 자원 절약: 이미지/폰트/미디어 차단 (DOM 텍스트만 필요)
         async def _block(route):
             try:
                 rt = route.request.resource_type
@@ -386,7 +338,7 @@ async def _do_search(query: str) -> MapSearchResult:
         except Exception:  # noqa: BLE001
             pass
 
-        url = f"https://map.naver.com/p/search/{q}"
+        url = f"https://m.place.naver.com/place/list?query={q}"
         try:
             await page.goto(url, wait_until="domcontentloaded", timeout=NAV_TIMEOUT_MS)
         except Exception as e:  # noqa: BLE001
@@ -396,27 +348,9 @@ async def _do_search(query: str) -> MapSearchResult:
                 elapsed_ms=int((time.time() - t0) * 1000),
             )
 
-        # pcmap iframe 등장 대기
-        deadline = time.time() + (IFRAME_WAIT_MS / 1000.0)
-        target_frame = None
-        while time.time() < deadline:
-            await page.wait_for_timeout(400)
-            for fr in page.frames:
-                if "pcmap.place.naver.com" in fr.url and "place/list" in fr.url:
-                    target_frame = fr
-                    break
-            if target_frame:
-                break
-        if target_frame is None:
-            return MapSearchResult(
-                query=q, total_count=0,
-                error="no_pcmap_iframe",
-                elapsed_ms=int((time.time() - t0) * 1000),
-            )
-
-        # li 첫 등장 대기
+        # li.VLTHu 등장 대기 — 모바일은 SSR 로 첫 페이지에 ~100건 prefetch 됨
         try:
-            await target_frame.wait_for_selector("li.VLTHu", timeout=LI_WAIT_MS)
+            await page.wait_for_selector("li.VLTHu", timeout=LI_WAIT_MS)
         except Exception as e:  # noqa: BLE001
             return MapSearchResult(
                 query=q, total_count=0,
@@ -424,44 +358,38 @@ async def _do_search(query: str) -> MapSearchResult:
                 elapsed_ms=int((time.time() - t0) * 1000),
             )
 
-        await target_frame.wait_for_timeout(400)
-        # DOM 광고 마커가 모두 잡히도록 어느 정도 스크롤 (top 20+여유분)
-        await _scroll_to_load(target_frame, target=TOP_N + 5, max_scrolls=6)
+        await page.wait_for_timeout(300)
 
         try:
-            data = await target_frame.evaluate(_EXTRACT_JS)
+            data = await page.evaluate(_EXTRACT_JS)
         except Exception as e:  # noqa: BLE001
             return MapSearchResult(
                 query=q, total_count=0,
-                error=f"apollo_extract: {type(e).__name__}",
+                error=f"dom_extract: {type(e).__name__}",
                 elapsed_ms=int((time.time() - t0) * 1000),
             )
 
-        if not data or "error" in data:
+        items_raw = (data or {}).get("items") or []
+        if not items_raw:
             return MapSearchResult(
                 query=q, total_count=0,
-                error=f"extract: {data.get('error') if data else 'no_data'}",
+                error="empty_items",
                 elapsed_ms=int((time.time() - t0) * 1000),
             )
 
-        ordered = data.get("ordered") or []
-        dom_ad_flags = data.get("domAdFlags") or []
-
-        # 광고 필터: Apollo isAd OR DOM 광고 마커 (PoC5 정책)
+        # 광고 필터 — DOM "광고" 텍스트 마커. organic 만 DOM 순서대로 top N.
         organic: list[MapPlace] = []
-        for i, it in enumerate(ordered):
-            is_ad_apollo = bool(it.get("isAdApollo"))
-            is_ad_dom = bool(i < len(dom_ad_flags) and dom_ad_flags[i])
-            if is_ad_apollo or is_ad_dom:
+        for it in items_raw:
+            if it.get("isAd"):
+                continue
+            if not it.get("id"):
+                # place_id 추출 실패한 row 는 매칭 불가하므로 스킵
                 continue
             organic.append(_to_map_place(it))
             if len(organic) >= TOP_N:
                 break
 
         elapsed = int((time.time() - t0) * 1000)
-        # total_count = top N 안에 들어간 organic 수. caller (rank_checker) 는
-        # `for idx, it in enumerate(res.items, start=1)` 로 순회하며 매칭만
-        # 보므로 total_count 의 정확한 의미는 별로 중요하지 않다 (호환만 유지).
         return MapSearchResult(
             query=q,
             total_count=len(organic),

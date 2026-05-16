@@ -2158,13 +2158,15 @@ function MultiLineChart(props: { series: KeywordSeriesEntry[] }) {
   const ranks = series.flatMap((s) =>
     s.points.map((p) => p.rank).filter((r): r is number => r != null),
   )
-  const maxRank = Math.max(75, ...(ranks.length ? ranks : [10]))
+  // [2026-05-16] top 20 정책: 차트 Y축도 20위까지만 의미 있음.
+  // 순위가 20을 넘어가는 데이터(예: 과거 75위 정책 시절 기록)는 그래도 표시되도록 max 를 늘림.
+  const maxRank = Math.max(20, ...(ranks.length ? ranks : [10]))
 
   const x = (i: number) =>
     PAD_L + (len <= 1 ? innerW / 2 : (innerW * i) / (len - 1))
   const y = (r: number) => PAD_T + (innerH * (r - 1)) / Math.max(1, maxRank - 1)
 
-  const yTicks = [1, 5, 10, 25, 50, 75].filter((t) => t <= maxRank)
+  const yTicks = [1, 5, 10, 15, 20].filter((t) => t <= maxRank)
 
   // 각 시리즈의 path 계산
   const lines = series.map((s, idx) => {
