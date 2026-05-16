@@ -146,6 +146,41 @@ def _csv_to_keywords(raw: str | None) -> list[str]:
     return [k.strip() for k in raw.split(",") if k.strip()]
 
 
+def _strip_category_suffix(name: str, category: str) -> str:
+    """네이버 노출명 끝에 붙은 카테고리 suffix 를 제거하고 순수 상호만 반환.
+
+    네이버 m.place 검색 결과는 사업자명을 카테고리 suffix 와 함께 한 줄로 노출한다.
+    예) 상호 "24시대형렉카.연합렉카" + 카테고리 "견인운송"
+         → 노출명 "24시대형렉카.연합렉카견인운송"
+    이 함수는 노출명 끝에서 카테고리 문자열을 떼어내어 순수 상호를 복원한다.
+
+    안전장치:
+      · category 가 비어있거나 name 과 동일하면 원본 name 그대로 반환.
+      · suffix 제거 후 빈 문자열이 되면 원본 name 으로 fallback
+        (= 잘못된 휴리스틱으로 빈 상호 노출 방지).
+      · name 끝이 category 로 끝나지 않으면 원본 그대로 (false positive 방지).
+
+    Args:
+        name:     네이버에서 추출한 노출명 (예: "대형렉카화물운송").
+        category: 같은 li 에서 추출한 카테고리 (예: "화물운송").
+
+    Returns:
+        카테고리 suffix 가 제거된 순수 상호. 모호한 경우 원본 name.
+    """
+    n = (name or "").strip()
+    c = (category or "").strip()
+    if not n or not c:
+        return n
+    # 카테고리 자체가 이름이면 제거하지 않음 (빈 상호 회피)
+    if n == c:
+        return n
+    if not n.endswith(c):
+        return n
+    stripped = n[: -len(c)].rstrip()
+    # 제거 후 비었으면 원본 유지 (예: name="견인운송", category="견인운송")
+    return stripped or n
+
+
 def _place_to_out(p: RegisteredPlace) -> RankPlaceOut:
     """RegisteredPlace → API 응답. 070+동 정책에선 매칭된 단일 플레이스만 노출."""
     m = deserialize_match(p.match_candidates)
@@ -1406,8 +1441,15 @@ async def get_competition(
         is_me = bool(my_pid and pid == my_pid)
         if is_me and my_rank is None:
             my_rank = i
-        # is_me 행만 등록 상호로 표시. 나머지 경쟁업체는 네이버 노출명 그대로.
-        row_name = my_display_name if (is_me and my_display_name) else (it.name or "")
+        # 표시 상호 계산:
+        #   · is_me 행: 등록 상호(my_display_name) 로 덮어써서 헤더와 100% 일치
+        #   · 나머지: 네이버 노출명에서 카테고리 suffix 제거 → 순수 상호
+        #     (예: "24시대형렉카.연합렉카견인운송" + "견인운송"
+        #          → "24시대형렉카.연합렉카")
+        if is_me and my_display_name:
+            row_name = my_display_name
+        else:
+            row_name = _strip_category_suffix(it.name or "", it.category or "")
         items.append(
             CompetitionItem(
                 rank=i,
