@@ -1,24 +1,31 @@
 """
-PlaceMatcher — 070전번 + 등록동 기반 단일 매칭 (솔루션 #5).
+PlaceMatcher — 070전번 + 등록동 기반 단일 매칭 (솔루션 #5, 레거시).
 
-정책 (단순화):
+⚠️  현재 사용 상태 (2026-05):
+  rank-tracker 의 _run_matching_for_ids 는 **이 모듈의 match_one() 을 더 이상
+  호출하지 않는다**. 대신 monitor(노출관리 자동체크) 가 이미 검증해 RegisteredPlace.
+  place_id 컬럼에 채워둔 값을 그대로 재활용한다 (A안+Y안 정책).
+
+  사용 중인 심볼:
+    · MatchCandidate           — match_candidates JSON 직렬화/역직렬화 스키마
+    · serialize_match          — _run_matching_for_ids 가 단일 매칭 결과 저장 시 사용
+    · deserialize_match        — API 응답에서 매칭 결과 복원
+    · serialize_candidates     — (호환) 단일/리스트 모두 받아 직렬화
+    · _norm_phone              — naver-map 결과의 070 정규화 (다른 곳에서 재사용)
+
+  사용 안 함 (DEPRECATED, 호출 0건이지만 미래 fallback 대비 보존):
+    · match_one
+    · _search_by_phone
+    · _search_by_name_and_dong
+
+레거시 정책 (match_one 사용 시):
   · 사장님이 등록한 070 번호는 본인 번호이므로 네이버에 반드시 1개의 플레이스로 매칭된다.
   · 매칭 키: **070 (또는 가상번호) 일치** — 이게 곧 사장님 업체 확정.
   · 등록동과 실제 노출동이 일치하면 → 자동 확정 (dong_changed=False)
-  · 등록동과 실제 노출동이 다르면 → 자동 확정 + **변경 노출 플래그** (dong_changed=True)
-    → 대시보드 배너로 "변경 노출 N건" 안내 (사용자 개입 불필요)
-  · 070 검색 결과가 0건이면 NEEDS_MANUAL (이론상 거의 없음 — 신규 등록 직후 인덱싱 지연 등)
+  · 등록동과 실제 노출동이 다르면 → 자동 확정 + 변경 노출 플래그 (dong_changed=True)
+  · 070 검색 결과가 0건이면 → 이름+동 fuzzy fallback (false-positive 위험 있음)
 
-결과 상태(match_status):
-  · AUTO_MATCHED   — 070 일치 (등록동 일치 여부와 무관, dong_changed 플래그로 구분)
-  · NEEDS_MANUAL   — 070 검색 결과 0건 등 매우 예외적 케이스
-
-폐기된 개념:
-  · 점수제(70/50/30) → 070 일치 = 무조건 자동 확정
-  · REVIEW_NEEDED / NOT_FOUND 상태 → 모두 제거
-  · 후보 다중 선택 UI → 단일 매칭만 사용 (다이얼로그 폐기)
-
-데이터 소스: services.naver_map.search_map() (m.map.naver.com)
+데이터 소스: services.naver_map.search_map() (Playwright + m.place.naver.com)
 """
 from __future__ import annotations
 
@@ -211,7 +218,13 @@ async def _search_by_phone(
     tracking_keywords: list[str] | None = None,
     client: httpx.AsyncClient | None,
 ) -> MapPlace | None:
-    """070 번호로 네이버 지도 검색 → phone/virtual_phone 일치하는 플레이스 1건 반환.
+    """⚠️ DEPRECATED — 070 번호로 네이버 지도 검색 → phone/virtual_phone 일치하는 플레이스 1건 반환.
+
+    호출 0건 (rank-tracker 는 monitor place_id 재활용 정책). 보존 사유:
+      · 향후 monitor 와 분리되거나 monitor 미사용 진입점이 추가될 때 fallback 으로 활용
+      · Playwright mobile 라우트는 li.VLTHu DOM 에 phone/virtual_phone 을 노출하지
+        않으므로 (MapPlace.phone = ""), 현재 이 함수는 결과를 절대 매칭하지 못한다.
+        재활성화하려면 naver_map._to_map_place 에서 phone 추출을 복원해야 한다.
 
     검색 전략 (카테고리 키워드 기반, display=75):
       유저가 등록한 business_name은 브랜드명(예: "광주대형렉카")인 경우가 많아
@@ -320,9 +333,15 @@ async def _search_by_name_and_dong(
     tracking_keywords: list[str] | None,
     client: httpx.AsyncClient | None,
 ) -> MapPlace | None:
-    """070 매칭 0건일 때 상호명+동으로 단일 후보 1건 자동 추출.
+    """⚠️ DEPRECATED — 070 매칭 0건일 때 상호명+동으로 단일 후보 1건 자동 추출.
 
-    승격 조건 (false-positive 회피):
+    호출 0건 (rank-tracker 폴백 정책 폐기). 보존하지만 활성화 권장하지 않음:
+      · 이름 토큰 1개 일치 + 동 포함 기준은 false-positive 발생 사례 있음
+        (예: 같은 동에 비슷한 이름 가게가 1개만 있으면 잘못 승격됨)
+      · monitor 미사용 진입점이 추가될 경우, 사용자 확인 후에만 승격하는
+        UI 분기를 추가하고 호출할 것.
+
+    승격 조건 (false-positive 회피용 가드):
       · 검색 결과 중 "주소에 등록동 포함" + "이름 토큰 1개 이상 포함" 인 것만 후보
       · 그 후보가 정확히 1건이면 AUTO_MATCHED, 0건이거나 2건 이상이면 None
     """
@@ -411,7 +430,16 @@ async def match_one(
     tracking_keywords: list[str] | None = None,
     client: httpx.AsyncClient | None = None,
 ) -> MatchResult:
-    """단일 행 매칭 — 070을 키로 플레이스 1건 확정 + 등록동 변경 여부 체크.
+    """⚠️ DEPRECATED — 단일 행 매칭 (070을 키로 플레이스 1건 확정).
+
+    호출 0건. rank-tracker 의 _run_matching_for_ids 는 monitor 가 채워둔
+    RegisteredPlace.place_id 를 직접 신뢰하므로 이 함수를 거치지 않는다.
+
+    보존 사유: monitor 미사용 진입점이 추가될 경우 fallback 으로 활용 가능.
+    재활성화 전 검토 사항:
+      · _search_by_phone 가 동작하려면 naver_map._to_map_place 에서 phone 복원 필요
+      · _search_by_name_and_dong fallback 은 false-positive 위험으로 비활성 권장
+        (사용자 확인 UI 분기 추가 후에만 활성화)
 
     정책:
       · 070 매칭 성공 → AUTO_MATCHED (등록동 일치 여부와 무관)

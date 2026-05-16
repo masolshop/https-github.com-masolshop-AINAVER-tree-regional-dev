@@ -5,7 +5,7 @@ import asyncio
 import json
 import logging
 import re
-from datetime import date, timedelta
+from datetime import timedelta
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
 from sqlalchemy import delete, select, update
@@ -49,9 +49,7 @@ from app.schemas.rank_tracker import (
 )
 from app.services.place_matcher import (
     MatchCandidate,
-    deserialize_candidates,
     deserialize_match,
-    match_one,
     serialize_match,
 )
 from app.services.naver_map import search_map
@@ -295,18 +293,25 @@ async def upload_rank_rows(
 # 매칭 워커 (백그라운드 — BackgroundTasks)
 # ─────────────────────────────────────────────────────────
 async def _run_matching_for_ids(user_id: int, place_ids: list[int]) -> None:
-    """주어진 RegisteredPlace ID 목록에 대해 place_matcher.match_one 을 동시 실행.
+    """주어진 RegisteredPlace ID 목록에 대해 매칭 상태를 갱신.
 
-    정책 (070+동 단일 매칭):
-      · 070 매칭 성공 → AUTO_MATCHED (등록동 다르면 dong_changed=True 플래그)
-      · 070 매칭 0건 → NEEDS_MANUAL (이론상 거의 없음)
+    정책 (A안+Y안 - monitor place_id 재활용):
+      · monitor(노출관리 자동체크) 가 이미 RegisteredPlace.place_id 를 채워둔
+        행은 그 값을 그대로 신뢰 → AUTO_MATCHED (네이버 호출 0회)
+      · monitor 가 아직 place_id 를 채우지 않은 행 → NEEDS_MANUAL
+        (이름+동 fuzzy 매칭 폐기 — false-positive 위험)
+
+    이 함수는 더 이상 place_matcher.match_one() 을 호출하지 않는다.
+    rank-tracker 의 본질은 매칭이 아니라 "이미 매칭된 가게의 순위 추적"이며,
+    매칭은 monitor 의 책임으로 분리됨.
 
     이전: 순차 for 루프 (1건씩 처리) → 296건 매칭에 5분+
-    개선: asyncio.Semaphore(MATCH_CONCURRENCY) + gather 동시 실행.
-    각 worker 는 별도 DB 세션을 사용해 commit 충돌을 회피한다.
+    현재: asyncio.Semaphore(MATCH_CONCURRENCY) + gather 동시 실행, 각 worker
+    별도 DB 세션. 네이버 호출이 없으므로 매우 빠르며 동시성은 commit 충돌
+    회피 목적으로만 유지.
 
-    매칭 완료 후, 새로 AUTO_MATCHED 된 행에 대해 자동으로 rank check 까지 실행하여
-    업로드 직후 매트릭스에 순위가 바로 채워지도록 한다.
+    매칭 완료 후, 새로 AUTO_MATCHED 된 행에 대해 자동으로 rank check 까지
+    실행하여 업로드 직후 매트릭스에 순위가 바로 채워지도록 한다.
     """
     from app.core.database import AsyncSessionLocal
 
