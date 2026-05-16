@@ -1325,6 +1325,10 @@ async def get_competition(
         )
 
     my_pid = str(place.place_id) if place.place_id else None
+    # 내 업체 행의 표시 상호 — 네이버 노출명은 카테고리에 따라 suffix("...견인운송",
+    # "...심부름센터" 등) 가 붙어 변형되므로, 사용자가 등록한 business_name 으로
+    # 덮어써서 모달 헤더 상호와 100% 일치시킨다. 매칭 기준은 어디까지나 place_id.
+    my_display_name = (place.business_name or "").strip()
     my_rank: int | None = None
     items: list[CompetitionItem] = []
     for i, it in enumerate(res.items, start=1):
@@ -1332,11 +1336,13 @@ async def get_competition(
         is_me = bool(my_pid and pid == my_pid)
         if is_me and my_rank is None:
             my_rank = i
+        # is_me 행만 등록 상호로 표시. 나머지 경쟁업체는 네이버 노출명 그대로.
+        row_name = my_display_name if (is_me and my_display_name) else (it.name or "")
         items.append(
             CompetitionItem(
                 rank=i,
                 place_id=pid,
-                name=it.name or "",
+                name=row_name,
                 category=it.category or "",
                 phone=it.phone or "",
                 virtual_phone=it.virtual_phone or "",
