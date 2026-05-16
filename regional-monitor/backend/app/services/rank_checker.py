@@ -334,6 +334,31 @@ async def run_rank_check_for_places(
         for kw in _split_tracking_keywords(p.tracking_keywords):
             tasks.append((p.id, p.place_id, dong, kw))
 
+    # 2) 작업 실행 — 리팩토링 (2026-05-16):
+    #    "셀 단위" 재검증 경로(run_rank_check_for_cells)와 워커 로직을 공유하기 위해
+    #    실제 worker/gather 부분은 _run_rank_check_tasks 로 추출. 기존 동작은 그대로.
+    return await _run_rank_check_tasks(
+        tasks=tasks,
+        check_date=check_date,
+        concurrency=concurrency,
+        pace_ms=pace_ms,
+    )
+
+
+async def _run_rank_check_tasks(
+    *,
+    tasks: list[tuple[int, str, str, str]],
+    check_date: date_cls,
+    concurrency: int,
+    pace_ms: int,
+) -> dict[str, int]:
+    """주어진 (place_pk, place_id, dong, keyword) 작업 리스트를 동시성 + 페이스 제어로 실행.
+
+    [2026-05-16] run_rank_check_for_places 의 워커 코어를 분리한 헬퍼.
+    place 단위 검증(`run_rank_check_for_places`) 과 셀 단위 재검증
+    (`run_rank_check_for_cells`) 가 동일 worker / persist / circuit-breaker
+    로직을 공유하도록 추출. 외부 호출자가 만든 tasks 를 그대로 받아서 실행한다.
+    """
     if not tasks:
         return {
             "processed": 0,
@@ -473,6 +498,88 @@ async def run_rank_check_for_places(
         )
 
     return stats
+
+
+async def run_rank_check_for_cells(
+    cells: Iterable[tuple[int, str]],
+    *,
+    check_date: date_cls | None = None,
+    concurrency: int = RANK_CONCURRENCY,
+    pace_ms: int = int(RANK_PACE_SEC * 1000),
+) -> dict[str, int]:
+    """주어진 (place_pk, keyword) 셀 리스트만 정확히 재검증한다 (2026-05-16).
+
+    [목적]
+      "순위권 없음" 으로 잡힌 특정 셀들만 재검증하고 싶을 때 사용한다.
+      run_rank_check_for_places 는 place 의 모든 keyword 를 검증해버리므로,
+      예를 들어 한 place 에 keyword 가 5개 등록되어 있고 그 중 1개만
+      재검증 대상이어도 5개 전부 다시 돌게 된다 (불필요한 Naver 호출).
+
+    [동작]
+      1) cells 의 place_pk 집합을 한 번에 DB 조회 → place_id / registered_dong 매핑
+      2) (place_pk, place_id, dong, keyword) 4-tuple tasks 생성
+         - place_id 또는 dong 비어있으면 그 셀은 skip
+      3) _run_rank_check_tasks 로 위임 (run_rank_check_for_places 와 같은 워커)
+
+    [주의]
+      cells 는 호출자가 정확히 검증할 셀만 골라서 넘긴다. 백엔드는 추가
+      필터링 (keyword 가 tracking_keywords 에 들어있는지 등) 을 하지 않는다.
+      대신 place_pk 존재성 / place_id / dong 비어있음만 가드한다.
+    """
+    if check_date is None:
+        check_date = now_kst().date()
+
+    cell_list = list(cells)
+    if not cell_list:
+        return {
+            "processed": 0,
+            "success": 0,
+            "out_of_range": 0,
+            "error": 0,
+            "skipped": 0,
+            "circuit_skipped": 0,
+        }
+
+    # 1) place_pk → (place_id, dong) 매핑을 한 번에 fetch
+    place_pks = sorted({pk for (pk, _kw) in cell_list})
+    async with AsyncSessionLocal() as fdb:
+        q = await fdb.execute(
+            select(
+                RegisteredPlace.id,
+                RegisteredPlace.place_id,
+                RegisteredPlace.registered_dong,
+            ).where(RegisteredPlace.id.in_(place_pks))
+        )
+        meta = {
+            int(pk): (pid, (dg or "").strip())
+            for (pk, pid, dg) in q.all()
+        }
+
+    # 2) tasks 생성 — place 자격 미달(없음/place_id 없음/dong 없음)은 skip
+    tasks: list[tuple[int, str, str, str]] = []
+    skipped_unresolvable = 0
+    for pk, kw in cell_list:
+        m = meta.get(int(pk))
+        if not m:
+            skipped_unresolvable += 1
+            continue
+        pid, dong = m
+        if not pid or not dong or not kw:
+            skipped_unresolvable += 1
+            continue
+        tasks.append((int(pk), pid, dong, kw))
+
+    log.info(
+        "rerun-cells dispatching: requested=%d resolvable=%d skipped=%d",
+        len(cell_list), len(tasks), skipped_unresolvable,
+    )
+
+    return await _run_rank_check_tasks(
+        tasks=tasks,
+        check_date=check_date,
+        concurrency=concurrency,
+        pace_ms=pace_ms,
+    )
 
 
 async def run_daily_rank_check(db: AsyncSession) -> dict[str, int]:

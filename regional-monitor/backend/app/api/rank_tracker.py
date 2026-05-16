@@ -54,7 +54,10 @@ from app.services.place_matcher import (
     serialize_match,
 )
 from app.services.naver_map import search_map
-from app.services.rank_checker import run_rank_check_for_places
+from app.services.rank_checker import (
+    run_rank_check_for_cells,
+    run_rank_check_for_places,
+)
 
 from .deps import get_current_user, require_superadmin
 
@@ -445,6 +448,38 @@ async def _run_rank_check_for_ids(user_id: int, place_ids: list[int]) -> None:
         log.info("auto rank-check done: user_id=%s stats=%s", user_id, stats)
     finally:
         # 정상/예외/early-return 모두 — 잡 종료 시 busy 해제 보장
+        _clear_rank_busy(user_id)
+
+
+# ─────────────────────────────────────────────────────────
+# 셀 단위 재검증 워커 (2026-05-16)
+# ─────────────────────────────────────────────────────────
+async def _run_rank_check_for_cells(
+    user_id: int,
+    cells: list[tuple[int, str]],
+) -> None:
+    """주어진 (place_pk, keyword) 셀 리스트만 정확히 재검증.
+
+    /rerun-out-of-range 가 호출. _run_rank_check_for_ids 와 달리 place 의
+    모든 keyword 를 다시 돌리지 않고, 호출자가 명시한 셀만 검증한다.
+
+    user_id 는 busy 마크 해제용으로만 사용. 권한 가드는 호출 엔드포인트에서
+    이미 끝났으므로 여기서 재확인하지 않는다 (대신 rank_checker 가 place_pk
+    조회 시 사용자 범위 외 row 는 자연스럽게 skip 됨 — place_id/dong 없음).
+    """
+    try:
+        if not cells:
+            log.info("rerun-cells no-op: user_id=%s cells=0", user_id)
+            return
+        log.info(
+            "rerun-cells starting: user_id=%s cells=%d (sample=%s)",
+            user_id, len(cells), cells[:3],
+        )
+        # busy 마크는 엔드포인트에서 이미 set 했지만 멱등으로 갱신
+        _mark_rank_busy(user_id, started=len(cells), label="manual")
+        stats = await run_rank_check_for_cells(cells)
+        log.info("rerun-cells done: user_id=%s stats=%s", user_id, stats)
+    finally:
         _clear_rank_busy(user_id)
 
 
@@ -1583,22 +1618,24 @@ async def trigger_manual_rank_check(
 # ─────────────────────────────────────────────────────────
 # "순위권 없음" 셀 재검증 (2026-05-16)
 # ─────────────────────────────────────────────────────────
-# 매트릭스에 "순위권 없음 N" 으로 잡힌 셀들 중 상당수가
-# 실제로는 검증 당시의 일시 오류 (네이버 IP 차단, 페이지 로딩 실패 등) 로 인해
-# rank_checker 가 out_of_range=True, total_results=NULL 로 저장한 케이스다.
-# 사용자가 매트릭스에서 "순위권 없음 N건 재검증" 버튼을 눌렀을 때 호출.
+# 매트릭스에 "순위권 없음 N" 으로 잡힌 셀들 중 상당수가 실제로는 검증 당시의
+# 일시 오류 (네이버 IP 차단, 페이지 로딩 실패 등) 로 인해 rank_checker 가
+# out_of_range=True 로 저장한 케이스다. 사용자가 매트릭스에서
+# "순위권 없음 N건 재검증" 버튼을 눌렀을 때 호출.
 #
-# 동작
+# 동작 — 셀 단위 (2026-05-16 수정)
 #   1) 최근 7일 내 본인 소유 place 의 PlaceRankHistory 중 out_of_range=True 행 조회
 #      (필터: out_of_range=True 만. total_results IS NULL 추가 필터는 일부러 두지 않음.
 #       사용자 관찰상 total_results 가 채워진 채로 out_of_range=True 인 셀도
 #       재검증하면 실제 순위가 잡히는 경우가 대다수.)
-#   2) 그 row 들의 place_pk 집합 → 자격 조건(AUTO_MATCHED/CONFIRMED + place_id + keyword) 필터
-#   3) _run_rank_check_for_ids 로 디스패치 (manual-rank-check 와 동일 워커)
+#   2) 자격 조건 (AUTO_MATCHED/CONFIRMED + place_id + tracking_keywords) JOIN 필터
+#   3) → (place_pk, keyword) 셀 리스트 그대로 _run_rank_check_for_cells 로 디스패치
+#      (NOT place 단위! 같은 place 의 다른 keyword 는 안 건드림 — 불필요한 Naver 호출 방지)
 #
 # 멱등성
-#   같은 (place, keyword, today_kst) 셀에 대한 재검증은 UNIQUE(place_pk, check_date, keyword)
-#   제약을 통해 upsert 되므로 안전. 같은 사용자가 이미 검증 잡 실행 중이면 409 거절.
+#   같은 (place, keyword, today_kst) 셀에 대한 재검증은
+#   UNIQUE(place_pk, check_date, keyword) 제약을 통해 upsert 되므로 안전.
+#   같은 사용자가 이미 검증 잡 실행 중이면 409 거절.
 # ─────────────────────────────────────────────────────────
 @router.post("/rerun-out-of-range", response_model=RerunOutOfRangeResponse)
 async def rerun_out_of_range(
@@ -1606,7 +1643,7 @@ async def rerun_out_of_range(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> RerunOutOfRangeResponse:
-    """매트릭스에서 '순위권 없음 (out_of_range=True)' 으로 잡힌 셀 전체 재검증."""
+    """매트릭스에서 '순위권 없음 (out_of_range=True)' 으로 잡힌 셀만 정확히 재검증."""
     # busy 가드 — manual-rank-check 와 같은 키 공유. 잡 끝나면 자동 해제.
     if _get_rank_busy(user.id) is not None:
         raise HTTPException(
@@ -1614,8 +1651,8 @@ async def rerun_out_of_range(
             detail="이미 검증 중입니다. 잠시 후 다시 시도해주세요.",
         )
 
-    # 1) 최근 7일 내 out_of_range=True 인 본인 셀 조회
-    #    JOIN 으로 user_id 필터를 같이 걸어 race(다른 사용자 row 가 끼는 일) 차단
+    # 1) 최근 7일 내 out_of_range=True 인 본인 셀 + 자격 조건을 한 번의 JOIN 으로 조회
+    #    → (place_pk, keyword) 셀 리스트 확보. 자격 미달 place 는 자연스레 제외.
     today = now_kst().date()
     since = today - timedelta(days=7)
     q = await db.execute(
@@ -1623,12 +1660,29 @@ async def rerun_out_of_range(
         .join(RegisteredPlace, RegisteredPlace.id == PlaceRankHistory.place_pk)
         .where(
             RegisteredPlace.user_id == user.id,
+            RegisteredPlace.match_status.in_(("AUTO_MATCHED", "CONFIRMED")),
+            RegisteredPlace.place_id.is_not(None),
+            RegisteredPlace.tracking_keywords.is_not(None),
             PlaceRankHistory.out_of_range.is_(True),
             PlaceRankHistory.check_date >= since,
         )
     )
     rows = q.all()  # list[Row(place_pk, keyword)]
-    cells_to_recheck = len(rows)
+
+    # 중복 제거 — 같은 (place_pk, keyword) 가 다른 날짜로 여러 행 있을 수 있음.
+    # 셀 단위 재검증이므로 unique 페어만 살린다.
+    seen: set[tuple[int, str]] = set()
+    cells: list[tuple[int, str]] = []
+    for r in rows:
+        key = (int(r.place_pk), str(r.keyword))
+        if key in seen:
+            continue
+        seen.add(key)
+        cells.append(key)
+
+    cells_to_recheck = len(cells)
+    # "started" 의 의미를 명확히: 재검증 셀 개수 (사용자 카운터와 1:1 매칭)
+    started = cells_to_recheck
 
     if cells_to_recheck == 0:
         return RerunOutOfRangeResponse(
@@ -1637,35 +1691,17 @@ async def rerun_out_of_range(
             message="재검증 대상 셀이 없습니다.",
         )
 
-    # 2) place_pk 집합 → 자격 조건 필터
-    candidate_ids = list({r.place_pk for r in rows})
-    eligibility = await db.execute(
-        select(RegisteredPlace.id).where(
-            RegisteredPlace.id.in_(candidate_ids),
-            RegisteredPlace.user_id == user.id,
-            RegisteredPlace.match_status.in_(("AUTO_MATCHED", "CONFIRMED")),
-            RegisteredPlace.place_id.is_not(None),
-            RegisteredPlace.tracking_keywords.is_not(None),
-        )
-    )
-    eligible_ids = [pk for (pk,) in eligibility.all()]
-    started = len(eligible_ids)
+    # 2) 셀 단위 워커 디스패치 — 정확히 이 cells 만 재검증
+    _mark_rank_busy(user.id, started=cells_to_recheck, label="manual")
+    background_tasks.add_task(_run_rank_check_for_cells, user.id, cells)
 
-    if started == 0:
-        return RerunOutOfRangeResponse(
-            started=0,
-            cells_to_recheck=cells_to_recheck,
-            message="재검증 가능한 업체가 없습니다. (매칭/키워드 상태 확인 필요)",
-        )
-
-    # 3) 워커 디스패치 — manual-rank-check 와 동일 패턴
-    _mark_rank_busy(user.id, started=started, label="manual")
-    background_tasks.add_task(_run_rank_check_for_ids, user.id, eligible_ids)
+    # place 개수도 참고용으로 계산
+    place_count = len({pk for (pk, _kw) in cells})
 
     return RerunOutOfRangeResponse(
         started=started,
         cells_to_recheck=cells_to_recheck,
         message=(
-            f"{started}개 업체의 순위권 없음 셀 {cells_to_recheck}건을 재검증합니다."
+            f"순위권 없음 셀 {cells_to_recheck}건 ({place_count}개 업체) 을 재검증합니다."
         ),
     )
