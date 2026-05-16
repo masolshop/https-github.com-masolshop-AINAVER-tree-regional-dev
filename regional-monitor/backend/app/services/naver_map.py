@@ -85,13 +85,20 @@ CB_WEAK_WINDOW_SEC = 60.0          # 약한 신호의 연속성 윈도
 CB_COOLDOWN_SEC = 120              # OPEN 유지 시간 (그대로)
 
 # 약한(weak) 에러 prefix 화이트리스트. 이 prefix 로 시작하는 res.error 는
-# 모두 weak 으로 분류. 명시적 strong 이 추가되면 그쪽 prefix 도 정의 예정.
+# weak 으로 분류 = 60초 윈도 12회 누적 시 OPEN.
+#
+# ⚠️ 제외 prefix (none 으로 분류, 회로차단 카운터에 누적 안 됨):
+#   · "empty_items"  — 시골 면/리/희소 키워드(예: 목포 삼학동 렉카)에서
+#                      네이버가 정상적으로 0건 결과를 줄 수 있다. 차단이 아니다.
+#                      특히 rerun-out-of-range 잡은 정의상 이미 out_of_range
+#                      였던 셀만 다시 시도 → empty_items 가 정상적으로 다발.
+#                      이걸 weak 으로 누적시키면 60초 안에 12회가 쉽게 채워져
+#                      false OPEN 이 발생 (실제 서버 로그에서 확인 완료).
 _WEAK_ERROR_PREFIXES = (
-    "goto",
-    "no_list_items",
-    "dom_extract",
-    "empty_items",
-    "crash",
+    "goto",          # 페이지 이동 타임아웃 — 진짜 네트워크/렌더 문제일 수 있음
+    "no_list_items",  # DOM 로드 실패 — 같은 류
+    "dom_extract",    # JS 실행 실패 — 거의 안 일어남
+    "crash",          # Playwright 크래시
 )
 
 
@@ -101,6 +108,12 @@ def _classify_error(err: str | None) -> str:
     현재 strong 에 해당하는 명시적 패턴은 없음 (HTTP 응답 헤더를 미수집).
     추후 _do_search 에서 429/403 등을 감지하면 'rate_limited' 같은 prefix 로
     표시 → 여기서 strong 으로 분류하면 즉시 빠른 OPEN.
+
+    분류 정책 (2026-05-16, 1회 완화 → 2026-05-16 2회차 완화):
+      · "none"   : err 없음, naver_unavailable, **empty_items**, 그리고
+                    매칭되지 않는 알 수 없는 에러 (보수적 fallback)
+      · "strong" : http_429 / http_403 / http_5xx / rate_limited
+      · "weak"   : 명시적 렌더 실패 prefix (_WEAK_ERROR_PREFIXES)
     """
     if not err:
         return "none"
@@ -108,6 +121,10 @@ def _classify_error(err: str | None) -> str:
         # 이미 OPEN 으로 단락된 호출 — 카운터에 누적하지 않음
         return "none"
     e = err.lower()
+    # empty_items 는 "결과 0건" 이라는 정상 상태일 수 있으므로 카운터에서 제외.
+    # (시골 면/리, 희소 키워드, rerun-out-of-range 잡에서 자주 등장.)
+    if e.startswith("empty_items"):
+        return "none"
     # 향후 strong 후보 (현재 미생산이지만 분류 룰만 미리 정의):
     if (
         e.startswith("rate_limited")
@@ -119,8 +136,10 @@ def _classify_error(err: str | None) -> str:
     for p in _WEAK_ERROR_PREFIXES:
         if e.startswith(p):
             return "weak"
-    # 알 수 없는 에러는 weak 으로 안전하게 분류 (즉시 OPEN 시키지 않음)
-    return "weak"
+    # 알 수 없는 에러는 **none** 으로 안전하게 분류 (이전: weak).
+    # weak fallback 이 false OPEN 의 한 원인이었으므로, 명시적 prefix 가
+    # 없는 신규/예외 케이스는 카운터에 누적시키지 않는다.
+    return "none"
 
 
 # ─────────────────────────────────────────────────────────────────────────────
