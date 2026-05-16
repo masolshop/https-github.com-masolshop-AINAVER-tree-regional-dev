@@ -2157,7 +2157,7 @@ function RankMatrix(props: {
 
           {/* Row E — 키워드별 미니 분포 (1위 · 2~5위 · 6~20위 · 없음) */}
           {matrixStats.checked > 0 && allKeywords.length > 0 && (
-            <div className="flex items-start gap-1.5 text-[10px] flex-wrap">
+            <div className="flex items-start gap-1.5 text-[12px] flex-wrap">
               <span className="inline-flex items-center gap-1 font-semibold text-slate-600 mr-1 mt-0.5 text-[11px]">
                 <Tag size={11} className="text-amber-600" />
                 키워드별 분포
@@ -2196,7 +2196,7 @@ function RankMatrix(props: {
 
           {/* Row F — 키워드별 최고/평균/노출률 */}
           {matrixStats.checked > 0 && allKeywords.length > 0 && (
-            <div className="flex items-start gap-1.5 text-[10px] flex-wrap">
+            <div className="flex items-start gap-1.5 text-[12px] flex-wrap">
               <span className="inline-flex items-center gap-1 font-semibold text-slate-600 mr-1 mt-0.5 text-[11px]">
                 <TrendingUp size={11} className="text-violet-600" />
                 키워드별 요약
@@ -2273,7 +2273,7 @@ function RankMatrix(props: {
                   >
                     <div className="leading-tight">{kw}</div>
                     {hasChecked && (
-                      <div className="mt-1 inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-white border border-slate-200 text-[9.5px] font-mono font-normal">
+                      <div className="mt-1 inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-white border border-slate-200 text-[11.5px] font-mono font-normal">
                         <span className="text-emerald-700">
                           1위 <b>{s.top1}</b>
                         </span>
