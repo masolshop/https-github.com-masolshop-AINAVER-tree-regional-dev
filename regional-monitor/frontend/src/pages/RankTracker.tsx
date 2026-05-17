@@ -240,10 +240,31 @@ export default function RankTracker() {
     phase: 'checking' | 'cooldown' | 'naver_paused'
   } | null>(null)
 
+  // [2026-05-17] '순위권 없음 N건 재검증' 자동 반복 라운드 상태.
+  // 한 번의 재검증 잡으로는 모든 셀이 깔끔히 정리되지 않는다 (네이버 회로차단으로
+  // 단락된 셀이 옛 out_of_range=True 값을 그대로 유지하기 때문). 사용자가 매번
+  // 버튼을 누르지 않아도 되도록 잡 종료 후 자동으로 다음 라운드를 트리거한다.
+  //   · round       : 현재 라운드 (1부터 시작)
+  //   · maxRounds   : 최대 반복 횟수 — 무한 루프 방지
+  //   · prevOutCount: 직전 라운드 시작 시 남은 '순위권 없음' 셀 수.
+  //                   라운드 종료 후 줄어들지 않으면 자동화 중단 (실제 20위 밖 셀로 판단)
+  //   · cancelled   : 사용자가 도중 중지 누르면 true → 다음 라운드 트리거 안 함
+  const [autoRerun, setAutoRerun] = useState<{
+    round: number
+    maxRounds: number
+    prevOutCount: number
+    cancelled: boolean
+  } | null>(null)
+
   // 최종 권위 busy 신호: 로컬 즉시성 OR 백엔드 truth.
   // RankMatrix.manualChecking 으로 내려보낸다.
+  // autoRerun 라운드가 진행 중이면 잡 사이 휴식 구간에도 manualChecking 을 유지하여
+  // UI 가 '검증 중' 으로 보이게 한다 (중지 버튼이 그대로 노출되도록).
   const manualChecking =
-    manualLocal || (progress?.manual_running ?? false) || chunkPhase != null
+    manualLocal ||
+    (progress?.manual_running ?? false) ||
+    chunkPhase != null ||
+    autoRerun != null
 
   const handleManualRankCheck = useCallback(
     async (placeIds: number[] = []) => {
@@ -434,42 +455,143 @@ export default function RankTracker() {
     [fetchAll, fetchProgress, showToast],
   )
 
-  // ─── "순위권 없음" 셀 재검증 핸들러 (2026-05-16) ───
-  // 매트릭스 헤더의 "순위권 없음 N건 재검증" 버튼에서 호출. 백엔드가
-  // 최근 7일 내 out_of_range=True 셀들의 place 를 추려 _run_rank_check_for_ids 로
-  // 디스패치. handleManualRankCheck 와 달리 클라이언트 측 청크 분할은 하지 않고,
-  // 단일 잡으로 트리거한 뒤 폴링(manual_running) 에 결과를 맡긴다. 백엔드는 동일
-  // busy-mark 키를 사용하므로 manual_running=true 가 켜져 UI 가 자동으로 busy 됨.
+  // ─── "순위권 없음" 셀 자동 반복 재검증 핸들러 (2026-05-17 v2) ───
+  // 매트릭스 헤더의 "순위권 없음 N건 재검증" 버튼에서 호출.
+  //
+  // [2026-05-17 변경] 이전엔 단일 잡으로만 트리거했지만, 한 번 재검증으로는
+  // 회로차단 단락(_touch_existing_history 가 옛 out_of_range=True 값을 오늘 날짜로
+  // 복사) 때문에 같은 셀이 다시 대상이 되어 사용자가 같은 버튼을 여러 번 눌러야
+  // 했다 (146 → 85 → 40 → ...). 이제는 클라이언트가 잡 종료 후 자동으로 남은
+  // 카운트를 재조회하고, 줄어들고 있는 동안 다음 라운드를 자동 트리거한다.
+  //
+  // 종료 조건 (OR):
+  //   · 더 이상 줄지 않음 (실제 20위 밖 셀로 판단 — 더 재시도해도 의미 없음)
+  //   · 0건 도달 (완전 정리됨)
+  //   · MAX_ROUNDS 도달 (안전망 — 무한 루프 방지)
+  //   · 사용자 중지 버튼 클릭 (handleCancel 이 autoRerun.cancelled=true 로 마크)
+  // [2026-05-17] 회로차단 대기 제거 — 사용자 지시 "네이버 차단 없어, 바로바로 크롤링".
   const handleRerunOutOfRange = useCallback(async () => {
     const fresh = await fetchProgress()
     if (fresh?.manual_running) {
       showToast('이미 백그라운드에서 검증 중입니다. 완료 후 다시 시도해주세요.')
       return
     }
+
+    const MAX_ROUNDS = 5
+    const POLL_INTERVAL_MS = 3000
+    const JOB_TIMEOUT_MS = 10 * 60 * 1000 // 한 라운드 최대 10분
+    const ROUND_COOLDOWN_MS = 2000        // 라운드 사이 짧은 쿨다운만 (회로차단 대기는 제거)
+
+    // [2026-05-17 정책] 사용자 지시: '네이버 회로차단 대기 없애줘, 바로바로 크롤링'.
+    // 회로차단이 OPEN 이어도 대기하지 않고 바로 다음 라운드를 트리거한다. 백엔드는
+    // 단락된 셀에 대해 _touch_existing_history 로 옛 값을 유지하므로, 다음 라운드에서
+    // 같은 셀이 다시 대상이 되어 재시도된다. '줄어들지 않으면 종료' 가드가 무한 루프를 막는다.
+
+    // 자동 반복 루프 — autoRerun 상태로 진행 표시
+    let cancelledExternally = false
+    // 직전 라운드 시작 시 남은 카운트 (다음 라운드와 비교하여 줄어드는지 검사).
+    // -1 = 비교 대상 없음 (첫 라운드).
+    let roundStartOutCount = -1
+    setAutoRerun({
+      round: 1,
+      maxRounds: MAX_ROUNDS,
+      prevOutCount: -1,  // 첫 라운드는 비교 대상 없음
+      cancelled: false,
+    })
     setManualLocal(true)
+
     try {
-      const resp = await triggerRerunOutOfRange()
-      if (resp.started === 0) {
-        showToast(resp.message ?? '재검증 대상이 없습니다.')
-        setManualLocal(false)
-        return
+      for (let round = 1; round <= MAX_ROUNDS; round += 1) {
+        // 라운드 시작 — 트리거 (회로차단 여부와 무관하게 바로 진행)
+        let resp
+        try {
+          resp = await triggerRerunOutOfRange()
+        } catch (err) {
+          const msg = (err as { message?: string })?.message ?? '재검증 실패'
+          showToast(`라운드 ${round} 실패: ${msg}`)
+          break
+        }
+
+        if (resp.started === 0) {
+          // 더 이상 재검증할 셀 없음 → 완료
+          if (round === 1) {
+            showToast(resp.message ?? '재검증 대상이 없습니다.')
+          } else {
+            showToast(
+              `자동 정리 완료 — 총 ${round - 1}회 재검증으로 순위권 없음 셀을 정리했습니다.`,
+            )
+          }
+          break
+        }
+
+        const currentOut = resp.cells_to_recheck
+        // autoRerun 라운드 상태 갱신 (UI 표시용)
+        setAutoRerun((prev) =>
+          prev == null
+            ? null
+            : { ...prev, round, prevOutCount: roundStartOutCount },
+        )
+
+        // 종료 조건: 직전 라운드보다 줄지 않았으면 자동화 중단
+        // (round=1 은 비교 대상 없음 — roundStartOutCount=-1 이면 skip)
+        if (round > 1 && roundStartOutCount >= 0 && currentOut >= roundStartOutCount) {
+          showToast(
+            `자동 정리 중단 — 라운드 ${round} 시작 시 남은 ${currentOut}건이 ` +
+            `직전(${roundStartOutCount}건)과 동일하거나 늘어남. ` +
+            '실제 20위 밖 셀로 판단되어 자동 반복을 종료합니다.',
+          )
+          break
+        }
+        // 다음 라운드 비교용으로 현재 카운트 저장
+        roundStartOutCount = currentOut
+
+        if (round === 1) {
+          showToast(
+            `자동 정리 시작 — 순위권 없음 ${currentOut}건을 최대 ${MAX_ROUNDS}회까지 자동 재검증합니다.`,
+          )
+        } else {
+          showToast(
+            `라운드 ${round}/${MAX_ROUNDS} — 남은 ${currentOut}건 재검증 중...`,
+          )
+        }
+
+        // 백엔드 busy 가 켜질 시간
+        await new Promise((r) => setTimeout(r, 500))
+        await fetchProgress()
+
+        // 잡 종료까지 폴링
+        const deadline = Date.now() + JOB_TIMEOUT_MS
+        let jobFinished = false
+        while (Date.now() < deadline) {
+          const p = await fetchProgress()
+          if (p?.cancel_requested) { cancelledExternally = true; break }
+          if (!p?.manual_running) { jobFinished = true; break }
+          await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS))
+        }
+        if (cancelledExternally) break
+        if (!jobFinished) {
+          showToast('재검증 잡이 시간 초과되어 자동 반복을 중단합니다.')
+          break
+        }
+
+        // 매트릭스 최신 셀 카운트가 백엔드에 반영될 시간
+        await new Promise((r) => setTimeout(r, ROUND_COOLDOWN_MS))
+        // (참고) 다음 라운드 시작 시 triggerRerunOutOfRange 응답으로 새 카운트를
+        // 얻으므로 여기서 별도로 latest-ranks 를 호출할 필요 없음.
+
+        if (round === MAX_ROUNDS) {
+          showToast(
+            `최대 라운드(${MAX_ROUNDS})에 도달했습니다. 매트릭스를 확인 후 필요하면 다시 눌러주세요.`,
+          )
+        }
       }
-      showToast(
-        resp.message ??
-          `${resp.started}개 업체의 순위권 없음 셀 ${resp.cells_to_recheck}건을 재검증합니다.`,
-      )
-      // 백엔드 busy 플래그가 켜질 시간 — 짧게 대기 후 progress 폴링이 인계
-      await new Promise((r) => setTimeout(r, 500))
-      await fetchProgress()
     } catch (err) {
       const msg =
-        (err as { message?: string })?.message ??
-        '재검증 트리거에 실패했습니다.'
+        (err as { message?: string })?.message ?? '자동 재검증에 실패했습니다.'
       showToast(msg)
-      setManualLocal(false)
     } finally {
-      // manualLocal 은 polling 에서 manual_running=false 가 관측되면
-      // (또는 cleanup useEffect 가) 알아서 내림. 여기서는 일찍 끄지 않음.
+      setManualLocal(false)
+      setAutoRerun(null)
     }
   }, [fetchProgress, showToast])
 
@@ -481,9 +603,11 @@ export default function RankTracker() {
   // "지금 검증" 을 누르면 그대로 정상 동작한다 (별도 "다시 시작" 버튼 불필요).
   const handleCancel = useCallback(async () => {
     try {
+      // 자동 반복 루프(autoRerun)도 즉시 중단되도록 마크 — 다음 라운드 트리거 안 함
+      setAutoRerun((prev) => (prev == null ? null : { ...prev, cancelled: true }))
       await cancelRankCheck()
       showToast('중지 요청을 보냈습니다. 진행 중인 셀이 끝나면 종료됩니다.')
-      // 즉시 progress 동기화 → cancel_requested=true 가 청크 루프에 빨리 전달됨
+      // 즉시 progress 동기화 → cancel_requested=true 가 청크/자동 루프에 빨리 전달됨
       await fetchProgress()
     } catch (e) {
       console.error('cancel failed', e)
@@ -695,6 +819,7 @@ export default function RankTracker() {
           manualChecking={manualChecking}
           progress={progress}
           chunkPhase={chunkPhase}
+          autoRerun={autoRerun}
         />
       )}
 
@@ -1875,6 +2000,13 @@ function RankMatrix(props: {
     total: number
     phase: 'checking' | 'cooldown' | 'naver_paused'
   } | null
+  /** 2026-05-17 — '순위권 없음 N건 재검증' 자동 반복 라운드 상태 (옵션 B). */
+  autoRerun?: {
+    round: number
+    maxRounds: number
+    prevOutCount: number
+    cancelled: boolean
+  } | null
 }) {
   const {
     list,
@@ -1886,6 +2018,7 @@ function RankMatrix(props: {
     manualChecking = false,
     progress = null,
     chunkPhase = null,
+    autoRerun = null,
   } = props
 
   // 매칭 완료(place_id 있음)된 행만 매트릭스에 표시
@@ -2177,7 +2310,15 @@ function RankMatrix(props: {
       btnTitle = '네이버 부하 분산을 위해 청크 단위로 나누어 진행 중입니다.'
     }
   } else if (manualChecking) {
-    if (isRerunJob) {
+    if (autoRerun != null) {
+      // [2026-05-17] 자동 반복 라운드 안내 (잡 사이 쿨다운 포함)
+      btnLabel = isRerunJob
+        ? `자동 정리 R${autoRerun.round}/${autoRerun.maxRounds} (${jobTargetTotal}건)`
+        : `자동 정리 R${autoRerun.round}/${autoRerun.maxRounds} 준비 중...`
+      btnTitle =
+        '순위권 없음 셀을 자동으로 여러 번 재검증해 정리 중입니다. ' +
+        `최대 ${autoRerun.maxRounds}회 반복하며 셀 수가 더 이상 줄지 않으면 자동 종료됩니다.`
+    } else if (isRerunJob) {
       btnLabel = `재검증 중... (${jobTargetTotal}건)`
       btnTitle = '순위권 없음 셀만 백그라운드에서 재검증 중입니다.'
     } else {
@@ -2280,22 +2421,36 @@ function RankMatrix(props: {
             <span className="font-semibold inline-flex items-center gap-1.5 flex-1 min-w-0">
               <Loader2 size={11} className="animate-spin shrink-0" />
               <span className="truncate">
-                {isRerunJob
-                  ? `순위권 없음 ${jobTargetTotal}건 재검증 중 — 잠시만 기다려주세요`
-                  : chunkPhase?.phase === 'naver_paused'
-                    ? `네이버 일시차단 감지 — 자동 재개 대기 중 (청크 ${chunkPhase.current}/${chunkPhase.total})`
-                    : chunkPhase?.phase === 'cooldown'
-                      ? `청크 ${chunkPhase.current}/${chunkPhase.total} 완료 — 다음 청크 준비 중...`
-                      : chunkPhase
-                        ? `청크 ${chunkPhase.current}/${chunkPhase.total} 검증 중`
-                        : '백그라운드에서 순위 검증 중'}
+                {/* [2026-05-17] 자동 반복(autoRerun) 라운드가 진행 중이면 라운드 번호 우선 표시.
+                    isRerunJob (백엔드 잡 활성) 여부와 무관하게 라운드 진행을 안내한다.
+                    잡 사이 쿨다운 구간에는 isRerunJob=false 이지만 autoRerun != null 이므로
+                    이때도 사용자는 진행 상황을 볼 수 있다. */}
+                {autoRerun != null
+                  ? isRerunJob
+                    ? `자동 정리 라운드 ${autoRerun.round}/${autoRerun.maxRounds} — 남은 ${jobTargetTotal}건 재검증 중`
+                    : `자동 정리 라운드 ${autoRerun.round}/${autoRerun.maxRounds} — 다음 라운드 준비 중...`
+                  : isRerunJob
+                    ? `순위권 없음 ${jobTargetTotal}건 재검증 중 — 잠시만 기다려주세요`
+                    : chunkPhase?.phase === 'naver_paused'
+                      ? `네이버 일시차단 감지 — 자동 재개 대기 중 (청크 ${chunkPhase.current}/${chunkPhase.total})`
+                      : chunkPhase?.phase === 'cooldown'
+                        ? `청크 ${chunkPhase.current}/${chunkPhase.total} 완료 — 다음 청크 준비 중...`
+                        : chunkPhase
+                          ? `청크 ${chunkPhase.current}/${chunkPhase.total} 검증 중`
+                          : '백그라운드에서 순위 검증 중'}
               </span>
             </span>
             <div className="flex items-center gap-2 shrink-0">
               {/* 진행률 텍스트 분기:
+                  · autoRerun 활성     : "라운드 N/M" 우선 표시 (잡 크기는 보조)
                   · rerun-out-of-range : 분자(잡 처리량) 추적 어려우므로 분모만 표시
                   · 그 외             : filled/total 기존 동작 */}
-              {isRerunJob ? (
+              {autoRerun != null ? (
+                <span className="font-mono text-amber-700 font-semibold">
+                  R{autoRerun.round}/{autoRerun.maxRounds}
+                  {isRerunJob && jobTargetTotal ? ` · ${jobTargetTotal}건` : ''}
+                </span>
+              ) : isRerunJob ? (
                 <span className="font-mono text-blue-700">잡 크기: {jobTargetTotal}건</span>
               ) : (
                 totalCells > 0 && (
@@ -2328,9 +2483,10 @@ function RankMatrix(props: {
             </div>
           </div>
           {/* 프로그레스 바:
-              · rerun-out-of-range : indeterminate (왔다갔다 애니메이션) — 정확한 % 모름
+              · autoRerun 활성 (잡 사이 쿨다운 포함) : indeterminate amber
+              · rerun-out-of-range : indeterminate amber (왔다갔다 애니메이션) — 정확한 % 모름
               · 그 외             : cellPct 기반 determinate */}
-          {isRerunJob ? (
+          {autoRerun != null || isRerunJob ? (
             <div className="h-1.5 rounded-full bg-blue-100 overflow-hidden">
               <div
                 className="h-full bg-amber-400 rounded-full animate-pulse"
