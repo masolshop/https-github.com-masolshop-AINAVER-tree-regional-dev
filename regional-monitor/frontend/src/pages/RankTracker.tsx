@@ -471,49 +471,77 @@ export default function RankTracker() {
   //   · 사용자 중지 버튼 클릭 (handleCancel 이 autoRerun.cancelled=true 로 마크)
   // [2026-05-17] 회로차단 대기 제거 — 사용자 지시 "네이버 차단 없어, 바로바로 크롤링".
   const handleRerunOutOfRange = useCallback(async () => {
-    const fresh = await fetchProgress()
-    if (fresh?.manual_running) {
-      showToast('이미 백그라운드에서 검증 중입니다. 완료 후 다시 시도해주세요.')
-      return
-    }
+    // [2026-05-17 디버그] 사용자가 "자동 실행 표시가 안 보인다" 신고 → 진단용 로그.
+    // 콘솔 열어두고 버튼을 누르면 각 단계가 찍히므로 어디서 멈췄는지 확인 가능.
+    // 운영에서도 그대로 둠 — 부담 없는 로그 5~10줄.
+    console.log('[autoRerun] button clicked → handleRerunOutOfRange()')
 
     const MAX_ROUNDS = 5
     const POLL_INTERVAL_MS = 3000
     const JOB_TIMEOUT_MS = 10 * 60 * 1000 // 한 라운드 최대 10분
     const ROUND_COOLDOWN_MS = 2000        // 라운드 사이 짧은 쿨다운만 (회로차단 대기는 제거)
 
-    // [2026-05-17 정책] 사용자 지시: '네이버 회로차단 대기 없애줘, 바로바로 크롤링'.
-    // 회로차단이 OPEN 이어도 대기하지 않고 바로 다음 라운드를 트리거한다. 백엔드는
-    // 단락된 셀에 대해 _touch_existing_history 로 옛 값을 유지하므로, 다음 라운드에서
-    // 같은 셀이 다시 대상이 되어 재시도된다. '줄어들지 않으면 종료' 가드가 무한 루프를 막는다.
-
-    // 자동 반복 루프 — autoRerun 상태로 진행 표시
-    let cancelledExternally = false
-    // 직전 라운드 시작 시 남은 카운트 (다음 라운드와 비교하여 줄어드는지 검사).
-    // -1 = 비교 대상 없음 (첫 라운드).
-    let roundStartOutCount = -1
+    // [2026-05-17 v3] 즉시 시각 피드백 — busy 체크/API 호출 전에 먼저 autoRerun 을 set.
+    // 이전엔 fetchProgress() → triggerRerunOutOfRange() 가 끝날 때까지 (수백 ms~수초)
+    // 화면에 아무 표시가 안 떠서 사용자가 "버튼이 안 먹은 것 같다" 고 신고했다.
+    // setManualLocal(true) + setAutoRerun({...}) 을 가장 먼저 호출하면 React 가 다음
+    // 마이크로태스크에 re-render 하여 헤더 버튼/배너에 "자동 정리 시작 중..." 이 즉시 뜬다.
+    setManualLocal(true)
     setAutoRerun({
       round: 1,
       maxRounds: MAX_ROUNDS,
       prevOutCount: -1,  // 첫 라운드는 비교 대상 없음
       cancelled: false,
     })
-    setManualLocal(true)
+
+    // 사용자 busy 체크 — 이미 백엔드 잡이 돌고 있으면 새 잡을 트리거하지 않고 종료.
+    // 이 시점에는 이미 autoRerun 이 set 됐으므로 finally 에서 깨끗이 클리어된다.
+    const fresh = await fetchProgress()
+    console.log('[autoRerun] pre-check progress:', {
+      manual_running: fresh?.manual_running,
+      manual_label: fresh?.manual_label,
+    })
+    if (fresh?.manual_running) {
+      showToast('이미 백그라운드에서 검증 중입니다. 완료 후 다시 시도해주세요.')
+      setManualLocal(false)
+      setAutoRerun(null)
+      return
+    }
+
+    // [2026-05-17 정책] 사용자 지시: '네이버 회로차단 대기 없애줘, 바로바로 크롤링'.
+    // 회로차단이 OPEN 이어도 대기하지 않고 바로 다음 라운드를 트리거한다. 백엔드는
+    // 단락된 셀에 대해 _touch_existing_history 로 옛 값을 유지하므로, 다음 라운드에서
+    // 같은 셀이 다시 대상이 되어 재시도된다. '줄어들지 않으면 종료' 가드가 무한 루프를 막는다.
+
+    // 자동 반복 루프
+    let cancelledExternally = false
+    // 직전 라운드 시작 시 남은 카운트 (다음 라운드와 비교하여 줄어드는지 검사).
+    // -1 = 비교 대상 없음 (첫 라운드).
+    let roundStartOutCount = -1
 
     try {
       for (let round = 1; round <= MAX_ROUNDS; round += 1) {
+        console.log(`[autoRerun] round ${round}/${MAX_ROUNDS} → trigger`)
+        // autoRerun 라운드 상태 갱신 (UI 표시용) — 라운드 시작 시점에 표시
+        setAutoRerun((prev) =>
+          prev == null ? null : { ...prev, round, prevOutCount: roundStartOutCount },
+        )
+
         // 라운드 시작 — 트리거 (회로차단 여부와 무관하게 바로 진행)
         let resp
         try {
           resp = await triggerRerunOutOfRange()
+          console.log(`[autoRerun] round ${round} response:`, resp)
         } catch (err) {
           const msg = (err as { message?: string })?.message ?? '재검증 실패'
+          console.error(`[autoRerun] round ${round} trigger failed:`, err)
           showToast(`라운드 ${round} 실패: ${msg}`)
           break
         }
 
         if (resp.started === 0) {
           // 더 이상 재검증할 셀 없음 → 완료
+          console.log(`[autoRerun] started=0 at round ${round} → completion`)
           if (round === 1) {
             showToast(resp.message ?? '재검증 대상이 없습니다.')
           } else {
@@ -525,16 +553,13 @@ export default function RankTracker() {
         }
 
         const currentOut = resp.cells_to_recheck
-        // autoRerun 라운드 상태 갱신 (UI 표시용)
-        setAutoRerun((prev) =>
-          prev == null
-            ? null
-            : { ...prev, round, prevOutCount: roundStartOutCount },
-        )
 
         // 종료 조건: 직전 라운드보다 줄지 않았으면 자동화 중단
         // (round=1 은 비교 대상 없음 — roundStartOutCount=-1 이면 skip)
         if (round > 1 && roundStartOutCount >= 0 && currentOut >= roundStartOutCount) {
+          console.log(
+            `[autoRerun] count not decreasing (prev=${roundStartOutCount} → curr=${currentOut}) → stop`,
+          )
           showToast(
             `자동 정리 중단 — 라운드 ${round} 시작 시 남은 ${currentOut}건이 ` +
             `직전(${roundStartOutCount}건)과 동일하거나 늘어남. ` +
@@ -568,16 +593,18 @@ export default function RankTracker() {
           if (!p?.manual_running) { jobFinished = true; break }
           await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS))
         }
-        if (cancelledExternally) break
+        if (cancelledExternally) {
+          console.log(`[autoRerun] cancelled by user at round ${round}`)
+          break
+        }
         if (!jobFinished) {
+          console.warn(`[autoRerun] round ${round} timed out`)
           showToast('재검증 잡이 시간 초과되어 자동 반복을 중단합니다.')
           break
         }
 
         // 매트릭스 최신 셀 카운트가 백엔드에 반영될 시간
         await new Promise((r) => setTimeout(r, ROUND_COOLDOWN_MS))
-        // (참고) 다음 라운드 시작 시 triggerRerunOutOfRange 응답으로 새 카운트를
-        // 얻으므로 여기서 별도로 latest-ranks 를 호출할 필요 없음.
 
         if (round === MAX_ROUNDS) {
           showToast(
@@ -588,8 +615,10 @@ export default function RankTracker() {
     } catch (err) {
       const msg =
         (err as { message?: string })?.message ?? '자동 재검증에 실패했습니다.'
+      console.error('[autoRerun] loop crashed:', err)
       showToast(msg)
     } finally {
+      console.log('[autoRerun] loop exited, clearing state')
       setManualLocal(false)
       setAutoRerun(null)
     }
@@ -806,6 +835,53 @@ export default function RankTracker() {
        *  인접하게 노출 (이전엔 페이지 상단이라 매트릭스에서 멀리 떨어져 있었음).
        */}
       {progress?.naver_circuit_open && <NaverCircuitOpenBanner />}
+
+      {/* [2026-05-17 v3] 자동 정리 라운드 배너 — 큰 영역으로 사용자가 절대 놓치지 않도록.
+       *  이전 진행률 스트립(11px 텍스트)은 매트릭스 헤더 아래라 눈에 잘 안 띈다는 신고가 들어와서
+       *  매트릭스 박스 위에 큰 배너로 별도 노출. autoRerun 상태가 있는 동안 계속 표시되며
+       *  잡 사이 쿨다운 구간에도 그대로 보인다 (manualChecking ⊇ autoRerun != null).
+       */}
+      {autoRerun != null && (
+        <Card className="p-0 overflow-hidden border-2 border-amber-400 shadow-md">
+          <div className="px-4 py-3 bg-gradient-to-r from-amber-50 to-amber-100 flex items-center gap-3">
+            <Loader2 className="text-amber-600 animate-spin shrink-0" size={20} />
+            <div className="flex-1 min-w-0">
+              <div className="text-sm font-bold text-amber-900 mb-0.5">
+                자동 정리 실행 중 — 라운드 {autoRerun.round}/{autoRerun.maxRounds}
+              </div>
+              <div className="text-[12px] text-amber-800">
+                {progress?.manual_running
+                  ? `순위권 없음 셀을 백그라운드에서 재검증 중입니다. 잡 크기 ${
+                      progress?.manual_target_total ?? 0
+                    }건 · 잡이 끝나면 자동으로 다음 라운드를 시작합니다.`
+                  : autoRerun.round === 1
+                    ? '잡을 시작하는 중입니다... (수 초 내에 라운드가 진행됩니다)'
+                    : '직전 라운드 완료 — 다음 라운드 준비 중입니다 (약 2초)...'}
+              </div>
+            </div>
+            <button
+              onClick={(e) => {
+                e.stopPropagation()
+                handleCancel()
+              }}
+              disabled={!!progress?.cancel_requested}
+              className="text-xs font-semibold px-3 py-1.5 rounded-md bg-red-600 text-white hover:bg-red-700 inline-flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed shadow-sm shrink-0"
+              title={
+                progress?.cancel_requested
+                  ? '중지 요청이 이미 전송되었습니다.'
+                  : '자동 정리를 즉시 중단합니다.'
+              }
+            >
+              <X size={12} />
+              {progress?.cancel_requested ? '중지 중...' : '자동 정리 중지'}
+            </button>
+          </div>
+          {/* indeterminate progress bar */}
+          <div className="h-1 bg-amber-100 overflow-hidden">
+            <div className="h-full bg-amber-500 rounded-full animate-pulse" style={{ width: '60%' }} />
+          </div>
+        </Card>
+      )}
 
       {/* 3) 등록동 × 키워드 매트릭스 — 현재 순위 한눈에 */}
       {list && list.items.length > 0 && (
