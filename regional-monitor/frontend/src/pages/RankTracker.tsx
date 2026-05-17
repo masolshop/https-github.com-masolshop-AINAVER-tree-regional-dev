@@ -560,10 +560,12 @@ export default function RankTracker() {
           console.log(
             `[autoRerun] count not decreasing (prev=${roundStartOutCount} → curr=${currentOut}) → stop`,
           )
+          // [2026-05-17 v3] 백엔드는 /rerun-out-of-range 에서 회로차단을 우회하지만,
+          // 그래도 카운트가 줄지 않는다면 실제 20위 밖 셀로 판단된다.
           showToast(
-            `자동 정리 중단 — 라운드 ${round} 시작 시 남은 ${currentOut}건이 ` +
-            `직전(${roundStartOutCount}건)과 동일하거나 늘어남. ` +
-            '실제 20위 밖 셀로 판단되어 자동 반복을 종료합니다.',
+            `자동 정리 완료 — 라운드 ${round - 1}회 반복 후 남은 ${currentOut}건은 ` +
+            '실제 20위 밖 셀로 판단되어 자동 반복을 종료합니다. ' +
+            '필요하면 "지금 검증" 으로 전체 재검증을 시도해보세요.',
           )
           break
         }

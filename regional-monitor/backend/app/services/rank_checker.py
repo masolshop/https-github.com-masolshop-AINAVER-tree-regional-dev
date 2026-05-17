@@ -146,11 +146,19 @@ async def _search_and_rank(
     query: str,
     place_id: str,
     client: httpx.AsyncClient | None,
+    bypass_circuit_breaker: bool = False,
 ) -> tuple[int | None, int | None, str | None]:
-    """단일 쿼리로 네이버 지도 검색 → (rank, total_count, error) 반환."""
+    """단일 쿼리로 네이버 지도 검색 → (rank, total_count, error) 반환.
+
+    [2026-05-17 v3] bypass_circuit_breaker=True 면 search_map 의 회로차단
+    가드를 우회해 강제로 호출한다. /rerun-out-of-range 자동 반복 루프 전용.
+    """
     # [2026-05-16] Playwright 기반 search_map 은 항상 top 20 만 반환 (display 인자 무시).
     # rank 1~20 안에 없으면 "순위권 없음" (= out_of_range) 으로 표시.
-    res = await search_map(query, display=20, client=client)
+    res = await search_map(
+        query, display=20, client=client,
+        bypass_circuit_breaker=bypass_circuit_breaker,
+    )
     if res.error:
         return None, None, res.error
     for idx, it in enumerate(res.items, start=1):
@@ -166,6 +174,7 @@ async def check_rank_one(
     dong: str,
     keyword: str,
     client: httpx.AsyncClient | None = None,
+    bypass_circuit_breaker: bool = False,
 ) -> RankCheckOutcome:
     """단일 (place_pk, dong, keyword) 조합 순위 체크.
 
@@ -173,6 +182,9 @@ async def check_rank_one(
       1차 — narrow: "{시도} {시군구} {동} {keyword}"
       2차 — wide (등록동이 면/리 일 때만): "{시도} {시군구} {keyword}"
             1차에서 out_of_range 였고, fallback 쿼리가 실제로 달라질 때만 시도.
+
+    [2026-05-17 v3] bypass_circuit_breaker 전파: True 면 search_map 호출 시
+    회로차단 가드를 우회한다 (/rerun-out-of-range 전용).
     """
     if not place_id or not (dong or keyword):
         return RankCheckOutcome(
@@ -199,6 +211,7 @@ async def check_rank_one(
 
     rank, total, err = await _search_and_rank(
         query=narrow_query, place_id=place_id, client=client,
+        bypass_circuit_breaker=bypass_circuit_breaker,
     )
     if err:
         return RankCheckOutcome(
@@ -218,6 +231,7 @@ async def check_rank_one(
         if wide_query and wide_query != narrow_query:
             w_rank, w_total, w_err = await _search_and_rank(
                 query=wide_query, place_id=place_id, client=client,
+                bypass_circuit_breaker=bypass_circuit_breaker,
             )
             if not w_err and w_rank is not None:
                 rank = w_rank
@@ -417,6 +431,7 @@ async def _run_rank_check_tasks(
     concurrency: int,
     pace_ms: int,
     cancel_check: Callable[[], bool] | None = None,
+    bypass_circuit_breaker: bool = False,
 ) -> dict[str, int]:
     """주어진 (place_pk, place_id, dong, keyword) 작업 리스트를 동시성 + 페이스 제어로 실행.
 
@@ -468,7 +483,14 @@ async def _run_rank_check_tasks(
                 # 미리 체크해두면 (1) check_rank_one 의 헛돈 분기 (예: rural
                 # fallback 2회 시도)를 막고, (2) DB write 도 스킵해서
                 # prepared/another operation 경쟁을 줄인다.
-                if is_circuit_open():
+                #
+                # [2026-05-17 v3] bypass_circuit_breaker=True 면 회로차단을 무시하고
+                # 그대로 호출한다. /rerun-out-of-range 처럼 "이미 한 번 검증해본 셀에
+                # 한해 사용자가 명시적으로 재시도하는" 경로에서는, 회로차단 상태로
+                # 옛 out_of_range=True 값을 그대로 복사 (_touch_existing_history) 해버리면
+                # 자동 반복 루프가 "카운트가 줄지 않음" 으로 즉시 종료된다.
+                # 사용자 지시: "네이버 차단 없어, 회로차단 대기 없애줘, 바로바로 크롤링".
+                if not bypass_circuit_breaker and is_circuit_open():
                     stats["processed"] += 1
                     stats["circuit_skipped"] += 1
                     # pace 도 의미 없으니 즉시 다음 worker 에게 슬롯 양보
@@ -481,6 +503,7 @@ async def _run_rank_check_tasks(
                         dong=dong,
                         keyword=keyword,
                         client=client,
+                        bypass_circuit_breaker=bypass_circuit_breaker,
                     )
                 except Exception as e:  # noqa: BLE001
                     # check_rank_one 자체에서 예외가 새어나온 경우 (이론상 없음).
@@ -610,6 +633,7 @@ async def run_rank_check_for_cells(
     concurrency: int = RANK_CONCURRENCY,
     pace_ms: int = int(RANK_PACE_SEC * 1000),
     cancel_check: Callable[[], bool] | None = None,
+    bypass_circuit_breaker: bool = False,
 ) -> dict[str, int]:
     """주어진 (place_pk, keyword) 셀 리스트만 정확히 재검증한다 (2026-05-16).
 
@@ -674,8 +698,8 @@ async def run_rank_check_for_cells(
         tasks.append((int(pk), pid, dong, kw))
 
     log.info(
-        "rerun-cells dispatching: requested=%d resolvable=%d skipped=%d",
-        len(cell_list), len(tasks), skipped_unresolvable,
+        "rerun-cells dispatching: requested=%d resolvable=%d skipped=%d bypass_cb=%s",
+        len(cell_list), len(tasks), skipped_unresolvable, bypass_circuit_breaker,
     )
 
     return await _run_rank_check_tasks(
@@ -684,6 +708,7 @@ async def run_rank_check_for_cells(
         concurrency=concurrency,
         pace_ms=pace_ms,
         cancel_check=cancel_check,
+        bypass_circuit_breaker=bypass_circuit_breaker,
     )
 
 

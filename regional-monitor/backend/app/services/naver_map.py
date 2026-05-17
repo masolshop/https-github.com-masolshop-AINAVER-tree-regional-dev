@@ -701,6 +701,7 @@ async def search_map(
     display: int = TOP_N,  # 호환 인자 — 무시되고 항상 TOP_N(20) 까지만 반환
     client: Any = None,    # 호환 인자 — 무시 (Playwright 는 자체 브라우저 사용)
     timeout: float = 30.0,  # 호환 인자 — 내부 NAV_TIMEOUT_MS 등으로 분기됨
+    bypass_circuit_breaker: bool = False,
 ) -> MapSearchResult:
     """단일 쿼리 검색 — Playwright SPA 렌더링으로 top 20 추출.
 
@@ -708,6 +709,11 @@ async def search_map(
       호환을 위해 받지만 내부 정책 (top 20, singleton browser, NAV_TIMEOUT_MS)
       이 우선한다.
     - 회로차단 OPEN → 즉시 `naver_unavailable` 로 단락 (이전 동작 그대로).
+      [2026-05-17 v3] bypass_circuit_breaker=True 면 회로차단을 무시하고 호출
+      한다. /rerun-out-of-range 등 사용자 명시 재검증 경로에서만 사용.
+      `_circuit.allow()` 가 False 라도 검사를 스킵하고 `_do_search` 를 그대로
+      실행한다. 단, 실행 결과의 성공/실패는 회로차단 카운터에 그대로 반영되어
+      네이버가 실제로 차단 중이면 다시 OPEN 으로 회복된다.
     - 결과 `items` 는 광고 제외 organic **상위 20개** 만 포함. 21위 이하는
       알 수 없으며, caller 는 매칭 실패 시 "순위권 없음" 으로 표시해야 한다.
     """
@@ -717,7 +723,7 @@ async def search_map(
     if not q:
         return MapSearchResult(query=q, total_count=0, error="empty query")
 
-    if not _circuit.allow():
+    if not bypass_circuit_breaker and not _circuit.allow():
         return MapSearchResult(
             query=q, total_count=0, error="naver_unavailable", elapsed_ms=0,
         )

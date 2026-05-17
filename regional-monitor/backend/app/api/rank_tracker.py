@@ -612,9 +612,17 @@ async def _run_rank_check_for_cells(
             label="rerun-out-of-range",
             target_total=len(cells),
         )
+        # [2026-05-17 v3] bypass_circuit_breaker=True
+        # 사용자가 명시적으로 트리거한 "순위권 없음" 셀 재검증은 회로차단 상태에서도
+        # 그대로 네이버 호출을 시도한다. 회로차단이 있는 채로 자동 반복 루프를
+        # 돌리면, 매 라운드마다 _touch_existing_history 가 옛 out_of_range=True 값을
+        # 오늘 날짜로 복사 → 셀 카운트가 변하지 않아 "줄지 않음" 가드로 1라운드만에
+        # 종료되는 문제가 있었다. (콘솔 로그 분석: prev=85 → curr=85 → stop)
+        # 사용자 지시: "네이버 차단 없어, 회로차단 대기 없애줘, 바로바로 크롤링".
         stats = await run_rank_check_for_cells(
             cells,
             cancel_check=lambda: _is_rank_cancelled(user_id),
+            bypass_circuit_breaker=True,
         )
         log.info("rerun-cells done: user_id=%s stats=%s", user_id, stats)
     finally:
