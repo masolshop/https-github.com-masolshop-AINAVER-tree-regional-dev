@@ -254,27 +254,54 @@ def _resolve_dong_for_search(
 ) -> str:
     """순위 검색에 사용할 dong 문자열을 결정.
 
-    [2026-05-17 v6] 정책 단순화 — 사용자 진단 반영:
-      "ID = ID의 주소 + 키워드 = 노출순위"
-      → 검색은 항상 ID 주소의 **마지막 행정동 토큰 1개** 만 사용 (GPS 기반 매칭에 최적).
+    [2026-05-17 v7] 정책 — **풀쿼리(시도+시군구+동/리) 단독** 사용:
+      라이브 비교 테스트(10건) 결과:
+        ┌─────────────────────────────────┬─────┬─────┐
+        │ 케이스                           │ 동만 │ 풀  │
+        ├─────────────────────────────────┼─────┼─────┤
+        │ 장용리 (드문 리)                  │  1  │  1  │ 동일
+        │ 감도리 (드문 리)                  │  2  │  2  │ 동일
+        │ 가정리 (북내면, 흔한 리)           │  5  │  2  │ 다름 (어제=2)
+        │ 남산리 (고수면)                   │  2  │  1  │ 다름 (어제=1)
+        │ 항동 (전남 목포)                  │ OOR │  1  │ 풀쿼리만 잡힘
+        │ 양산동 (광주 광산)                │ OOR │  5  │ 풀쿼리만 잡힘
+        │ 송촌동 (광주 광산)                │ OOR │  1  │ 풀쿼리만 잡힘
+        │ 신촌동 (광주 광산)                │ OOR │  1  │ 풀쿼리만 잡힘
+        └─────────────────────────────────┴─────┴─────┘
+      → 풀쿼리가 모든 케이스에서 정확. 동만은 6/10 부정확.
+      이유: 우리 서버 IP(AWS Lightsail 서울) GPS 매칭은 흔한 동/리에서
+      다른 지역(서울 근방)을 우선시함. 시도+시군구를 명시하면 네이버가
+      텍스트 매칭으로 정확히 그 지역을 정렬해줌.
 
     우선순위:
-      1) full_address 에서 마지막 행정동 추출 가능 → 그것 사용
-      2) registered_dong 에서 마지막 행정동 추출 가능 → fallback
-      3) 둘 다 없으면 "" 반환 → 호출자가 skip
+      1) full_address 에서 "시도 시군구 읍/면/동 [리]" 풀 추출 → 그것 사용
+      2) registered_dong 에서 같은 방식 추출 → fallback
+      3) 그것도 실패하면 registered_dong 원본 → 최후 fallback
+      4) 둘 다 없으면 "" 반환 → 호출자가 skip
 
     예시:
       registered="전남 완도군 약산면 가래리" / full="전남 완도군 약산면 장용리"
-        → "장용리"   (ID 주소 기준, 사용자 옛 등록동 무시)
+        → "전남 완도군 약산면 장용리"     (ID 주소 풀쿼리)
       registered="광주 광산구 송정1동"     / full="서울 영등포구 선유로49길 10-1"
-        → "송정1동"  (ID 주소가 도로명만이면 등록동으로 fallback)
+        → "광주 광산구 송정1동"          (ID 주소가 도로명만이면 등록동 풀)
       registered="광주 광산구 산막동"      / full="광주 광산구 산막동"
-        → "산막동"   (일치)
+        → "광주 광산구 산막동"            (일치)
     """
-    from_addr = extract_last_admin_dong(full_address)
+    # 1) full_address 에서 풀쿼리 추출 (시도+시군구+동/리)
+    from_addr = extract_dong_from_address(full_address)
+    if from_addr and any(_is_dong_token(t) for t in from_addr.split()):
+        return from_addr
+    # 2) registered_dong 에서 풀쿼리 추출
+    from_reg = extract_dong_from_address(registered_dong)
+    if from_reg and any(_is_dong_token(t) for t in from_reg.split()):
+        return from_reg
+    # 3) full_address 가 "시도+시군구" 만이라도 있으면 그거라도 (wide search)
     if from_addr:
         return from_addr
-    return extract_last_admin_dong(registered_dong) or (registered_dong or "").strip()
+    if from_reg:
+        return from_reg
+    # 4) 최후 fallback — registered_dong 원본 그대로
+    return (registered_dong or "").strip()
 
 
 def is_address_changed(
@@ -328,14 +355,23 @@ def _build_query(*, dong: str, keyword: str, wide: bool = False) -> str:
     d = (dong or "").strip()
 
     if not wide:
-        # NARROW — 기존 동작 유지. region 추론이 가능하면 시도/시군구 prepend.
-        regions = lookup_region_by_dong(d) if d else []
-        if regions:
-            sido, sigungu = regions[0]
-            if sido:
-                parts.append(sido)
-            if sigungu:
-                parts.append(sigungu)
+        # NARROW
+        # [v7] dong 이 이미 풀쿼리(시도/시군구 포함) 면 region_loader 추측을
+        # 건너뛴다. v6 의 실측 버그를 막기 위함:
+        #   "감도리" 단일토큰 입력 → lookup_region_by_dong 이 "여수시" 를
+        #   첫 매칭으로 반환 → "전라남도 여수시 감도리 ..." 잘못된 쿼리.
+        # v7 정책에서는 _resolve_dong_for_search 가 항상 풀쿼리를 반환하므로
+        # 이 분기는 거의 안 타지만, 안전망으로 보존.
+        d_tokens = d.split() if d else []
+        already_has_sido = any(_is_sido_token(t) for t in d_tokens)
+        if d and not already_has_sido:
+            regions = lookup_region_by_dong(d)
+            if regions:
+                sido, sigungu = regions[0]
+                if sido:
+                    parts.append(sido)
+                if sigungu:
+                    parts.append(sigungu)
         if d:
             parts.append(d)
     else:

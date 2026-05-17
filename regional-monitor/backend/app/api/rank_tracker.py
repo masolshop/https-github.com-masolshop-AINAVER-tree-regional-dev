@@ -1484,12 +1484,14 @@ async def get_competition(
     if place is None:
         raise HTTPException(status_code=404, detail="place not found")
 
-    # [v6] 검색 dong 은 `full_address` 의 마지막 행정동(동/리/가) 1개만.
-    # 사용자 진단: "원래 플레이스는 GPS IP검색이 노출순위에 핵심이야.
-    # 동(리)+키워드 검색해야 위치기반 검색하고 일치가 돼."
-    # 즉 "전남 완도군 약산면 장용리 렉카" 같은 풀쿼리보다 "장용리 렉카" 가
-    # GPS 매칭에 더 정확. 매트릭스 셀 순위가 이 모달의 결과와 일치하도록
-    # 동일한 검색 규칙(_resolve_dong_for_search) 을 사용한다.
+    # [v7] 검색 dong 은 `full_address` 의 풀쿼리 (시도+시군구+동/리).
+    # v6 (동만) → v7 (풀쿼리) 회귀 사유:
+    #   라이브 비교 테스트 10건 결과 — 흔한 동/리(감도리, 양산동, 송촌동 등)
+    #   에서 동만 검색은 우리 서버 IP(서울) GPS 매칭이 다른 지역 동을 우선
+    #   잡아 OOR 다발. 풀쿼리는 시도+시군구 명시로 텍스트 매칭이 정확.
+    #   드문 리(장용리)는 풀/동만 동등 → 풀쿼리 단독으로 모든 케이스 커버.
+    # 매트릭스 셀 순위 ↔ 이 모달 결과 일관성을 위해 같은 _resolve_dong_for_search()
+    # 사용 (v7 에서 풀쿼리 반환하도록 정책 변경됨).
     dong = _resolve_dong_for_search(
         registered_dong=place.registered_dong,
         full_address=place.full_address,
@@ -1507,10 +1509,9 @@ async def get_competition(
             detail=f"keyword '{kw}' is not in tracking_keywords",
         )
 
-    # 2) 네이버 검색 — [v6] dong + keyword 만 (GPS 기반 매칭 최적).
-    # v5 까지는 region_loader 로 시도/시군구 를 prefix 로 붙였지만, GPS 기반
-    # 검색에서는 좁은 동 단위 쿼리가 더 정확한 위치 매칭을 한다는 사용자 진단
-    # 및 라이브 테스트(장용리 케이스, 동만 vs 풀 동등) 결과 반영.
+    # 2) 네이버 검색 — [v7] dong(시도+시군구+동/리) + keyword 풀쿼리.
+    # dong 변수에 "전남 화순군 화순읍 감도리" 같은 풀쿼리가 들어있으므로
+    # 단순히 keyword 만 붙이면 v5 동등 쿼리가 됨.
     query = f"{dong} {kw}"
 
     res = await search_map(query, display=75, client=None)
