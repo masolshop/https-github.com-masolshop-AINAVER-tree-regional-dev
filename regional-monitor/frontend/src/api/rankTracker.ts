@@ -279,6 +279,10 @@ export interface RankCheckProgress {
   /** (2026-05-16) 잡 유형 라벨. 'manual' / 'rerun-out-of-range' 등.
    *  프론트가 진행 배너 텍스트를 분기 ("재검증 중 …") 하는 데 사용. */
   manual_label?: string | null
+  /** (2026-05-17) 사용자가 POST /cancel 로 중지 요청한 상태.
+   *  true 이면 프론트는 청크 루프를 즉시 중단하고 "중지됨" 토스트를 띄운다.
+   *  잡이 완전히 종료되면 백엔드가 cancel flag 를 clear 하므로 false 로 돌아온다. */
+  cancel_requested?: boolean
 }
 
 /* ─────────── API 함수 ─────────── */
@@ -329,6 +333,16 @@ export const triggerRerunOutOfRange = () =>
 
 export const getRankProgress = () =>
   api.get<RankCheckProgress>('/api/v1/rank-tracker/progress')
+
+/** (2026-05-17) 진행 중인 순위 검증 잡 중지 요청.
+ *  서버는 cancel 플래그만 set 하고 즉시 200 을 반환한다 (멱등). 워커는 다음 셀부터
+ *  빠르게 종료된다. 이미 시작된 셀의 네이버 호출은 그대로 완료됨에 유의. */
+export const cancelRankCheck = () =>
+  api.post<{ ok: boolean; was_running: boolean }>(
+    '/api/v1/rank-tracker/cancel',
+    {},
+    { timeoutMs: 10_000 },
+  )
 
 /* ─────────── 순위 데이터 초기화 (등록 플레이스는 보존) ───────────
  * 🚨 registered_places 테이블은 /monitor 페이지와 공유되므로

@@ -14,7 +14,7 @@ import asyncio
 import logging
 from dataclasses import dataclass
 from datetime import date as date_cls
-from typing import Iterable
+from typing import Callable, Iterable
 
 import httpx
 from sqlalchemy import select
@@ -359,6 +359,7 @@ async def run_rank_check_for_places(
     check_date: date_cls | None = None,
     concurrency: int = RANK_CONCURRENCY,
     pace_ms: int = int(RANK_PACE_SEC * 1000),
+    cancel_check: Callable[[], bool] | None = None,
 ) -> dict[str, int]:
     """주어진 places 리스트의 모든 (place × keyword) 조합 순위를 일괄 체크.
 
@@ -405,6 +406,7 @@ async def run_rank_check_for_places(
         check_date=check_date,
         concurrency=concurrency,
         pace_ms=pace_ms,
+        cancel_check=cancel_check,
     )
 
 
@@ -414,6 +416,7 @@ async def _run_rank_check_tasks(
     check_date: date_cls,
     concurrency: int,
     pace_ms: int,
+    cancel_check: Callable[[], bool] | None = None,
 ) -> dict[str, int]:
     """주어진 (place_pk, place_id, dong, keyword) 작업 리스트를 동시성 + 페이스 제어로 실행.
 
@@ -449,6 +452,16 @@ async def _run_rank_check_tasks(
     async with httpx.AsyncClient(timeout=20.0, follow_redirects=True) as client:
         async def worker(pk: int, place_id: str, dong: str, keyword: str) -> None:
             async with sem:
+                # ─── [2026-05-17] 중지 플래그 체크.
+                # 사용자가 프론트의 "중지" 버튼을 눌러 POST /cancel 이 호출되면
+                # cancel_check() 가 True 를 반환한다. 워커는 네이버 호출을 하기 전에
+                # 즉시 종료해 잡 전체를 빠르게 멈춘다 (스킵 카운트 증가).
+                # 이미 실행 중이던 셀은 그대로 끝나지만, 아직 시작 안 한 셀은 모두 skip.
+                if cancel_check is not None and cancel_check():
+                    stats["processed"] += 1
+                    stats["skipped"] += 1
+                    return
+
                 # ─── Fix A: 회로차단 OPEN 이면 네이버 호출 시도조차 하지 않고
                 # outcome.error='naver_unavailable' 로 기록한다.
                 # search_map() 내부에서도 단락하지만, 워커 진입 시점에
@@ -596,6 +609,7 @@ async def run_rank_check_for_cells(
     check_date: date_cls | None = None,
     concurrency: int = RANK_CONCURRENCY,
     pace_ms: int = int(RANK_PACE_SEC * 1000),
+    cancel_check: Callable[[], bool] | None = None,
 ) -> dict[str, int]:
     """주어진 (place_pk, keyword) 셀 리스트만 정확히 재검증한다 (2026-05-16).
 
@@ -669,6 +683,7 @@ async def run_rank_check_for_cells(
         check_date=check_date,
         concurrency=concurrency,
         pace_ms=pace_ms,
+        cancel_check=cancel_check,
     )
 
 

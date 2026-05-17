@@ -121,6 +121,31 @@ def _get_rank_busy(user_id: int) -> dict[str, object] | None:
 
 
 # ─────────────────────────────────────────────────────────
+# 사용자별 "중지 요청" 플래그
+# ─────────────────────────────────────────────────────────
+#
+# POST /cancel 호출 시 _user_rank_cancel[user_id] = True 로 마킹된다.
+# 워커는 각 셀 처리 직전에 이 플래그를 확인하여 True 이면 빠르게 종료한다.
+# 다음 잡 시작 시점(_run_rank_check_for_ids / _run_rank_check_for_cells 의
+# try 블록 진입 직후)에서 자동 clear 되므로, 사용자가 "지금 검증" 을 다시
+# 누르면 그대로 정상 동작한다.
+_user_rank_cancel: dict[int, bool] = {}
+
+
+def _mark_rank_cancel(user_id: int) -> None:
+    """현재 진행 중인 잡에 대해 중지 요청을 표시."""
+    _user_rank_cancel[user_id] = True
+
+
+def _clear_rank_cancel(user_id: int) -> None:
+    _user_rank_cancel.pop(user_id, None)
+
+
+def _is_rank_cancelled(user_id: int) -> bool:
+    return bool(_user_rank_cancel.get(user_id))
+
+
+# ─────────────────────────────────────────────────────────
 # 유틸
 # ─────────────────────────────────────────────────────────
 _PHONE_RE = re.compile(r"^070-\d{3,4}-\d{4}$")
@@ -511,6 +536,10 @@ async def _run_rank_check_for_ids(user_id: int, place_ids: list[int]) -> None:
     # Phase 7 — 전체 워커 라이프사이클을 try/finally 로 감싸 busy 누수 방지.
     # 엔드포인트(_mark_rank_busy)와 워커 종료(_clear_rank_busy)의 짝을 보장한다.
     # fetch 단계에서 places=0 으로 조기 return 하더라도 finally 가 실행되므로 안전.
+    #
+    # [중지 플래그] 잡 진입 시 이전 잡의 중지 플래그를 clear — 사용자가 직전에
+    # 중지를 눌렀더라도 "지금 검증" 재시도가 정상 동작하도록 한다.
+    _clear_rank_cancel(user_id)
     try:
         # 1) places fetch 전용 세션 — 즉시 닫는다.
         async with AsyncSessionLocal() as fetch_db:
@@ -537,11 +566,16 @@ async def _run_rank_check_for_ids(user_id: int, place_ids: list[int]) -> None:
         # (관리자 페이지 등) 을 대비해 동일 키로 갱신. 멱등 — 같은 데이터로 덮어씀.
         _mark_rank_busy(user_id, started=len(places), label="manual")
         # 2) rank_check 본체 — 자체 워커 세션만 사용. 외부 db 인자는 None.
-        stats = await run_rank_check_for_places(None, places)
+        #    cancel_check 클로저가 _user_rank_cancel 을 폴링하여 중지 신호 전달.
+        stats = await run_rank_check_for_places(
+            None, places,
+            cancel_check=lambda: _is_rank_cancelled(user_id),
+        )
         log.info("auto rank-check done: user_id=%s stats=%s", user_id, stats)
     finally:
-        # 정상/예외/early-return 모두 — 잡 종료 시 busy 해제 보장
+        # 정상/예외/early-return 모두 — 잡 종료 시 busy/cancel 모두 해제 보장
         _clear_rank_busy(user_id)
+        _clear_rank_cancel(user_id)
 
 
 # ─────────────────────────────────────────────────────────
@@ -560,6 +594,8 @@ async def _run_rank_check_for_cells(
     이미 끝났으므로 여기서 재확인하지 않는다 (대신 rank_checker 가 place_pk
     조회 시 사용자 범위 외 row 는 자연스럽게 skip 됨 — place_id/dong 없음).
     """
+    # 이전 잡의 중지 플래그를 clear — "재검증" 재시도가 정상 동작하도록 보장.
+    _clear_rank_cancel(user_id)
     try:
         if not cells:
             log.info("rerun-cells no-op: user_id=%s cells=0", user_id)
@@ -576,10 +612,14 @@ async def _run_rank_check_for_cells(
             label="rerun-out-of-range",
             target_total=len(cells),
         )
-        stats = await run_rank_check_for_cells(cells)
+        stats = await run_rank_check_for_cells(
+            cells,
+            cancel_check=lambda: _is_rank_cancelled(user_id),
+        )
         log.info("rerun-cells done: user_id=%s stats=%s", user_id, stats)
     finally:
         _clear_rank_busy(user_id)
+        _clear_rank_cancel(user_id)
 
 
 # ─────────────────────────────────────────────────────────
@@ -1603,6 +1643,10 @@ async def get_rank_progress(
     #   persist 하므로 같은 셀이 다시 stuck 되지 않는다).
     in_progress = (pending > 0) or manual_running
 
+    # 사용자가 진행 중인 잡에 대해 POST /cancel 을 누른 경우 True.
+    # 프론트는 이 값이 True 이면 청크 루프를 즉시 중단하고 토스트를 띄운다.
+    cancel_requested = _is_rank_cancelled(user.id)
+
     return RankCheckProgress(
         total_places=total_places,
         pending_match=pending,
@@ -1617,7 +1661,32 @@ async def get_rank_progress(
         manual_started_at=manual_started_at,
         manual_target_total=manual_target_total,
         manual_label=manual_label,
+        cancel_requested=cancel_requested,
     )
+
+
+# ─────────────────────────────────────────────────────────
+# 중지 요청 (2026-05-17)
+# ─────────────────────────────────────────────────────────
+@router.post("/cancel")
+async def cancel_rank_check(
+    user: User = Depends(get_current_user),
+) -> dict[str, object]:
+    """현재 진행 중인 순위 검증 잡을 중지 요청.
+
+    워커는 각 셀 처리 직전에 cancel flag 를 확인하므로 다음 셀부터 빠르게
+    종료된다 (이미 시작된 셀의 네이버 호출은 그대로 완료). 이후 잡 종료
+    시점에 자동으로 cancel flag 가 clear 되어, 사용자가 다시 "지금 검증"
+    또는 "순위권 없음 N건 재검증" 을 누르면 정상 동작한다.
+
+    진행 중인 잡이 없어도 200 을 반환 — 멱등 호출.
+    """
+    busy = _get_rank_busy(user.id) is not None
+    _mark_rank_cancel(user.id)
+    log.info(
+        "rank-check cancel requested: user_id=%s busy=%s", user.id, busy,
+    )
+    return {"ok": True, "was_running": busy}
 
 
 # ─────────────────────────────────────────────────────────

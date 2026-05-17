@@ -382,6 +382,11 @@ class RankCheckProgress(BaseModel):
     manual_target_total: int | None = None
     manual_label: str | None = None
 
+    # 사용자가 POST /cancel 로 중지 요청한 상태. 워커는 다음 셀부터 빠르게 종료.
+    # True 이면 프론트는 청크 루프를 중단하고 "중지됨" 토스트를 띄운다.
+    # 잡이 완전히 끝나면 백엔드가 cancel flag 를 clear 하므로 False 로 돌아온다.
+    cancel_requested: bool = False
+
 
 # ─────────────────────────────────────────────────────────
 # 전체 초기화 (사용자 본인의 데이터 비우기)

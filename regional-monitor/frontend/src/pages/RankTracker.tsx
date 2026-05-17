@@ -56,6 +56,7 @@ import {
   bulkApplyKeywords,
   triggerManualRankCheck,
   triggerRerunOutOfRange,
+  cancelRankCheck,
   type RankPlaceOut,
   type RankPlaceListOut,
   type DongChangedListOut,
@@ -301,6 +302,14 @@ export default function RankTracker() {
           // OPEN 이면 차단 풀릴 때까지 폴링하면서 같은 인덱스 재시도
           const preFresh = await fetchProgress()
 
+          // [2026-05-17] 중지 요청 감지 — 다음 청크를 트리거하지 않고 즉시 종료.
+          // 백엔드 워커는 자체적으로 cancel 플래그를 감지해 빠르게 끝나므로
+          // 프론트는 여기서 청크 루프만 중단하면 충분하다.
+          if (preFresh?.cancel_requested) {
+            showToast('검증이 중지되었습니다.')
+            break
+          }
+
           // [2026-05-16] 100% 완료 시 청크 루프 조기 종료
           //   배경: 사용자가 큰 잡을 트리거하면 청크 10개로 분할되는데, 청크 2까지
           //         진행되어 (place×keyword) 누적 진행률이 100% 가 되면 나머지 8개
@@ -390,6 +399,9 @@ export default function RankTracker() {
                 circuitTrippedMidway = true
                 break
               }
+              // [2026-05-17] 청크 내부에서 중지 요청 감지 시 즉시 폴링 종료 →
+              // 루프 헤드의 cancel 가드가 다음 청크를 막아 전체 종료된다.
+              if (p?.cancel_requested) break
               await new Promise((r) => window.setTimeout(r, POLL_INTERVAL_MS))
             }
             // 2) 네이버 부하 분산용 짧은 쿨다운 (회로차단 trip 시엔 생략)
@@ -458,6 +470,24 @@ export default function RankTracker() {
     } finally {
       // manualLocal 은 polling 에서 manual_running=false 가 관측되면
       // (또는 cleanup useEffect 가) 알아서 내림. 여기서는 일찍 끄지 않음.
+    }
+  }, [fetchProgress, showToast])
+
+  // ─── 중지 요청 핸들러 (2026-05-17) ───
+  // "지금 검증" / "순위권 없음 N건 재검증" 둘 다 동일한 백엔드 워커 (_run_rank_check_tasks)
+  // 를 사용하므로 POST /cancel 한 번이면 두 잡 모두에 적용된다. 서버는 cancel 플래그만
+  // set 하고 즉시 200 으로 응답 (멱등) → 워커는 다음 셀부터 빠르게 종료.
+  // 잡이 완전히 끝나면 백엔드가 cancel 플래그를 자동 clear 하므로, 사용자가 다시
+  // "지금 검증" 을 누르면 그대로 정상 동작한다 (별도 "다시 시작" 버튼 불필요).
+  const handleCancel = useCallback(async () => {
+    try {
+      await cancelRankCheck()
+      showToast('중지 요청을 보냈습니다. 진행 중인 셀이 끝나면 종료됩니다.')
+      // 즉시 progress 동기화 → cancel_requested=true 가 청크 루프에 빨리 전달됨
+      await fetchProgress()
+    } catch (e) {
+      console.error('cancel failed', e)
+      showToast('중지 요청 실패: ' + (e as Error).message)
     }
   }, [fetchProgress, showToast])
 
@@ -661,6 +691,7 @@ export default function RankTracker() {
           onRowClick={(p) => setDetailPlace(p)}
           onManualCheck={handleManualRankCheck}
           onRerunOutOfRange={handleRerunOutOfRange}
+          onCancel={handleCancel}
           manualChecking={manualChecking}
           progress={progress}
           chunkPhase={chunkPhase}
@@ -1833,6 +1864,8 @@ function RankMatrix(props: {
   onManualCheck?: (placeIds: number[]) => void | Promise<void>
   /** 2026-05-16 — "순위권 없음" 셀만 재검증 */
   onRerunOutOfRange?: () => void | Promise<void>
+  /** 2026-05-17 — 진행 중인 검증 잡 중지 요청 */
+  onCancel?: () => void | Promise<void>
   manualChecking?: boolean
   /** Phase 7 — 백엔드 잡 진행률 표시용 */
   progress?: RankCheckProgress | null
@@ -1849,6 +1882,7 @@ function RankMatrix(props: {
     onRowClick,
     onManualCheck,
     onRerunOutOfRange,
+    onCancel,
     manualChecking = false,
     progress = null,
     chunkPhase = null,
@@ -2204,6 +2238,28 @@ function RankMatrix(props: {
                 <RefreshCw size={12} />
               )}
               순위권 없음 {matrixStats.buckets.out}건 재검증
+            </button>
+          )}
+          {/* 2026-05-17 — 중지 버튼.
+              "지금 검증" 또는 "순위권 없음 재검증" 이 백그라운드에서 돌아가는 동안만
+              표시. 누르면 POST /cancel → 워커가 다음 셀부터 빠르게 종료된다.
+              다시 시작은 별도 버튼이 아니라 "지금 검증" 버튼이 다시 활성화되면 그대로 누르면 됨. */}
+          {onCancel && manualChecking && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation()
+                onCancel()
+              }}
+              disabled={!!progress?.cancel_requested}
+              className="text-xs font-semibold px-3 py-1.5 rounded-md bg-red-600 text-white hover:bg-red-700 inline-flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
+              title={
+                progress?.cancel_requested
+                  ? '중지 요청이 이미 전송되었습니다. 진행 중인 셀이 끝나면 종료됩니다.'
+                  : '진행 중인 순위 검증을 중지합니다. 이미 시작된 셀은 끝까지 처리되지만, 남은 셀은 모두 스킵됩니다.'
+              }
+            >
+              <X size={12} />
+              {progress?.cancel_requested ? '중지 중...' : '중지'}
             </button>
           )}
           <button
