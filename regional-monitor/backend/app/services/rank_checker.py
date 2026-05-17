@@ -202,6 +202,51 @@ def extract_dong_from_address(full_address: str | None) -> str:
     return " ".join(out).strip()
 
 
+def extract_last_admin_dong(address_or_dong: str | None) -> str:
+    """주소 문자열에서 **가장 좁은 행정동 토큰 1개**만 추출.
+
+    네이버 플레이스 검색은 GPS/IP 위치 기반이라 "동(리) + 키워드" 처럼
+    짧은 쿼리가 위치 기반 매칭에 가장 정확하다. 사용자 진단:
+        "원래 플레이스는 GPS IP검색이 노출순위에 핵심이야.
+         하지만 우리는 동(리)+키워드 검색해야 위치기반 검색하고 일치가 돼"
+
+    추출 규칙:
+      "전남 완도군 약산면 장용리"          → "장용리"
+      "광주 광산구 산막동"                  → "산막동"
+      "광주 광산구 송정1동"                 → "송정1동"
+      "광주 동구 충장로1가 5-1"             → "충장로1가"
+      "서울 영등포구 선유로49길 10-1"        → ""  (도로명만, 동 토큰 없음)
+      "역삼동"                              → "역삼동"  (이미 동만 있으면 그대로)
+      "전남 완도군"                         → ""  (시군구만은 동 없음)
+
+    동 토큰 우선순위:
+      1) 면(읍/면)+리 케이스 → **리** 채택 (더 좁은 단위)
+      2) 동/가 단일 → 그대로
+      3) 동 토큰 0개 → 빈 문자열 반환
+
+    리 우선 이유: "약산면 장용리" 에서 "약산면" 으로 검색하면 면 전체로 너무 넓고,
+    "장용리" 로 검색하면 정확히 그 리 위치 좌표가 잡힌다.
+    """
+    if not address_or_dong:
+        return ""
+    tokens = address_or_dong.strip().split()
+    if not tokens:
+        return ""
+
+    # 끝에서부터 거꾸로 보면서 첫 번째 행정동 토큰을 찾는다.
+    # _is_dong_token: 끝 suffix 가 동/리/가/읍/면 인 한글 토큰
+    last_dong = ""
+    for tok in reversed(tokens):
+        if _is_dong_token(tok):
+            # 리/동/가 가 면/읍 보다 더 좁다 → 리/동/가 발견하면 즉시 채택
+            if tok.endswith(_DONG_SUFFIXES):
+                return tok
+            # 면/읍 발견 — 더 좁은 리/동이 앞에서 추가로 나올 수 있으니 일단 보관
+            if not last_dong:
+                last_dong = tok
+    return last_dong
+
+
 def _resolve_dong_for_search(
     *,
     registered_dong: str | None,
@@ -209,19 +254,49 @@ def _resolve_dong_for_search(
 ) -> str:
     """순위 검색에 사용할 dong 문자열을 결정.
 
+    [2026-05-17 v6] 정책 단순화 — 사용자 진단 반영:
+      "ID = ID의 주소 + 키워드 = 노출순위"
+      → 검색은 항상 ID 주소의 **마지막 행정동 토큰 1개** 만 사용 (GPS 기반 매칭에 최적).
+
     우선순위:
-      1) full_address 에서 동 토큰을 추출 가능 → 그것 사용 (네이버 실제 등록 주소)
-      2) full_address 가 도로명만 있는 등 동 추출 실패 → registered_dong 으로 fallback
+      1) full_address 에서 마지막 행정동 추출 가능 → 그것 사용
+      2) registered_dong 에서 마지막 행정동 추출 가능 → fallback
       3) 둘 다 없으면 "" 반환 → 호출자가 skip
 
-    이 변경이 [2026-05-17 v5] "85건 누수" 의 핵심 수정. 사용자 엑셀의 등록동과
-    네이버 플레이스 실제 주소가 달라도, 검색이 항상 후자 기준으로 일어나므로
-    안정적으로 순위가 잡힌다.
+    예시:
+      registered="전남 완도군 약산면 가래리" / full="전남 완도군 약산면 장용리"
+        → "장용리"   (ID 주소 기준, 사용자 옛 등록동 무시)
+      registered="광주 광산구 송정1동"     / full="서울 영등포구 선유로49길 10-1"
+        → "송정1동"  (ID 주소가 도로명만이면 등록동으로 fallback)
+      registered="광주 광산구 산막동"      / full="광주 광산구 산막동"
+        → "산막동"   (일치)
     """
-    from_addr = extract_dong_from_address(full_address)
+    from_addr = extract_last_admin_dong(full_address)
     if from_addr:
         return from_addr
-    return (registered_dong or "").strip()
+    return extract_last_admin_dong(registered_dong) or (registered_dong or "").strip()
+
+
+def is_address_changed(
+    *,
+    registered_dong: str | None,
+    full_address: str | None,
+) -> bool:
+    """`registered_dong` 의 마지막 행정동 ≠ `full_address` 의 마지막 행정동 인지 판별.
+
+    사용자가 엑셀에 적은 영업동(`registered_dong`)과 네이버에 등록된 실제 주소
+    (`full_address`)의 동/리가 다르면 → "변경주소" 셀로 표시한다. 매트릭스 셀
+    오른쪽에 작은 뱃지로 노출.
+
+    - 둘 다 정상이면 비교 (다르면 True)
+    - full_address 에서 동을 못 뽑으면 False (변경 여부 판단 불가 — 보수적)
+    - registered_dong 이 비면 False
+    """
+    addr_dong = extract_last_admin_dong(full_address)
+    reg_dong = extract_last_admin_dong(registered_dong)
+    if not addr_dong or not reg_dong:
+        return False
+    return addr_dong != reg_dong
 
 
 def _build_query(*, dong: str, keyword: str, wide: bool = False) -> str:
@@ -499,6 +574,11 @@ async def _persist_outcome(
         existing.total_results = outcome.total_results
         existing.rank_delta = delta
         existing.checked_at = now_kst()
+        # v6: 검색 정책 변경(풀주소→마지막 행정동 1개)으로 같은 날 재실행 시
+        # `dong` 컬럼도 실제 사용한 dong 으로 덮어쓴다. 그래야 디버깅/로그/UI
+        # 에서 "이 row 가 어떤 쿼리로 만들어졌나" 가 정확히 보인다.
+        if outcome.dong:
+            existing.dong = outcome.dong
     else:
         db.add(PlaceRankHistory(
             place_pk=outcome.place_pk,

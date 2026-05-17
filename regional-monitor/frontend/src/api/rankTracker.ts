@@ -186,6 +186,11 @@ export interface LatestRankCell {
   rank: number | null
   out_of_range: boolean
   check_date: string | null
+  /** [2026-05-17 v6] 엑셀의 `registered_dong`(옛 주소) 과 네이버에 등록된
+   * `full_address` 의 마지막 행정동(동/리/가) 이 다른 셀. true 면 매트릭스
+   * 셀 우측에 "변경주소" 작은 뱃지를 표시한다. 사용자가 ID 주소 변경을
+   * 인지하고 엑셀을 업데이트하도록 시각화. */
+  address_changed?: boolean
 }
 
 export interface LatestRanksResponse {

@@ -2139,6 +2139,10 @@ function RankMatrix(props: {
 
   // (placePk × keyword) → 최신 rank cache
   const [rankMap, setRankMap] = useState<Record<string, number | null>>({})
+  // [v6] placePk → address_changed (마지막 행정동 불일치 플래그). 매트릭스 셀
+  // 옆에 "변경주소" 작은 뱃지를 띄우기 위한 lookup. 백엔드에서 셀마다 보내주지만
+  // 동일 plave 의 모든 셀은 동일 값 → place 단위 map 으로 압축 저장.
+  const [addressChangedMap, setAddressChangedMap] = useState<Record<number, boolean>>({})
   const [loading, setLoading] = useState(false)
 
   const reload = useCallback(async () => {
@@ -2152,7 +2156,14 @@ function RankMatrix(props: {
       // 추가로 missing_count 메타 필드로 미검증 셀 수를 명시. 우리는 cells 만 보고
       // rankMap 을 구성하면 됨 — useMemo 가 hasOwnProperty 로 자연스럽게 unchecked 셈.
       const next: Record<string, number | null> = {}
+      const nextAddrChanged: Record<number, boolean> = {}
       for (const cell of resp.cells) {
+        // [v6] 플레이스 단위 address_changed 누적 (여러 키워드 셀 중 어느
+        // 하나라도 true 면 그 플레이스는 변경주소로 마킹). 같은 플레이스의
+        // 모든 셀이 같은 값으로 들어오지만 안전망 차원에서 OR.
+        if (cell.address_changed) {
+          nextAddrChanged[cell.place_pk] = true
+        }
         // 안전망: 구버전 백엔드 호환 — check_date=null 이면 미검증이므로 skip
         if (cell.check_date == null) continue
         if (cell.rank == null) {
@@ -2165,6 +2176,7 @@ function RankMatrix(props: {
         }
       }
       setRankMap(next)
+      setAddressChangedMap(nextAddrChanged)
     } catch (e) {
       console.error('latest-ranks fetch failed', e)
     } finally {
@@ -2915,9 +2927,25 @@ function RankMatrix(props: {
                     )
                   }
                   const r = rankMap[`${p.id}::${kw}`]
+                  const addrChanged = !!addressChangedMap[p.id]
                   return (
                     <td key={kw} className="px-3 py-2 text-center">
-                      {rankCell(r)}
+                      <div className="inline-flex flex-col items-center gap-0.5">
+                        {rankCell(r)}
+                        {/* [v6] 변경주소 뱃지 — 엑셀의 registered_dong 과
+                            네이버 full_address 의 마지막 행정동(동/리/가) 이
+                            다른 플레이스는 모든 키워드 셀에 표시. 사용자가
+                            "이 ID 주소가 바뀌었구나" 를 셀 단위로 즉시 인지.
+                            노출은 검증된 셀에만 (rank == null 미검증 셀은 숨김). */}
+                        {addrChanged && r != null && (
+                          <span
+                            className="px-1 py-0 rounded text-[9px] bg-amber-100 text-amber-800 font-medium leading-tight"
+                            title="플레이스의 실제 주소(네이버 등록)가 엑셀의 등록동과 다릅니다. 순위는 ID 주소(현재 주소) 기준 검증값입니다."
+                          >
+                            변경주소
+                          </span>
+                        )}
+                      </div>
                     </td>
                   )
                 })}

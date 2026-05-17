@@ -312,12 +312,25 @@ class RankHistoryResponse(BaseModel):
 # 매트릭스용 벌크 엔드포인트 (등록동×키워드 한 방 조회)
 # ─────────────────────────────────────────────────────────
 class LatestRankCell(BaseModel):
-    """매트릭스 셀 1개 — (place_pk, keyword)의 최신 순위."""
+    """매트릭스 셀 1개 — (place_pk, keyword)의 최신 순위.
+
+    [2026-05-17 v6] `address_changed` 추가:
+      사용자 엑셀의 `registered_dong` 과 네이버에 등록된 `full_address` 의
+      마지막 행정동(동/리/가) 이 다르면 True. 매트릭스에서 순위 옆에
+      "변경주소" 작은 뱃지로 노출 — 사용자가 엑셀의 옛 주소를 알아채고
+      재등록할 수 있도록 시각화한다.
+
+      판정은 `services.rank_checker.is_address_changed()` 사용.
+      예: registered="약산면 가래리" / full="약산면 장용리" → True
+    """
     place_pk: int
     keyword: str
     rank: int | None
     out_of_range: bool = False
     check_date: date | None = None
+    # v6: full_address 와 registered_dong 의 마지막 행정동 불일치 표시.
+    # None / False 면 표시 안 함, True 면 매트릭스 셀에 "변경주소" 뱃지 노출.
+    address_changed: bool = False
 
 
 class LatestRanksResponse(BaseModel):

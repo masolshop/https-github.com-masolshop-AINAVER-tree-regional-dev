@@ -57,6 +57,8 @@ from app.services.naver_map import search_map
 from app.services.rank_checker import (
     run_rank_check_for_cells,
     run_rank_check_for_places,
+    is_address_changed,
+    _resolve_dong_for_search,
 )
 
 from .deps import get_current_user, require_superadmin
@@ -1421,6 +1423,13 @@ async def list_latest_ranks(
     total_cells = 0
     for p in places:
         kws = _csv_to_keywords(p.tracking_keywords)
+        # v6: 플레이스별로 한 번만 비교 (모든 키워드 셀에 동일 값).
+        # `registered_dong` (엑셀 옛 주소) vs `full_address` (네이버 현재 주소)
+        # 의 마지막 행정동(동/리/가) 이 다르면 "변경주소" 뱃지를 띄운다.
+        addr_changed = is_address_changed(
+            registered_dong=p.registered_dong,
+            full_address=p.full_address,
+        )
         for kw in kws:
             total_cells += 1
             h = latest.get((p.id, kw))
@@ -1433,6 +1442,7 @@ async def list_latest_ranks(
                 rank=h.rank,
                 out_of_range=bool(h.out_of_range),
                 check_date=h.check_date,
+                address_changed=addr_changed,
             ))
 
     missing_count = total_cells - len(cells)
@@ -1474,12 +1484,21 @@ async def get_competition(
     if place is None:
         raise HTTPException(status_code=404, detail="place not found")
 
-    dong = (place.registered_dong or "").strip()
+    # [v6] 검색 dong 은 `full_address` 의 마지막 행정동(동/리/가) 1개만.
+    # 사용자 진단: "원래 플레이스는 GPS IP검색이 노출순위에 핵심이야.
+    # 동(리)+키워드 검색해야 위치기반 검색하고 일치가 돼."
+    # 즉 "전남 완도군 약산면 장용리 렉카" 같은 풀쿼리보다 "장용리 렉카" 가
+    # GPS 매칭에 더 정확. 매트릭스 셀 순위가 이 모달의 결과와 일치하도록
+    # 동일한 검색 규칙(_resolve_dong_for_search) 을 사용한다.
+    dong = _resolve_dong_for_search(
+        registered_dong=place.registered_dong,
+        full_address=place.full_address,
+    )
     kw = (keyword or "").strip()
     if not dong or not kw:
         raise HTTPException(
             status_code=400,
-            detail="registered_dong and keyword are required",
+            detail="registered_dong/full_address and keyword are required",
         )
     if kw not in _csv_to_keywords(place.tracking_keywords):
         # 사용자가 추적 중인 키워드만 허용 (악의적 임의 키워드 조회 방지)
@@ -1488,20 +1507,11 @@ async def get_competition(
             detail=f"keyword '{kw}' is not in tracking_keywords",
         )
 
-    # 2) 네이버 검색 — rank_checker 와 동일한 쿼리 규칙
-    from app.services.region_loader import lookup_region_by_dong
-
-    parts: list[str] = []
-    regions = lookup_region_by_dong(dong)
-    if regions:
-        sido, sigungu = regions[0]
-        if sido:
-            parts.append(sido)
-        if sigungu:
-            parts.append(sigungu)
-    parts.append(dong)
-    parts.append(kw)
-    query = " ".join(parts)
+    # 2) 네이버 검색 — [v6] dong + keyword 만 (GPS 기반 매칭 최적).
+    # v5 까지는 region_loader 로 시도/시군구 를 prefix 로 붙였지만, GPS 기반
+    # 검색에서는 좁은 동 단위 쿼리가 더 정확한 위치 매칭을 한다는 사용자 진단
+    # 및 라이브 테스트(장용리 케이스, 동만 vs 풀 동등) 결과 반영.
+    query = f"{dong} {kw}"
 
     res = await search_map(query, display=75, client=None)
     if res.error:
