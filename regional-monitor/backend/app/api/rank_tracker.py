@@ -1834,34 +1834,53 @@ async def rerun_out_of_range(
             detail="이미 검증 중입니다. 잠시 후 다시 시도해주세요.",
         )
 
-    # 1) 최근 7일 내 out_of_range=True 인 본인 셀 + 자격 조건을 한 번의 JOIN 으로 조회
-    #    → (place_pk, keyword) 셀 리스트 확보. 자격 미달 place 는 자연스레 제외.
+    # 1) 본인 자격 행 + 최근 7일 PlaceRankHistory 를 JOIN 으로 한 번에 가져오고,
+    #    파이썬에서 (place_pk, keyword) 별 "가장 최근" 행을 선별해 그 최신 행이
+    #    out_of_range=True 인 셀만 재검증 대상으로 잡는다.
+    #
+    # ❗ [2026-05-17 fix] 이전엔 7일 내 out_of_range=True 행을 모두 모은 뒤
+    #    (place_pk, keyword) 로 dedupe 만 했다. 그 결과:
+    #      - 5월 14일 검증 → 순위권 없음 (out_of_range=True 행 생성)
+    #      - 5월 17일 재검증 → 1위 발견 (새 행 out_of_range=False)
+    #      → 5월 14일의 옛 True 행이 그대로 쿼리에 잡혀 "재검증 대상" 으로 합산
+    #    매트릭스 표시(최신 1건 기준 "순위권 없음 144")와 버튼 카운트(누적 146)가
+    #    불일치하는 원인이었음.
+    #
+    # 수정: 각 (place_pk, keyword) 의 가장 큰 check_date 행만 보고, 그 최신 행의
+    #       out_of_range=True 일 때만 대상으로 잡는다. 매트릭스 표시 카운트와
+    #       정확히 1:1 일치하게 됨.
     today = now_kst().date()
     since = today - timedelta(days=7)
     q = await db.execute(
-        select(PlaceRankHistory.place_pk, PlaceRankHistory.keyword)
+        select(
+            PlaceRankHistory.place_pk,
+            PlaceRankHistory.keyword,
+            PlaceRankHistory.check_date,
+            PlaceRankHistory.out_of_range,
+        )
         .join(RegisteredPlace, RegisteredPlace.id == PlaceRankHistory.place_pk)
         .where(
             RegisteredPlace.user_id == user.id,
             RegisteredPlace.match_status.in_(("AUTO_MATCHED", "CONFIRMED")),
             RegisteredPlace.place_id.is_not(None),
             RegisteredPlace.tracking_keywords.is_not(None),
-            PlaceRankHistory.out_of_range.is_(True),
             PlaceRankHistory.check_date >= since,
         )
     )
-    rows = q.all()  # list[Row(place_pk, keyword)]
+    rows = q.all()  # list[Row(place_pk, keyword, check_date, out_of_range)]
 
-    # 중복 제거 — 같은 (place_pk, keyword) 가 다른 날짜로 여러 행 있을 수 있음.
-    # 셀 단위 재검증이므로 unique 페어만 살린다.
-    seen: set[tuple[int, str]] = set()
-    cells: list[tuple[int, str]] = []
+    # (place_pk, keyword) → 최신 행 (check_date 기준) 만 남긴다.
+    latest_per_cell: dict[tuple[int, str], tuple[object, bool]] = {}
     for r in rows:
         key = (int(r.place_pk), str(r.keyword))
-        if key in seen:
-            continue
-        seen.add(key)
-        cells.append(key)
+        cur = latest_per_cell.get(key)
+        if cur is None or r.check_date > cur[0]:
+            latest_per_cell[key] = (r.check_date, bool(r.out_of_range))
+
+    # 최신 행이 out_of_range=True 인 셀만 재검증 대상.
+    cells: list[tuple[int, str]] = [
+        key for key, (_dt, oor) in latest_per_cell.items() if oor
+    ]
 
     cells_to_recheck = len(cells)
     # "started" 의 의미를 명확히: 재검증 셀 개수 (사용자 카운터와 1:1 매칭)

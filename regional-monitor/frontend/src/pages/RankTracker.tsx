@@ -2195,7 +2195,7 @@ function RankMatrix(props: {
         {loading && (
           <Loader2 className="text-blue-500 animate-spin ml-2" size={14} />
         )}
-        <div className="ml-auto flex items-center gap-2">
+        <div className="ml-auto flex flex-wrap items-center gap-2 justify-end">
           {onManualCheck && (
             <button
               onClick={(e) => {
@@ -2276,31 +2276,56 @@ function RankMatrix(props: {
       {/* Phase 7 — 검증 진행률 스트립 (검증 중일 때만 표시) */}
       {manualChecking && (
         <div className="px-4 py-2 bg-blue-50 border-b border-blue-100">
-          <div className="flex items-center justify-between text-[11px] text-blue-900 mb-1">
-            <span className="font-semibold inline-flex items-center gap-1.5">
-              <Loader2 size={11} className="animate-spin" />
-              {isRerunJob
-                ? `순위권 없음 ${jobTargetTotal}건 재검증 중 — 잠시만 기다려주세요`
-                : chunkPhase?.phase === 'naver_paused'
-                  ? `네이버 일시차단 감지 — 자동 재개 대기 중 (청크 ${chunkPhase.current}/${chunkPhase.total})`
-                  : chunkPhase?.phase === 'cooldown'
-                    ? `청크 ${chunkPhase.current}/${chunkPhase.total} 완료 — 다음 청크 준비 중...`
-                    : chunkPhase
-                      ? `청크 ${chunkPhase.current}/${chunkPhase.total} 검증 중`
-                      : '백그라운드에서 순위 검증 중'}
+          <div className="flex items-center justify-between text-[11px] text-blue-900 mb-1 gap-2">
+            <span className="font-semibold inline-flex items-center gap-1.5 flex-1 min-w-0">
+              <Loader2 size={11} className="animate-spin shrink-0" />
+              <span className="truncate">
+                {isRerunJob
+                  ? `순위권 없음 ${jobTargetTotal}건 재검증 중 — 잠시만 기다려주세요`
+                  : chunkPhase?.phase === 'naver_paused'
+                    ? `네이버 일시차단 감지 — 자동 재개 대기 중 (청크 ${chunkPhase.current}/${chunkPhase.total})`
+                    : chunkPhase?.phase === 'cooldown'
+                      ? `청크 ${chunkPhase.current}/${chunkPhase.total} 완료 — 다음 청크 준비 중...`
+                      : chunkPhase
+                        ? `청크 ${chunkPhase.current}/${chunkPhase.total} 검증 중`
+                        : '백그라운드에서 순위 검증 중'}
+              </span>
             </span>
-            {/* 진행률 텍스트 분기:
-                · rerun-out-of-range : 분자(잡 처리량) 추적 어려우므로 분모만 표시
-                · 그 외             : filled/total 기존 동작 */}
-            {isRerunJob ? (
-              <span className="font-mono text-blue-700">잡 크기: {jobTargetTotal}건</span>
-            ) : (
-              totalCells > 0 && (
-                <span className="font-mono">
-                  {filledCells} / {totalCells} 셀 ({cellPct}%)
-                </span>
-              )
-            )}
+            <div className="flex items-center gap-2 shrink-0">
+              {/* 진행률 텍스트 분기:
+                  · rerun-out-of-range : 분자(잡 처리량) 추적 어려우므로 분모만 표시
+                  · 그 외             : filled/total 기존 동작 */}
+              {isRerunJob ? (
+                <span className="font-mono text-blue-700">잡 크기: {jobTargetTotal}건</span>
+              ) : (
+                totalCells > 0 && (
+                  <span className="font-mono">
+                    {filledCells} / {totalCells} 셀 ({cellPct}%)
+                  </span>
+                )
+              )}
+              {/* [2026-05-17] 중지 버튼 — 진행률 스트립에 추가 노출.
+                  헤더 우측의 중지 버튼이 헤더 폭/wrap 문제로 가려질 가능성에 대비한 이중 안전망.
+                  진행률 스트립은 검증 중일 때만 보이므로 중복 노출 부담 없음. */}
+              {onCancel && (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    onCancel()
+                  }}
+                  disabled={!!progress?.cancel_requested}
+                  className="text-[11px] font-semibold px-2.5 py-1 rounded-md bg-red-600 text-white hover:bg-red-700 inline-flex items-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
+                  title={
+                    progress?.cancel_requested
+                      ? '중지 요청이 이미 전송되었습니다. 진행 중인 셀이 끝나면 종료됩니다.'
+                      : '진행 중인 순위 검증을 중지합니다.'
+                  }
+                >
+                  <X size={11} />
+                  {progress?.cancel_requested ? '중지 중...' : '중지'}
+                </button>
+              )}
+            </div>
           </div>
           {/* 프로그레스 바:
               · rerun-out-of-range : indeterminate (왔다갔다 애니메이션) — 정확한 % 모름
