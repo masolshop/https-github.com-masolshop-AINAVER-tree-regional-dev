@@ -615,7 +615,7 @@ async def _run_rank_check_for_cells(
             target_total=len(cells),
         )
         # [2026-05-17 v3] bypass_circuit_breaker=True
-        # 사용자가 명시적으로 트리거한 "순위권 없음" 셀 재검증은 회로차단 상태에서도
+        # 사용자가 명시적으로 트리거한 "매칭 누락" 셀 재검증은 회로차단 상태에서도
         # 그대로 네이버 호출을 시도한다. 회로차단이 있는 채로 자동 반복 루프를
         # 돌리면, 매 라운드마다 _touch_existing_history 가 옛 out_of_range=True 값을
         # 오늘 날짜로 복사 → 셀 카운트가 변하지 않아 "줄지 않음" 가드로 1라운드만에
@@ -1696,7 +1696,7 @@ async def cancel_rank_check(
     워커는 각 셀 처리 직전에 cancel flag 를 확인하므로 다음 셀부터 빠르게
     종료된다 (이미 시작된 셀의 네이버 호출은 그대로 완료). 이후 잡 종료
     시점에 자동으로 cancel flag 가 clear 되어, 사용자가 다시 "지금 검증"
-    또는 "순위권 없음 N건 재검증" 을 누르면 정상 동작한다.
+    또는 "매칭 누락 N건 재검증" 을 누르면 정상 동작한다.
 
     진행 중인 잡이 없어도 200 을 반환 — 멱등 호출.
     """
@@ -1818,12 +1818,12 @@ async def trigger_manual_rank_check(
 
 
 # ─────────────────────────────────────────────────────────
-# "순위권 없음" 셀 재검증 (2026-05-16)
+# "매칭 누락" 셀 재검증 (2026-05-16) — [2026-05-18] UX 문구 '순위권 없음' → '매칭 누락'
 # ─────────────────────────────────────────────────────────
-# 매트릭스에 "순위권 없음 N" 으로 잡힌 셀들 중 상당수가 실제로는 검증 당시의
+# 매트릭스에 "매칭 누락 N" 으로 잡힌 셀들 중 상당수가 실제로는 검증 당시의
 # 일시 오류 (네이버 IP 차단, 페이지 로딩 실패 등) 로 인해 rank_checker 가
 # out_of_range=True 로 저장한 케이스다. 사용자가 매트릭스에서
-# "순위권 없음 N건 재검증" 버튼을 눌렀을 때 호출.
+# "매칭 누락 N건 재검증" 버튼을 눌렀을 때 호출.
 #
 # 동작 — 셀 단위 (2026-05-16 수정)
 #   1) 최근 7일 내 본인 소유 place 의 PlaceRankHistory 중 out_of_range=True 행 조회
@@ -1845,7 +1845,7 @@ async def rerun_out_of_range(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> RerunOutOfRangeResponse:
-    """매트릭스에서 '순위권 없음 (out_of_range=True)' 으로 잡힌 셀만 정확히 재검증."""
+    """매트릭스에서 '매칭 누락 (out_of_range=True)' 으로 잡힌 셀만 정확히 재검증."""
     # busy 가드 — manual-rank-check 와 같은 키 공유. 잡 끝나면 자동 해제.
     if _get_rank_busy(user.id) is not None:
         raise HTTPException(
@@ -1859,10 +1859,10 @@ async def rerun_out_of_range(
     #
     # ❗ [2026-05-17 fix] 이전엔 7일 내 out_of_range=True 행을 모두 모은 뒤
     #    (place_pk, keyword) 로 dedupe 만 했다. 그 결과:
-    #      - 5월 14일 검증 → 순위권 없음 (out_of_range=True 행 생성)
+    #      - 5월 14일 검증 → 매칭 누락 (out_of_range=True 행 생성)
     #      - 5월 17일 재검증 → 1위 발견 (새 행 out_of_range=False)
     #      → 5월 14일의 옛 True 행이 그대로 쿼리에 잡혀 "재검증 대상" 으로 합산
-    #    매트릭스 표시(최신 1건 기준 "순위권 없음 144")와 버튼 카운트(누적 146)가
+    #    매트릭스 표시(최신 1건 기준 "매칭 누락 144")와 버튼 카운트(누적 146)가
     #    불일치하는 원인이었음.
     #
     # 수정: 각 (place_pk, keyword) 의 가장 큰 check_date 행만 보고, 그 최신 행의
@@ -1916,7 +1916,7 @@ async def rerun_out_of_range(
                 r.current_verdict,
             )
 
-    # 최신 행이 out_of_range=True 인 셀 전체 (=매트릭스의 "순위권 없음 N" 카운트)
+    # 최신 행이 out_of_range=True 인 셀 전체 (=매트릭스의 "매칭 누락 N" 카운트)
     all_oor = [
         (key, verdict, total)
         for key, (_dt, oor, total, verdict) in latest_per_cell.items()
@@ -1978,7 +1978,7 @@ async def rerun_out_of_range(
     place_count = len({pk for (pk, _kw) in cells})
 
     msg = (
-        f"순위권 없음 셀 {cells_to_recheck}건 ({place_count}개 업체) 을 재검증합니다."
+        f"매칭 누락 셀 {cells_to_recheck}건 ({place_count}개 업체) 을 재검증합니다."
     )
     if mismatch_count > 0:
         msg += (

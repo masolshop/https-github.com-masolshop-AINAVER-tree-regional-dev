@@ -240,13 +240,13 @@ export default function RankTracker() {
     phase: 'checking' | 'cooldown' | 'naver_paused'
   } | null>(null)
 
-  // [2026-05-17] '순위권 없음 N건 재검증' 자동 반복 라운드 상태.
+  // [2026-05-17] '매칭 누락 N건 재검증' 자동 반복 라운드 상태.
   // 한 번의 재검증 잡으로는 모든 셀이 깔끔히 정리되지 않는다 (네이버 회로차단으로
   // 단락된 셀이 옛 out_of_range=True 값을 그대로 유지하기 때문). 사용자가 매번
   // 버튼을 누르지 않아도 되도록 잡 종료 후 자동으로 다음 라운드를 트리거한다.
   //   · round       : 현재 라운드 (1부터 시작)
   //   · maxRounds   : 최대 반복 횟수 — 무한 루프 방지
-  //   · prevOutCount: 직전 라운드 시작 시 남은 '순위권 없음' 셀 수.
+  //   · prevOutCount: 직전 라운드 시작 시 남은 '매칭 누락' 셀 수.
   //                   라운드 종료 후 줄어들지 않으면 자동화 중단 (실제 20위 밖 셀로 판단)
   //   · cancelled   : 사용자가 도중 중지 누르면 true → 다음 라운드 트리거 안 함
   const [autoRerun, setAutoRerun] = useState<{
@@ -455,8 +455,8 @@ export default function RankTracker() {
     [fetchAll, fetchProgress, showToast],
   )
 
-  // ─── "순위권 없음" 셀 자동 반복 재검증 핸들러 (2026-05-17 v2) ───
-  // 매트릭스 헤더의 "순위권 없음 N건 재검증" 버튼에서 호출.
+  // ─── "매칭 누락" 셀 자동 반복 재검증 핸들러 (2026-05-17 v2) ───
+  // 매트릭스 헤더의 "매칭 누락 N건 재검증" 버튼에서 호출.
   //
   // [2026-05-17 변경] 이전엔 단일 잡으로만 트리거했지만, 한 번 재검증으로는
   // 회로차단 단락(_touch_existing_history 가 옛 out_of_range=True 값을 오늘 날짜로
@@ -557,7 +557,7 @@ export default function RankTracker() {
             showToast(resp.message ?? '재검증 대상이 없습니다.')
           } else {
             showToast(
-              `자동 정리 완료 — 총 ${round - 1}회 재검증으로 순위권 없음 셀을 정리했습니다.` +
+              `자동 정리 완료 — 총 ${round - 1}회 재검증으로 매칭 누락 셀을 정리했습니다.` +
               mismatchSuffix,
             )
           }
@@ -601,7 +601,7 @@ export default function RankTracker() {
             )
           } else {
             showToast(
-              `자동 정리 시작 — 순위권 없음 ${currentOut}건을 최대 ${MAX_ROUNDS}회까지 자동 재검증합니다.`,
+              `자동 정리 시작 — 매칭 누락 ${currentOut}건을 최대 ${MAX_ROUNDS}회까지 자동 재검증합니다.`,
             )
           }
         } else {
@@ -655,7 +655,7 @@ export default function RankTracker() {
   }, [fetchProgress, showToast])
 
   // ─── 중지 요청 핸들러 (2026-05-17) ───
-  // "지금 검증" / "순위권 없음 N건 재검증" 둘 다 동일한 백엔드 워커 (_run_rank_check_tasks)
+  // "지금 검증" / "매칭 누락 N건 재검증" 둘 다 동일한 백엔드 워커 (_run_rank_check_tasks)
   // 를 사용하므로 POST /cancel 한 번이면 두 잡 모두에 적용된다. 서버는 cancel 플래그만
   // set 하고 즉시 200 으로 응답 (멱등) → 워커는 다음 셀부터 빠르게 종료.
   // 잡이 완전히 끝나면 백엔드가 cancel 플래그를 자동 clear 하므로, 사용자가 다시
@@ -881,7 +881,7 @@ export default function RankTracker() {
               </div>
               <div className="text-[12px] text-amber-800">
                 {progress?.manual_running
-                  ? `순위권 없음 셀을 백그라운드에서 재검증 중입니다. 잡 크기 ${
+                  ? `매칭 누락 셀을 백그라운드에서 재검증 중입니다. 잡 크기 ${
                       progress?.manual_target_total ?? 0
                     }건 · 잡이 끝나면 자동으로 다음 라운드를 시작합니다.`
                   : autoRerun.round === 1
@@ -2093,7 +2093,7 @@ function RankMatrix(props: {
   reloadTick?: number
   onRowClick?: (place: RankPlaceOut) => void
   onManualCheck?: (placeIds: number[]) => void | Promise<void>
-  /** 2026-05-16 — "순위권 없음" 셀만 재검증 */
+  /** 2026-05-16 — "매칭 누락" 셀만 재검증 */
   onRerunOutOfRange?: () => void | Promise<void>
   /** 2026-05-17 — 진행 중인 검증 잡 중지 요청 */
   onCancel?: () => void | Promise<void>
@@ -2106,7 +2106,7 @@ function RankMatrix(props: {
     total: number
     phase: 'checking' | 'cooldown' | 'naver_paused'
   } | null
-  /** 2026-05-17 — '순위권 없음 N건 재검증' 자동 반복 라운드 상태 (옵션 B). */
+  /** 2026-05-17 — '매칭 누락 N건 재검증' 자동 반복 라운드 상태 (옵션 B). */
   autoRerun?: {
     round: number
     maxRounds: number
@@ -2207,10 +2207,12 @@ function RankMatrix(props: {
 
   const rankCell = (rank: number | null | undefined) => {
     if (rank == null) return <span className="text-ink-2 text-xs">—</span>
-    // [2026-05-16] top 20 정책: 21위 이상은 추적 의미 없음 → "순위권 없음"
+    // [2026-05-16] top 20 정책: 21위 이상은 추적 의미 없음 → "매칭 누락"
     // (rank > 20 으로 비교하되, 999 sentinel 도 자연스럽게 잡힘)
+    // [2026-05-18] UX 개선 — '순위권 없음' 문구는 사용자 체감이 부정적이므로
+    //               시스템 관점의 중립 표현 '매칭 누락' 으로 통일.
     if (rank > 20)
-      return <span className="text-rose-600 font-semibold text-xs">순위권 없음</span>
+      return <span className="text-rose-600 font-semibold text-xs">매칭 누락</span>
     const tone =
       rank <= 3
         ? 'bg-emerald-100 text-emerald-800'
@@ -2270,7 +2272,7 @@ function RankMatrix(props: {
   // 따라서 rerun 잡일 때는:
   //   · 명시적 분모: progress.manual_target_total (= 105)
   //   · 분자: 모름 (진척률 정확 추적 불가) → indeterminate 표시
-  //   · 텍스트: "순위권 없음 N건 재검증 중 — 약 N×4초 예상"
+  //   · 텍스트: "매칭 누락 N건 재검증 중 — 약 N×4초 예상"
   //
   // 'rerun-out-of-range' 라벨이 set 되면 위 분기 적용.
   const jobLabel = progress?.manual_label ?? null
@@ -2281,7 +2283,7 @@ function RankMatrix(props: {
   // 매트릭스 셀이 무작위 순서로 채워져 사용자가 답답해하는 문제 (verbatim:
   // "100% 검증하고 매트릭스에 채우고 있는데 유저 입장에서는 답답해") 를 완화하기 위해
   // 행마다 "3/5 ✓" 식의 배지를 노출. rankMap 에 키가 존재(=DB persist 완료) 하면
-  // 채워진 것으로 간주 — 순위권 없음(null) 도 PlaceRankHistory 행이 있으면 진척으로 본다.
+  // 채워진 것으로 간주 — 매칭 누락(null) 도 PlaceRankHistory 행이 있으면 진척으로 본다.
   const perPlaceCompletion = useMemo(() => {
     const map: Record<number, { filled: number; total: number }> = {}
     for (const p of items) {
@@ -2299,21 +2301,21 @@ function RankMatrix(props: {
 
   // ── Phase 8: 매트릭스 통계 ──────────────────────────────────────
   // A) 검증 진행: 전체 셀(=업체 × 등록키워드) 중 검증 완료/미검증
-  // C) 순위 분포: 1위/2위/3위/4위/5위/6~10위/11~20위/순위권없음 buckets
+  // C) 순위 분포: 1위/2위/3위/4위/5위/6~10위/11~20위/매칭누락 buckets
   // D) 업체 단위 요약: 모든 키워드 1~3위 / 부분 노출 (일부만 top 20) / 전혀 안 잡힘
   //
   // 모두 rankMap 만으로 계산 — 추가 API 호출 0회. items 또는 rankMap 변경 시만 재계산.
   const matrixStats = useMemo(() => {
     // A: 전체 셀 = sum of (each place의 tracking_keywords 개수)
     let totalCellsAll = 0
-    let checked = 0 // rank 값이 있거나 999(순위권 없음 sentinel) 포함 — null 만 미검증
+    let checked = 0 // rank 값이 있거나 999(매칭 누락 sentinel) 포함 — null 만 미검증
     let unchecked = 0
     // C: rank 분포 (검증된 셀만 카운트)
     const buckets = { r1: 0, r2: 0, r3: 0, r4: 0, r5: 0, r6_10: 0, r11_20: 0, out: 0 }
     // D: 업체 단위
     let bizAllTop3 = 0 // 모든 키워드가 1~3위
     let bizPartial = 0 // 일부만 top 20
-    let bizNone = 0 // 전체가 순위권 없음 (검증된 키워드 기준)
+    let bizNone = 0 // 전체가 매칭 누락 (검증된 키워드 기준)
     // E: 키워드 단위 — 키워드별 총/검증/1위/5위↓/없음 카운트 + 최고/평균/노출률
     //    분포는 4 그룹으로 압축: top1 / top2-5 / top6-20 / out (none)
     //    노출률 = top20 검증된 셀 / 그 키워드를 추적하는 업체수 (등록 기준)
@@ -2323,7 +2325,7 @@ function RankMatrix(props: {
       top1: number
       top2_5: number
       top6_20: number
-      out: number // 순위권 없음 (검증된 것만)
+      out: number // 매칭 누락 (검증된 것만)
       sumRank: number // top20 안에 든 셀들의 rank 합 (평균 계산용)
       bestRank: number | null // 1..20 중 최솟값
     }
@@ -2363,7 +2365,7 @@ function RankMatrix(props: {
         bizCheckedCount += 1
         perKw[kw].checked += 1
         // r === null   → 검증은 됐으나 PlaceRankHistory 가 null (이전 정책 잔재. mobile route 정책에선 999 sentinel 사용)
-        // r === 999    → top 20 밖 (순위권 없음)
+        // r === 999    → top 20 밖 (매칭 누락)
         // 1 <= r <= 20 → 순위
         if (r == null || r > 20) {
           buckets.out += 1
@@ -2434,11 +2436,11 @@ function RankMatrix(props: {
         ? `자동 정리 R${autoRerun.round}/${autoRerun.maxRounds} (${jobTargetTotal}건)`
         : `자동 정리 R${autoRerun.round}/${autoRerun.maxRounds} 준비 중...`
       btnTitle =
-        '순위권 없음 셀을 자동으로 여러 번 재검증해 정리 중입니다. ' +
+        '매칭 누락 셀을 자동으로 여러 번 재검증해 정리 중입니다. ' +
         `최대 ${autoRerun.maxRounds}회 반복하며 셀 수가 더 이상 줄지 않으면 자동 종료됩니다.`
     } else if (isRerunJob) {
       btnLabel = `재검증 중... (${jobTargetTotal}건)`
-      btnTitle = '순위권 없음 셀만 백그라운드에서 재검증 중입니다.'
+      btnTitle = '매칭 누락 셀만 백그라운드에서 재검증 중입니다.'
     } else {
       btnLabel = totalCells > 0 ? `검증 중... (${filledCells}/${totalCells} 셀)` : '검증 중...'
       btnTitle = '백그라운드에서 검증이 진행 중입니다. 완료될 때까지 다시 누를 수 없습니다.'
@@ -2473,7 +2475,8 @@ function RankMatrix(props: {
               {btnLabel}
             </button>
           )}
-          {/* 2026-05-16 — "순위권 없음 N건 재검증" 버튼.
+          {/* 2026-05-16 — "매칭 누락 N건 재검증" 버튼.
+              [2026-05-18] UX 표현 변경: '순위권 없음' → '매칭 누락' (DB out_of_range 플래그는 동일).
               매트릭스에서 out_of_range=True 로 잡힌 셀들이 대부분 검증 당시의
               일시 오류(네이버 IP 차단, 페이지 로딩 실패) 로 인한 false positive 라는
               관찰에 따라, 그 셀들의 place 만 골라 다시 검증한다. 백엔드는
@@ -2487,7 +2490,7 @@ function RankMatrix(props: {
               disabled={manualChecking}
               className="text-xs font-semibold px-3 py-1.5 rounded-md bg-amber-500 text-white hover:bg-amber-600 inline-flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
               title={
-                '매트릭스에 "순위권 없음" 으로 잡힌 셀들을 다시 검증합니다. ' +
+                '매트릭스에 "매칭 누락" 으로 잡힌 셀들을 다시 검증합니다. ' +
                 '대부분 검증 당시의 일시 오류(네이버 차단 등) 라서 재검증하면 실제 순위가 잡힐 가능성이 높습니다.'
               }
             >
@@ -2496,11 +2499,11 @@ function RankMatrix(props: {
               ) : (
                 <RefreshCw size={12} />
               )}
-              순위권 없음 {matrixStats.buckets.out}건 재검증
+              매칭 누락 {matrixStats.buckets.out}건 재검증
             </button>
           )}
           {/* 2026-05-17 — 중지 버튼.
-              "지금 검증" 또는 "순위권 없음 재검증" 이 백그라운드에서 돌아가는 동안만
+              "지금 검증" 또는 "매칭 누락 재검증" 이 백그라운드에서 돌아가는 동안만
               표시. 누르면 POST /cancel → 워커가 다음 셀부터 빠르게 종료된다.
               다시 시작은 별도 버튼이 아니라 "지금 검증" 버튼이 다시 활성화되면 그대로 누르면 됨. */}
           {onCancel && manualChecking && (
@@ -2548,7 +2551,7 @@ function RankMatrix(props: {
                     ? `자동 정리 라운드 ${autoRerun.round}/${autoRerun.maxRounds} — 남은 ${jobTargetTotal}건 재검증 중`
                     : `자동 정리 라운드 ${autoRerun.round}/${autoRerun.maxRounds} — 다음 라운드 준비 중...`
                   : isRerunJob
-                    ? `순위권 없음 ${jobTargetTotal}건 재검증 중 — 잠시만 기다려주세요`
+                    ? `매칭 누락 ${jobTargetTotal}건 재검증 중 — 잠시만 기다려주세요`
                     : chunkPhase?.phase === 'naver_paused'
                       ? `네이버 일시차단 감지 — 자동 재개 대기 중 (청크 ${chunkPhase.current}/${chunkPhase.total})`
                       : chunkPhase?.phase === 'cooldown'
@@ -2682,7 +2685,7 @@ function RankMatrix(props: {
                 11~20위 <b>{matrixStats.buckets.r11_20}</b>
               </span>
               <span className="px-1.5 py-0.5 rounded bg-rose-100 text-rose-800 font-mono">
-                순위권 없음 <b>{matrixStats.buckets.out}</b>
+                매칭 누락 <b>{matrixStats.buckets.out}</b>
               </span>
             </div>
           )}
@@ -3284,7 +3287,7 @@ function MultiLineChart(props: { series: KeywordSeriesEntry[] }) {
                 {ln.lastRank}위
               </span>
             ) : (
-              <span className="text-rose-600 font-semibold">순위권 없음</span>
+              <span className="text-rose-600 font-semibold">매칭 누락</span>
             )}
           </div>
         ))}
@@ -3387,7 +3390,7 @@ function PlaceDetailModal(props: {
     const byKw = new Map(history.series.map((s) => [s.keyword, s.points]))
     return place.tracking_keywords.map((kw) => {
       const pts = byKw.get(kw) ?? []
-      const filled = pts.filter((p) => p.rank != null) // 순위권 없음이어도 out_of_range로 표기됨
+      const filled = pts.filter((p) => p.rank != null) // 매칭 누락이어도 out_of_range로 표기됨
       const last = pts[pts.length - 1] ?? null
       const latest = last?.rank ?? null
       const latestOOR = !!last?.out_of_range
@@ -3435,7 +3438,7 @@ function PlaceDetailModal(props: {
     if (oor || (rank != null && rank > 20)) {
       return (
         <span className="px-2 py-0.5 rounded font-bold text-xs bg-rose-100 text-rose-700">
-          순위권 없음
+          매칭 누락
         </span>
       )
     }
@@ -3713,7 +3716,7 @@ function PlaceDetailModal(props: {
                   </tbody>
                 </table>
                 <p className="text-[11px] text-ink-2 mt-2">
-                  ▲ 상승(과거보다 좋은 순위) · ▼ 하락 · 순위권 없음은 비교에서
+                  ▲ 상승(과거보다 좋은 순위) · ▼ 하락 · 매칭 누락은 비교에서
                   제외됨. 행 클릭 시 그 키워드의 동×키워드 검색 결과 1~20위가
                   펼쳐집니다.
                 </p>
@@ -3795,7 +3798,7 @@ function CompetitionList(props: { comp: CompetitionResponse }) {
             </span>
           ) : (
             <span className="px-1.5 py-0.5 rounded font-bold bg-rose-100 text-rose-700">
-              순위권 없음
+              매칭 누락
             </span>
           )}
         </div>

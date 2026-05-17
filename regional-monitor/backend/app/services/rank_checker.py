@@ -412,7 +412,7 @@ async def _search_and_rank(
     가드를 우회해 강제로 호출한다. /rerun-out-of-range 자동 반복 루프 전용.
     """
     # [2026-05-16] Playwright 기반 search_map 은 항상 top 20 만 반환 (display 인자 무시).
-    # rank 1~20 안에 없으면 "순위권 없음" (= out_of_range) 으로 표시.
+    # rank 1~20 안에 없으면 "매칭 누락" (= out_of_range, UX 문구만 변경) 으로 표시.
     res = await search_map(
         query, display=20, client=client,
         bypass_circuit_breaker=bypass_circuit_breaker,
@@ -922,7 +922,7 @@ async def run_rank_check_for_cells(
     """주어진 (place_pk, keyword) 셀 리스트만 정확히 재검증한다 (2026-05-16).
 
     [목적]
-      "순위권 없음" 으로 잡힌 특정 셀들만 재검증하고 싶을 때 사용한다.
+      "매칭 누락" 으로 잡힌 특정 셀들만 재검증하고 싶을 때 사용한다.
       run_rank_check_for_places 는 place 의 모든 keyword 를 검증해버리므로,
       예를 들어 한 place 에 keyword 가 5개 등록되어 있고 그 중 1개만
       재검증 대상이어도 5개 전부 다시 돌게 된다 (불필요한 Naver 호출).

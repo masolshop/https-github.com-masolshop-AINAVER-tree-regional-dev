@@ -245,8 +245,9 @@ export interface ManualRankCheckResponse {
   message: string | null
 }
 
-/* ─────────── 순위권 없음 셀 재검증 (2026-05-16) ───────────
- * 매트릭스 "순위권 없음 N" 으로 집계된 셀들 중 상당수가 실제 20위권 밖이 아니라
+/* ─────────── 매칭 누락 셀 재검증 (2026-05-16) ───────────
+ * [2026-05-18] UX 문구 변경: '순위권 없음' → '매칭 누락' (DB out_of_range 플래그는 동일)
+ * 매트릭스 "매칭 누락 N" 으로 집계된 셀들 중 상당수가 실제 20위권 밖이 아니라
  * 검증 당시의 일시 오류 (네이버 IP 차단, 페이지 로딩 실패 등) 로 인해
  * out_of_range=True 로 저장된 케이스. 이 버튼은 그 셀들의 place 를 재검증한다.
  */
@@ -332,7 +333,7 @@ export const triggerManualRankCheck = (placeIds: number[] = []) =>
     { timeoutMs: 30_000 },
   )
 
-/** 순위권 없음 셀 재검증 — 최근 7일 내 out_of_range=True 인 본인 셀 전체. */
+/** 매칭 누락 셀 재검증 — 최근 7일 내 out_of_range=True 인 본인 셀 전체. */
 export const triggerRerunOutOfRange = () =>
   api.post<RerunOutOfRangeResponse>(
     '/api/v1/rank-tracker/rerun-out-of-range',
