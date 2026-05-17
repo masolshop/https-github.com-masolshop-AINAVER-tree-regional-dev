@@ -246,9 +246,13 @@ export interface ManualRankCheckResponse {
  * out_of_range=True 로 저장된 케이스. 이 버튼은 그 셀들의 place 를 재검증한다.
  */
 export interface RerunOutOfRangeResponse {
-  started: number          // 재검증 큐에 들어간 place 수
-  cells_to_recheck: number // 대상 (place, keyword) 셀 누계 (참고용)
+  started: number          // 재검증 큐에 들어간 셀 수 (= cells_to_recheck)
+  cells_to_recheck: number // 자동 재검증 대상 (매칭 오류 의심 셀 제외)
   message: string | null
+  // [2026-05-17 v4] 종료 토스트에서 "85건의 진짜 정체" 를 분해 표시
+  unverified_count?: number   // 매칭 오류(DONG/PHONE_MISMATCH/DEAD) — 재매칭 필요
+  null_total_count?: number   // total_results=NULL (네이버 호출 실패 의심)
+  real_oor_count?: number     // total_results>0 (진짜 20위 밖일 가능성)
 }
 
 /* ─────────── 진행 상태 (업로드 후 폴링용) ─────────── */

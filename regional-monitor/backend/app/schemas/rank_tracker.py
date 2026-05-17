@@ -462,10 +462,19 @@ class ManualRankCheckResponse(BaseModel):
 #   실제 순위가 잡힘. 따라서 out_of_range=True 전체를 대상으로 함.
 # ─────────────────────────────────────────────────────────
 class RerunOutOfRangeResponse(BaseModel):
-    """순위권 없음 셀 재검증 트리거 응답."""
-    started: int                # 백그라운드 큐에 들어간 place 수
-    cells_to_recheck: int       # 대상이 된 (place, keyword) 셀 누계 (참고용)
+    """순위권 없음 셀 재검증 트리거 응답.
+
+    [2026-05-17 v4] 자동 정리 루프가 "85 → 85 stop" 으로 종료될 때 사용자에게
+    그 85건이 정확히 무엇인지(미검증 / NULL total / 진짜 20위 밖) 분해해서
+    보여주기 위해 카운트를 세분화. 프론트는 이 값을 종료 토스트에 표시.
+    """
+    started: int                # 백그라운드 큐에 들어간 셀 수 (= cells_to_recheck)
+    cells_to_recheck: int       # 자동 재검증 대상 셀 (매칭 오류 의심 셀 제외)
     message: str | None = None
+    # ↓ v4 분해 카운트
+    unverified_count: int = 0       # 매칭 오류(DONG/PHONE_MISMATCH/DEAD) — 재매칭 필요
+    null_total_count: int = 0       # 자동 재검증 대상 중 total_results=NULL (네이버 호출 실패 의심)
+    real_oor_count: int = 0         # 자동 재검증 대상 중 total_results>0 (진짜 20위 밖일 가능성)
 
 
 # ─────────────────────────────────────────────────────────

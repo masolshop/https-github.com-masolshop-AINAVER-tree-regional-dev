@@ -539,14 +539,26 @@ export default function RankTracker() {
           break
         }
 
+        // [2026-05-17 v4] 백엔드 분해 카운트 — 종료 토스트에서 사용자에게
+        // "남은 셀의 진짜 정체"를 명확히 알려주기 위함.
+        const mismatchN = resp.unverified_count ?? 0
+        const nullTotalN = resp.null_total_count ?? 0
+        const realOorN = resp.real_oor_count ?? 0
+        // 매칭 오류 의심 셀이 있으면 따로 안내
+        const mismatchSuffix = mismatchN > 0
+          ? ` 또한 매칭 오류 의심 ${mismatchN}건은 자동 재검증 대상에서 제외 — ` +
+            '매트릭스에서 해당 업체를 클릭해 재매칭해주세요.'
+          : ''
+
         if (resp.started === 0) {
-          // 더 이상 재검증할 셀 없음 → 완료
+          // 더 이상 자동 재검증할 정상 셀 없음 → 완료
           console.log(`[autoRerun] started=0 at round ${round} → completion`)
           if (round === 1) {
             showToast(resp.message ?? '재검증 대상이 없습니다.')
           } else {
             showToast(
-              `자동 정리 완료 — 총 ${round - 1}회 재검증으로 순위권 없음 셀을 정리했습니다.`,
+              `자동 정리 완료 — 총 ${round - 1}회 재검증으로 순위권 없음 셀을 정리했습니다.` +
+              mismatchSuffix,
             )
           }
           break
@@ -555,17 +567,24 @@ export default function RankTracker() {
         const currentOut = resp.cells_to_recheck
 
         // 종료 조건: 직전 라운드보다 줄지 않았으면 자동화 중단
-        // (round=1 은 비교 대상 없음 — roundStartOutCount=-1 이면 skip)
         if (round > 1 && roundStartOutCount >= 0 && currentOut >= roundStartOutCount) {
           console.log(
             `[autoRerun] count not decreasing (prev=${roundStartOutCount} → curr=${currentOut}) → stop`,
           )
-          // [2026-05-17 v3] 백엔드는 /rerun-out-of-range 에서 회로차단을 우회하지만,
-          // 그래도 카운트가 줄지 않는다면 실제 20위 밖 셀로 판단된다.
+          // [2026-05-17 v4] 남은 셀의 정체를 분해해서 보여준다.
+          //   - real_oor_count : 진짜 20위 밖 (정상 동작)
+          //   - null_total_count : 네이버 호출 실패 (재시도 가치 있음)
+          //   - mismatchN       : 매칭 오류 → 재매칭 필요 (이미 풀에서 제외됨)
+          const parts: string[] = []
+          if (realOorN > 0) parts.push(`진짜 20위 밖 ${realOorN}건`)
+          if (nullTotalN > 0) parts.push(`검증 실패 ${nullTotalN}건`)
+          const breakdown = parts.length > 0
+            ? ` (${parts.join(' / ')})`
+            : ''
           showToast(
-            `자동 정리 완료 — 라운드 ${round - 1}회 반복 후 남은 ${currentOut}건은 ` +
-            '실제 20위 밖 셀로 판단되어 자동 반복을 종료합니다. ' +
-            '필요하면 "지금 검증" 으로 전체 재검증을 시도해보세요.',
+            `자동 정리 완료 — ${round - 1}회 반복 후 남은 ${currentOut}건${breakdown}은 ` +
+            '더 이상 줄어들지 않아 자동 반복을 종료합니다.' +
+            mismatchSuffix,
           )
           break
         }
@@ -573,9 +592,18 @@ export default function RankTracker() {
         roundStartOutCount = currentOut
 
         if (round === 1) {
-          showToast(
-            `자동 정리 시작 — 순위권 없음 ${currentOut}건을 최대 ${MAX_ROUNDS}회까지 자동 재검증합니다.`,
-          )
+          // round=1 응답에 매칭 오류 안내가 백엔드 message 에 포함되므로 그대로 사용.
+          // (현장 데이터: "85건 중 6건은 재매칭 필요" 같은 케이스를 사용자에게 즉시 전달)
+          if (mismatchN > 0) {
+            showToast(
+              `자동 정리 시작 — ${currentOut}건 재검증 (매칭 오류 의심 ${mismatchN}건 제외). ` +
+              `최대 ${MAX_ROUNDS}회까지 반복.`,
+            )
+          } else {
+            showToast(
+              `자동 정리 시작 — 순위권 없음 ${currentOut}건을 최대 ${MAX_ROUNDS}회까지 자동 재검증합니다.`,
+            )
+          }
         } else {
           showToast(
             `라운드 ${round}/${MAX_ROUNDS} — 남은 ${currentOut}건 재검증 중...`,

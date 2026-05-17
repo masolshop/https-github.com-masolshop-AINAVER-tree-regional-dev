@@ -77,6 +77,153 @@ def _has_rural_tokens(dong: str) -> bool:
     return any(_is_rural_token(t) for t in dong.strip().split())
 
 
+# ─────────────────────────────────────────────────────────
+# [2026-05-17 v5] full_address 기반 동 추출
+#
+# 사용자 진단 (검증 완료):
+#   "리스트 주소(매칭 주소)와 순위 검증 주소가 다르면 순위가 안 나옴"
+#   - 등록동: "전남 완도군 약산면 가래리"  → 네이버 검색 0건
+#   - 매칭주소: "전남 완도군 약산면 장용리" → target place_id 1위
+#
+# 즉 사용자가 엑셀에 적은 `registered_dong` 은 영업동(영업권역)이지만,
+# 네이버 플레이스에 등록된 실제 주소는 `full_address` 다. 네이버는 항상
+# `full_address` 기준으로 검색결과 색인을 한다. 그러므로 우리도
+# **full_address 에서 추출한 "시도 시군구 읍/면/동 [리]" 토큰**으로 검색해야
+# 그 place_id 가 안정적으로 잡힌다.
+#
+# 단, full_address 가 도로명+번지만 있는 경우 (예: "서울 영등포구 선유로49길 10-1")
+# 동/리 토큰이 없으므로 `registered_dong` 으로 fallback. 이때는 사실 사용자가
+# 엑셀에 잘못된 매칭을 잡았을 가능성이 매우 높음 (다른 지역 업체의 place_id).
+# ─────────────────────────────────────────────────────────
+_DONG_SUFFIXES = ("동", "리", "가")     # "충장로1가" 같은 케이스 포함
+_EUPMYEON_SUFFIXES = ("읍", "면")
+_SIGUNGU_SUFFIXES = ("시", "군", "구")
+_SIDO_SUFFIXES = ("도", "시", "특별시", "광역시", "특별자치시", "특별자치도")
+# 네이버가 full_address 에 사용하는 약식 시도명 (suffix 매칭 안 됨)
+_SIDO_SHORT_NAMES = frozenset({
+    "서울", "부산", "대구", "인천", "광주", "대전", "울산", "세종",
+    "경기", "강원", "충북", "충남", "전북", "전남", "경북", "경남", "제주",
+})
+
+
+def _is_sido_token(tok: str) -> bool:
+    if not tok:
+        return False
+    t = tok.strip()
+    return t in _SIDO_SHORT_NAMES or t.endswith(_SIDO_SUFFIXES)
+
+
+def _is_dong_token(tok: str) -> bool:
+    """토큰이 동/리/가 (행정동 단위) 인지 판별. 예: '산막동', '장용리', '충장로1가'.
+
+    한글 토큰만 인정. 도로명+번지 ('선유로49길 10-1') 의 '10-1' 같은 건 False.
+    """
+    if not tok:
+        return False
+    t = tok.strip()
+    if not t:
+        return False
+    # 도로명 (로/길) 이면 동이 아님
+    if t.endswith(("로", "길", "대로", "거리")):
+        return False
+    # 한글이 아예 없으면 번지/숫자 토큰
+    if not any('\uac00' <= ch <= '\ud7a3' for ch in t):
+        return False
+    # 도/시/군/구는 행정 상위. 동 단위가 아님.
+    if t in _SIDO_SHORT_NAMES or t.endswith(_SIDO_SUFFIXES) or t.endswith(_SIGUNGU_SUFFIXES):
+        return False
+    return t.endswith(_DONG_SUFFIXES) or t.endswith(_EUPMYEON_SUFFIXES)
+
+
+def extract_dong_from_address(full_address: str | None) -> str:
+    """`full_address` 에서 검색용 "시도 시군구 읍/면/동 [리]" 토큰만 추출.
+
+    네이버에 그 place_id 가 등록된 실제 주소(`full_address`) 기준으로 검색해야
+    안정적으로 잡히기 때문 (사용자 진단 + Playwright 실측 확인).
+
+    동작:
+      "광주 광산구 산막동"             → "광주 광산구 산막동"
+      "전남 완도군 약산면 장용리"       → "전남 완도군 약산면 장용리"
+      "서울 영등포구 선유로49길 10-1"   → "" (도로명만 — 동 토큰 없음)
+      "광주 광산구 하남대로 100"        → "광주 광산구"  (시군구만)
+      "" / None                          → ""
+
+    추출 규칙:
+      1) 공백 분해.
+      2) 첫 토큰이 시도(도/시 suffix), 두번째가 시군구(시/군/구 suffix) 면 채택.
+      3) 그 뒤로 행정동(읍/면/동/리/가) 토큰이 있으면 **연속으로** 채택.
+         읍/면 다음 리가 있으면 같이 (예: "약산면 장용리" → 둘 다 포함).
+      4) 도로명/번지 토큰이 나오면 거기서 중단.
+
+    Returns:
+        검색 쿼리 prefix 로 바로 쓸 수 있는 공백 join 문자열.
+        동 토큰을 하나라도 못 찾으면 시도+시군구만 반환 (wide fallback).
+        그것도 없으면 빈 문자열.
+    """
+    if not full_address:
+        return ""
+    raw = full_address.strip()
+    if not raw:
+        return ""
+    tokens = raw.split()
+    if not tokens:
+        return ""
+
+    # 1) 시도 (전체명 "전라남도" 또는 약식 "전남" 모두 인정)
+    out: list[str] = []
+    i = 0
+    if _is_sido_token(tokens[i]):
+        out.append(tokens[i])
+        i += 1
+    # 2) 시군구 — 특례시/광역시 2단 구조 지원
+    #    "경남 창원시 성산구 중앙동" → 시군구 토큰 2개 (창원시 + 성산구)
+    #    "서울 강남구 역삼동"       → 시군구 토큰 1개 (강남구)
+    sigungu_count = 0
+    while i < len(tokens) and sigungu_count < 2:
+        if tokens[i].endswith(_SIGUNGU_SUFFIXES):
+            out.append(tokens[i])
+            i += 1
+            sigungu_count += 1
+            continue
+        break
+    # 3) 행정동 / 읍면+리 (최대 2개까지: 읍/면 + 리)
+    dong_count = 0
+    while i < len(tokens) and dong_count < 2:
+        t = tokens[i]
+        if _is_dong_token(t):
+            out.append(t)
+            dong_count += 1
+            i += 1
+            continue
+        # 동 토큰이 아니면 (도로명/번지) → 중단
+        break
+
+    # 동을 하나도 못 찾았는데 시도+시군구만 있으면 그대로 반환 (시군구 레벨 검색).
+    return " ".join(out).strip()
+
+
+def _resolve_dong_for_search(
+    *,
+    registered_dong: str | None,
+    full_address: str | None,
+) -> str:
+    """순위 검색에 사용할 dong 문자열을 결정.
+
+    우선순위:
+      1) full_address 에서 동 토큰을 추출 가능 → 그것 사용 (네이버 실제 등록 주소)
+      2) full_address 가 도로명만 있는 등 동 추출 실패 → registered_dong 으로 fallback
+      3) 둘 다 없으면 "" 반환 → 호출자가 skip
+
+    이 변경이 [2026-05-17 v5] "85건 누수" 의 핵심 수정. 사용자 엑셀의 등록동과
+    네이버 플레이스 실제 주소가 달라도, 검색이 항상 후자 기준으로 일어나므로
+    안정적으로 순위가 잡힌다.
+    """
+    from_addr = extract_dong_from_address(full_address)
+    if from_addr:
+        return from_addr
+    return (registered_dong or "").strip()
+
+
 def _build_query(*, dong: str, keyword: str, wide: bool = False) -> str:
     """등록동 + 키워드 조합 쿼리.
 
@@ -402,15 +549,36 @@ async def run_rank_check_for_places(
         check_date = now_kst().date()
 
     # 1) 작업 목록 펼치기: (place_pk, place_id, dong, keyword)
+    #
+    # [2026-05-17 v5] dong 결정 정책 변경:
+    #   - 이전: registered_dong (사용자가 엑셀에 적은 영업동) 만 사용
+    #   - 현재: full_address(네이버 플레이스 실제 등록 주소)에서 동을 추출.
+    #           full_address 가 도로명/번지만 있으면 registered_dong 으로 fallback.
+    # 이유: 네이버 검색결과 색인은 full_address 기준이므로, 그쪽으로 쿼리해야
+    #       해당 place_id 가 안정적으로 잡힌다. 진단 결과 user_id=12 의 "85건 누수"
+    #       중 명확히 4건이 이 누수 (등록=가래리 vs 매칭=장용리 → 장용리로 검색하면 1위).
     tasks: list[tuple[int, str, str, str]] = []
+    dong_overrides = 0
     for p in places:
         if not p.place_id:
             continue
-        dong = (p.registered_dong or "").strip()
+        reg_dong = (p.registered_dong or "").strip()
+        full_addr = (getattr(p, "full_address", None) or "").strip()
+        dong = _resolve_dong_for_search(
+            registered_dong=reg_dong,
+            full_address=full_addr,
+        )
         if not dong:
             continue
+        if reg_dong and dong != reg_dong:
+            dong_overrides += 1
         for kw in _split_tracking_keywords(p.tracking_keywords):
             tasks.append((p.id, p.place_id, dong, kw))
+    if dong_overrides:
+        log.info(
+            "run-rank-check: full_address-based dong override applied for %d places",
+            dong_overrides,
+        )
 
     # 2) 작업 실행 — 리팩토링 (2026-05-16):
     #    "셀 단위" 재검증 경로(run_rank_check_for_cells)와 워커 로직을 공유하기 위해
@@ -668,7 +836,8 @@ async def run_rank_check_for_cells(
             "circuit_skipped": 0,
         }
 
-    # 1) place_pk → (place_id, dong) 매핑을 한 번에 fetch
+    # 1) place_pk → (place_id, registered_dong, full_address) 매핑을 한 번에 fetch
+    #    [2026-05-17 v5] full_address 도 함께 fetch — 동 추출 우선 소스.
     place_pks = sorted({pk for (pk, _kw) in cell_list})
     async with AsyncSessionLocal() as fdb:
         q = await fdb.execute(
@@ -676,30 +845,45 @@ async def run_rank_check_for_cells(
                 RegisteredPlace.id,
                 RegisteredPlace.place_id,
                 RegisteredPlace.registered_dong,
+                RegisteredPlace.full_address,
             ).where(RegisteredPlace.id.in_(place_pks))
         )
-        meta = {
-            int(pk): (pid, (dg or "").strip())
-            for (pk, pid, dg) in q.all()
-        }
+        # meta[pk] = (place_id, search_dong, registered_dong, full_address)
+        meta: dict[int, tuple[str, str, str, str]] = {}
+        for (pk, pid, reg_dong, full_addr) in q.all():
+            search_dong = _resolve_dong_for_search(
+                registered_dong=reg_dong,
+                full_address=full_addr,
+            )
+            meta[int(pk)] = (
+                pid,
+                search_dong,
+                (reg_dong or "").strip(),
+                (full_addr or "").strip(),
+            )
 
     # 2) tasks 생성 — place 자격 미달(없음/place_id 없음/dong 없음)은 skip
     tasks: list[tuple[int, str, str, str]] = []
     skipped_unresolvable = 0
+    dong_overrides = 0  # full_address 기반으로 registered_dong 과 달라진 셀 개수
     for pk, kw in cell_list:
         m = meta.get(int(pk))
         if not m:
             skipped_unresolvable += 1
             continue
-        pid, dong = m
-        if not pid or not dong or not kw:
+        pid, search_dong, reg_dong, full_addr = m
+        if not pid or not search_dong or not kw:
             skipped_unresolvable += 1
             continue
-        tasks.append((int(pk), pid, dong, kw))
+        if reg_dong and search_dong != reg_dong:
+            dong_overrides += 1
+        tasks.append((int(pk), pid, search_dong, kw))
 
     log.info(
-        "rerun-cells dispatching: requested=%d resolvable=%d skipped=%d bypass_cb=%s",
-        len(cell_list), len(tasks), skipped_unresolvable, bypass_circuit_breaker,
+        "rerun-cells dispatching: requested=%d resolvable=%d skipped=%d "
+        "bypass_cb=%s dong_overrides=%d",
+        len(cell_list), len(tasks), skipped_unresolvable,
+        bypass_circuit_breaker, dong_overrides,
     )
 
     return await _run_rank_check_tasks(

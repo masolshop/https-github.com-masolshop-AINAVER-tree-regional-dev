@@ -1859,12 +1859,23 @@ async def rerun_out_of_range(
     #       정확히 1:1 일치하게 됨.
     today = now_kst().date()
     since = today - timedelta(days=7)
+    # [2026-05-17 v4] current_verdict 도 함께 가져와 mismatch 셀을 분리한다.
+    # 누수 분석 (사용자 캡처 분석 + DB 조회) 결과:
+    #   - DONG_MISMATCH / PHONE_MISMATCH / DEAD 상태 셀은 매칭 자체가 잘못됐다.
+    #     예: 등록동 "광주 광산구 송정1동" ↔ 매칭주소 "경남 창원시 성산구 중앙동"
+    #         → 광주 좌표에서 검색해도 해당 place_id 가 나올 리 없음.
+    #   - 이 셀들은 아무리 재검증해도 영원히 out_of_range=True 로 남음
+    #   - 자동정리 루프가 "85 → 85 stop" 으로 종료되는 진짜 원인 중 하나
+    # 해결: 재검증 풀에서 이 mismatch 셀들을 제외하고, 응답에는 별도 카운트로 보고.
+    BAD_VERDICTS = ("DONG_MISMATCH", "PHONE_MISMATCH", "DEAD")
     q = await db.execute(
         select(
             PlaceRankHistory.place_pk,
             PlaceRankHistory.keyword,
             PlaceRankHistory.check_date,
             PlaceRankHistory.out_of_range,
+            PlaceRankHistory.total_results,
+            RegisteredPlace.current_verdict,
         )
         .join(RegisteredPlace, RegisteredPlace.id == PlaceRankHistory.place_pk)
         .where(
@@ -1875,35 +1886,76 @@ async def rerun_out_of_range(
             PlaceRankHistory.check_date >= since,
         )
     )
-    rows = q.all()  # list[Row(place_pk, keyword, check_date, out_of_range)]
+    rows = q.all()
 
     # (place_pk, keyword) → 최신 행 (check_date 기준) 만 남긴다.
-    latest_per_cell: dict[tuple[int, str], tuple[object, bool]] = {}
+    # 보관 형태: (check_date, out_of_range, total_results, current_verdict)
+    latest_per_cell: dict[
+        tuple[int, str],
+        tuple[object, bool, int | None, str | None],
+    ] = {}
     for r in rows:
         key = (int(r.place_pk), str(r.keyword))
         cur = latest_per_cell.get(key)
         if cur is None or r.check_date > cur[0]:
-            latest_per_cell[key] = (r.check_date, bool(r.out_of_range))
+            latest_per_cell[key] = (
+                r.check_date,
+                bool(r.out_of_range),
+                r.total_results,
+                r.current_verdict,
+            )
 
-    # 최신 행이 out_of_range=True 인 셀만 재검증 대상.
+    # 최신 행이 out_of_range=True 인 셀 전체 (=매트릭스의 "순위권 없음 N" 카운트)
+    all_oor = [
+        (key, verdict, total)
+        for key, (_dt, oor, total, verdict) in latest_per_cell.items()
+        if oor
+    ]
+
+    # 재매칭 필요 셀 (잘못 매칭된 place_id) — 재검증 풀에서 분리
+    mismatch_cells = [
+        key for key, verdict, _total in all_oor
+        if verdict in BAD_VERDICTS
+    ]
+    mismatch_count = len(mismatch_cells)
+
+    # 실제 재검증 대상 셀 (verdict 정상)
     cells: list[tuple[int, str]] = [
-        key for key, (_dt, oor) in latest_per_cell.items() if oor
+        key for key, verdict, _total in all_oor
+        if verdict not in BAD_VERDICTS
     ]
 
     cells_to_recheck = len(cells)
-    # "started" 의 의미를 명확히: 재검증 셀 개수 (사용자 카운터와 1:1 매칭)
     started = cells_to_recheck
 
+    # 분해 카운트 — 프론트가 종료 토스트에 표시
+    null_total_count = sum(
+        1 for key, verdict, total in all_oor
+        if verdict not in BAD_VERDICTS and total is None
+    )
+    real_oor_count = sum(
+        1 for key, verdict, total in all_oor
+        if verdict not in BAD_VERDICTS and total is not None
+    )
+
     if cells_to_recheck == 0:
+        # 재검증할 정상 셀은 없지만 mismatch 셀이 있을 수 있으므로 안내.
+        msg_parts = ["재검증 대상 셀이 없습니다."]
+        if mismatch_count > 0:
+            msg_parts.append(
+                f"단, 매칭 오류로 의심되는 셀 {mismatch_count}건이 있습니다 — "
+                "수동 재매칭이 필요합니다."
+            )
         return RerunOutOfRangeResponse(
             started=0,
             cells_to_recheck=0,
-            message="재검증 대상 셀이 없습니다.",
+            message=" ".join(msg_parts),
+            unverified_count=0,
+            null_total_count=0,
+            real_oor_count=0,
         )
 
     # 2) 셀 단위 워커 디스패치 — 정확히 이 cells 만 재검증.
-    #    target_total=cells_to_recheck 를 함께 set → /progress 가 manual_target_total
-    #    필드로 노출 → 프론트가 진행률을 "X / 105 셀" 로 정확히 표시.
     _mark_rank_busy(
         user.id,
         started=cells_to_recheck,
@@ -1912,13 +1964,29 @@ async def rerun_out_of_range(
     )
     background_tasks.add_task(_run_rank_check_for_cells, user.id, cells)
 
-    # place 개수도 참고용으로 계산
     place_count = len({pk for (pk, _kw) in cells})
+
+    msg = (
+        f"순위권 없음 셀 {cells_to_recheck}건 ({place_count}개 업체) 을 재검증합니다."
+    )
+    if mismatch_count > 0:
+        msg += (
+            f" (참고: 매칭 오류 의심 {mismatch_count}건은 자동 재검증 대상에서 "
+            "제외 — 수동 재매칭이 필요합니다.)"
+        )
+
+    log.info(
+        "rerun-out-of-range: user=%s total_oor=%d → recheck=%d "
+        "(mismatch_excluded=%d, null_total=%d, real_oor=%d)",
+        user.id, len(all_oor), cells_to_recheck,
+        mismatch_count, null_total_count, real_oor_count,
+    )
 
     return RerunOutOfRangeResponse(
         started=started,
         cells_to_recheck=cells_to_recheck,
-        message=(
-            f"순위권 없음 셀 {cells_to_recheck}건 ({place_count}개 업체) 을 재검증합니다."
-        ),
+        message=msg,
+        unverified_count=mismatch_count,  # "재매칭 필요" 셀
+        null_total_count=null_total_count,  # 네이버 호출 실패 의심
+        real_oor_count=real_oor_count,      # 진짜 20위 밖
     )
