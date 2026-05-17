@@ -4,6 +4,7 @@
  */
 import { TrendingUp } from 'lucide-react'
 import { SolutionDetailLayout } from './_shared'
+import AdShowcase from '@/components/marketing/AdShowcase'
 
 export default function RankTrackerIntro() {
   return (
@@ -11,6 +12,7 @@ export default function RankTrackerIntro() {
       num="05"
       title="타지역 순위 자동체크 솔루션"
       headerTitle="타지역 순위 자동체크 솔루션"
+      topSlot={<AdShowcase />}
       subtitle={
         <>
           “어제 3위였는데 오늘 갑자기 8위” — 그 순위 하락 한 칸이 콜 절반을 가져갑니다.
@@ -83,6 +85,7 @@ export default function RankTrackerIntro() {
         },
       ]}
       seoPath="/intro/rank-tracker"
+      seoOgImage="https://taziyuk.com/ads/ad-01-dong-rank-check.jpg"
       seoDescription="070전번·등록동·상호 엑셀 한 번 업로드로 네이버 플레이스 자동 매칭 + 매일 동별 노출 순위 자동 추적. 순위 변동 시 즉시 알림."
       seoKeywords={[
         '타지역 순위 자동체크',

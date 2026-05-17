@@ -50,6 +50,14 @@ export interface SolutionDetailProps {
   seoKeywords?: string[]
   /** SEO: 서비스 분류 (예: "키워드 분석") */
   seoServiceType?: string
+  /** SEO: og:image / twitter:image (사이트 기본 OG 대신 사용). 절대 경로 권장 */
+  seoOgImage?: string
+  /**
+   * Hero 카드 바로 위에 렌더되는 임의 React 노드.
+   * 광고 시리즈 갤러리(AdShowcase) 같은 페이지별 추가 콘텐츠를 삽입할 때 사용.
+   * 미지정 시 렌더하지 않는다.
+   */
+  topSlot?: React.ReactNode
 }
 
 export function SolutionDetailLayout(props: SolutionDetailProps) {
@@ -64,6 +72,7 @@ export function SolutionDetailLayout(props: SolutionDetailProps) {
           description={seoDesc}
           path={props.seoPath}
           keywords={props.seoKeywords}
+          ogImage={props.seoOgImage}
           jsonLd={buildServiceJsonLd({
             name: props.title,
             description: seoDesc,
@@ -82,6 +91,9 @@ export function SolutionDetailLayout(props: SolutionDetailProps) {
         }
         subtitleClassName="text-[19px] sm:text-[22px] text-ink-muted mt-1 sm:mt-1.5 leading-relaxed break-keep"
       />
+
+      {/* 페이지별 추가 콘텐츠 슬롯 (예: 광고 시리즈) */}
+      {props.topSlot && <div>{props.topSlot}</div>}
 
       {/* Hero */}
       <Card variant="white" className="relative overflow-hidden">
