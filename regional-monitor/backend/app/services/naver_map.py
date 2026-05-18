@@ -399,46 +399,48 @@ _EXTRACT_JS = r"""
         return KNOWN_CATEGORY_SUFFIXES.some((suf) => s === suf || s.endsWith(suf));
     }
 
-    // ── Apollo state 에서 place_id 별 주소 lookup (competition 솔루션용).
-    //    모바일 라우트에도 __APOLLO_STATE__ 가 존재하며 각 엔티티에 address/
-    //    roadAddress 가 들어 있는 경우가 많다. 키 prefix 는 시기/카테고리에
-    //    따라 다르므로 다중 prefix 후보를 모두 시도.
+    // ── 카드 텍스트에서 주소 라인 추출 (competition 솔루션용).
+    //    검증 결과 모바일 라우트의 __APOLLO_STATE__ 는 빈 객체로 노출되어
+    //    Apollo lookup 은 불가. 그러나 li 카드의 innerText 에는 주소가
+    //    한 줄로 명확히 노출된다:
+    //        "흥신소심부름센터"          ← name
+    //        "현재 위치에서"            ← noise
+    //        "6.6km"                  ← distance (km/m)
+    //        "서울 서초구 잠원동"         ← ★ 우리가 원하는 주소 라인
+    //        "상세주소 열기"             ← noise
+    //        "전화", "길찾기", "공유"     ← noise
+    //
+    //    패턴: 시·도 짧은 토큰(서울/부산/대구/...) 으로 시작 + 공백 + 시군구
+    //    + 공백 + 동/리/가/면/읍 으로 끝나는 마지막 토큰.
     //    RankTracker 에는 영향 없음 (address 필드를 사용하지 않음).
-    const apollo = (typeof window !== 'undefined' && window.__APOLLO_STATE__) ? window.__APOLLO_STATE__ : null;
-    const APOLLO_KEY_PREFIXES = [
-        'PlaceListBusinessesItem:',
-        'PlaceSummary:',
-        'RestaurantListSummary:',
-        'HairshopListSummary:',
-        'BeautyServiceSummary:',
-        'AccommodationListSummary:',
-        'Business:',
+    const SIDO_TOKENS = [
+        '서울', '부산', '대구', '인천', '광주', '대전', '울산', '세종',
+        '경기', '강원', '충북', '충남', '전북', '전남', '경북', '경남', '제주',
     ];
-    function lookupApolloEntity(pid) {
-        if (!apollo || !pid) return null;
-        for (const pref of APOLLO_KEY_PREFIXES) {
-            const ent = apollo[pref + pid];
-            if (ent) return ent;
-        }
-        // fallback: scan all keys ending with ':<pid>' once (cheap — Apollo는 보통 < 200 keys)
-        const suffix = ':' + pid;
-        for (const k of Object.keys(apollo)) {
-            if (k.endsWith(suffix)) {
-                const ent = apollo[k];
-                if (ent && typeof ent === 'object') return ent;
+    const SIDO_RE = new RegExp('^(' + SIDO_TOKENS.join('|') + ')\\s+\\S+');
+    const ADDR_TAIL_RE = /(동|리|가|면|읍)$/;  // 마지막 토큰이 행정구역 단위
+    const NOISE_PHRASES = ['상세주소', '현재 위치', '전화', '길찾기', '공유', '리뷰', '저장', '예약', '주문', '광고'];
+
+    function extractAddressLine(lines) {
+        // 모든 라인 중 '시도 + ... + 동/리/가/면/읍' 패턴에 가장 잘 맞는 라인 선택.
+        // 짧은(≤30자) 라인만 후보로 — 카테고리 합쳐진 긴 라인 제외.
+        for (const raw of lines) {
+            const ln = (raw || '').trim();
+            if (!ln || ln.length > 40 || ln.length < 5) continue;
+            if (NOISE_PHRASES.some((p) => ln.includes(p))) continue;
+            if (!SIDO_RE.test(ln)) continue;
+            // 마지막 토큰이 동/리/가/면/읍 으로 끝나야 함 (단, 번지가 붙어
+            // "서울 서초구 방배동 123-4" 같은 경우는 마지막 토큰이 숫자라
+            // 도로명/지번 둘 다 허용 — 두 번째 마지막 토큰까지 확인).
+            const tokens = ln.split(/\s+/);
+            if (tokens.length < 3) continue;
+            const lastTok = tokens[tokens.length - 1];
+            const prevTok = tokens[tokens.length - 2] || '';
+            if (ADDR_TAIL_RE.test(lastTok) || ADDR_TAIL_RE.test(prevTok) || /\d/.test(lastTok)) {
+                return ln;
             }
         }
-        return null;
-    }
-    function extractAddressFromEntity(ent) {
-        if (!ent) return { address: '', roadAddress: '' };
-        // 다양한 표기 후보 — Apollo 스키마 변화에 대응
-        const addr = ent.address || ent.fullAddress || ent.commonAddress || ent.jibunAddress || '';
-        const road = ent.roadAddress || ent.newAddress || '';
-        return {
-            address: typeof addr === 'string' ? addr : '',
-            roadAddress: typeof road === 'string' ? road : '',
-        };
+        return '';
     }
 
     const out = [];
@@ -506,10 +508,13 @@ _EXTRACT_JS = r"""
             }
         }
 
-        // ── 4차 보조: Apollo state lookup 으로 address/roadAddress 채움.
-        //    competition 솔루션이 동/리 prefix 매칭에 사용 — RankTracker 는 무시.
-        const apolloEnt = lookupApolloEntity(pid);
-        const { address: apolloAddr, roadAddress: apolloRoad } = extractAddressFromEntity(apolloEnt);
+        // ── 4차 보조: 카드 텍스트에서 주소 라인 추출 (competition 솔루션용).
+        //    li 의 모든 텍스트 라인을 훑어 "시·도 + ... + 동/리/가/면/읍"
+        //    패턴에 매칭되는 라인을 채택. roadAddress 는 모바일 카드에서
+        //    노출되지 않으므로 빈 문자열로 둔다 (is_other_region 은 address
+        //    한 쪽만으로도 동작).
+        const liLines = fullText.split('\n').map((s) => s.trim()).filter(Boolean);
+        const addrLine = extractAddressLine(liLines);
 
         out.push({
             idx,
@@ -517,14 +522,13 @@ _EXTRACT_JS = r"""
             name,
             category,
             isAd,
-            address: apolloAddr,
-            roadAddress: apolloRoad,
+            address: addrLine,
+            roadAddress: '',
         });
     });
     return {
         items: out,
         total: lis.length,
-        apolloLoaded: apollo != null,
     };
 };
 """
@@ -723,15 +727,14 @@ async def _do_search(query: str) -> MapSearchResult:
                 elapsed_ms=int((time.time() - t0) * 1000),
             )
 
-        # ── 진단 로그 (competition 솔루션 address lookup 모니터링용).
-        #    Apollo 비로드 / address 채움률 0% 등을 한 줄 INFO 로 남겨
+        # ── 진단 로그 (competition 솔루션 address 추출 모니터링용).
+        #    address 채움률이 0% 가 되면 카드 DOM 구조가 바뀐 신호.
         #    Lightsail 에서 grep 으로 빠르게 가시화.
         try:
-            apollo_loaded = bool((data or {}).get("apolloLoaded"))
             with_addr = sum(1 for it in items_raw if (it.get("address") or "").strip())
             log.info(
-                "naver_map.extract q=%r items=%d apollo_loaded=%s with_address=%d",
-                q, len(items_raw), apollo_loaded, with_addr,
+                "naver_map.extract q=%r items=%d with_address=%d",
+                q, len(items_raw), with_addr,
             )
         except Exception:  # noqa: BLE001
             pass
