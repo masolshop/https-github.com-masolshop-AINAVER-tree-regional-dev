@@ -130,8 +130,14 @@ class DiscoverBulkRegionRequest(BaseModel):
     sigungu: str = Field("", max_length=40, description="scope=sigungu 시 필수")
     keywords: list[str] = Field(..., min_length=1, max_length=5)
     display: int = Field(10, ge=1, le=20)
-    pace_ms: int = Field(500, ge=200, le=3000)
-    concurrency: int = Field(5, ge=1, le=8)
+    # [2026-05-18] 기본값 보수화 — 사용자 요청 "시간 걸려도 좋으니 1페이지 플레이스 모두 잡아".
+    #   concurrency 5→3: 같은 IP 에서 동시 5개 호출 시 네이버가 일부에 "플레이스 섹션 생략"
+    #     응답을 주는 패턴 관측 → 동시성 낮춰 빈 응답 빈도 감소.
+    #   pace_ms 500→700: 호출 간격을 늘려 IP 의심 신호 약화.
+    #   search_keyword 자체에 3회 재시도(UA 로테이션+지터 백오프) 내장되어 있어,
+    #   설사 빈 응답이 와도 대부분 재시도에서 회수됨.
+    pace_ms: int = Field(700, ge=200, le=3000)
+    concurrency: int = Field(3, ge=1, le=8)
     use_cache: bool = True
 
 

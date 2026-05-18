@@ -179,12 +179,25 @@ def _items_from_apollo(state: dict[str, Any]) -> list[PlaceItem]:
     return out
 
 
-async def _fetch_html(client: httpx.AsyncClient, keyword: str) -> tuple[list[PlaceItem], str | None]:
+async def _fetch_html_once(
+    client: httpx.AsyncClient, keyword: str, ua_idx: int | None = None,
+) -> tuple[list[PlaceItem], str | None]:
+    """단일 요청 — 재시도 없음. (재시도는 _fetch_html_with_retry 에서)"""
+    # UA 를 명시적으로 지정해 재시도마다 다른 UA 를 쓸 수 있게 함
+    ua = _MOBILE_UAS[ua_idx % len(_MOBILE_UAS)] if ua_idx is not None else random.choice(_MOBILE_UAS)
+    hdrs = {
+        "User-Agent": ua,
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7",
+        "Referer": "https://m.naver.com/",
+        "Cache-Control": "no-cache",
+        "Pragma": "no-cache",
+    }
     try:
         resp = await client.get(
             _MOBILE_SEARCH_URL,
             params={"where": "m_place", "query": keyword, "sm": "mtb_jum"},
-            headers=_headers(referer="https://m.naver.com/"),
+            headers=hdrs,
             timeout=12.0,
             follow_redirects=True,
         )
@@ -204,18 +217,77 @@ async def _fetch_html(client: httpx.AsyncClient, keyword: str) -> tuple[list[Pla
     return items, None
 
 
+# [2026-05-18] 재시도 정책 — 사용자 요청: "시간 걸려도 좋으니 1페이지 노출 플레이스 모두 잡아".
+# 빈 응답 / Apollo 미존재 / non-200 은 네이버가 같은 IP 의 연속 호출에 일시적으로
+# "플레이스 섹션 생략" 응답을 주는 패턴이 관측됨. UA 로테이션 + 지터 백오프로 재시도.
+_RETRY_MAX_ATTEMPTS = 3            # 총 시도 횟수 (첫 시도 포함)
+_RETRY_BASE_DELAY_S = 0.8          # 1차 백오프 시작 (지터 0.4~1.2 추가)
+_RETRY_BACKOFF_FACTOR = 1.7        # 회당 지수 배수
+# 재시도해도 좋은 에러 — "진짜 0건"과 구분 불가하지만 사용자 요청대로 모두 시도.
+# (정말 1페이지에 플레이스 섹션이 없는 키워드면 재시도해도 똑같이 0건 → 최종 0)
+_RETRYABLE_ERRORS = (
+    "Apollo state not found",
+    "no place entries",
+    "non-200 status",
+    "HTTP error",
+)
+
+
+def _is_retryable(err: str | None) -> bool:
+    if not err:
+        return False
+    return any(marker in err for marker in _RETRYABLE_ERRORS)
+
+
+async def _fetch_html_with_retry(
+    client: httpx.AsyncClient, keyword: str,
+) -> tuple[list[PlaceItem], str | None, int]:
+    """재시도 내장 fetch. 반환: (items, last_error, attempts_used)."""
+    last_err: str | None = None
+    for attempt in range(_RETRY_MAX_ATTEMPTS):
+        # UA 를 attempt 별로 다르게 — 같은 UA 가 빈 응답을 받으면 다음에는 다른 UA
+        ua_idx = attempt % len(_MOBILE_UAS)
+        items, err = await _fetch_html_once(client, keyword, ua_idx=ua_idx)
+        if items:
+            return items, None, attempt + 1
+        last_err = err
+        if not _is_retryable(err):
+            # 알 수 없는 에러면 더 시도 안함 (코드 버그 디버깅 신호)
+            break
+        if attempt == _RETRY_MAX_ATTEMPTS - 1:
+            break
+        # 지수 백오프 + 지터 (0.4~1.2초). 사용자: "시간 걸려도 좋으니"
+        delay = _RETRY_BASE_DELAY_S * (_RETRY_BACKOFF_FACTOR ** attempt) + random.uniform(0.4, 1.2)
+        logger.info(
+            "naver_keyword retry kw=%r attempt=%d/%d err=%s delay=%.2fs",
+            keyword, attempt + 1, _RETRY_MAX_ATTEMPTS, err, delay,
+        )
+        await asyncio.sleep(delay)
+    return [], last_err or "unknown fetch failure", _RETRY_MAX_ATTEMPTS
+
+
+# 하위 호환 alias — 외부에서 import 하는 코드를 위해 유지.
+async def _fetch_html(client: httpx.AsyncClient, keyword: str) -> tuple[list[PlaceItem], str | None]:
+    items, err, _ = await _fetch_html_with_retry(client, keyword)
+    return items, err
+
+
 async def search_keyword(
     keyword: str,
     display: int = 10,
     timeout_s: float = 14.0,
 ) -> dict[str, Any]:
-    """키워드 1개의 플레이스 1페이지 결과 반환."""
+    """키워드 1개의 플레이스 1페이지 결과 반환.
+
+    [2026-05-18] 재시도 내장: 빈 응답/오류 시 UA 바꿔서 최대 3회 시도.
+    사용자 요청 — "시간 걸려도 좋으니 네이버 1페이지 플레이스 모두 잡아."
+    """
     keyword = (keyword or "").strip()
     if not keyword:
         return {"keyword": "", "source": "none", "total_listed": 0, "items": [], "error": "empty keyword"}
 
     async with httpx.AsyncClient(timeout=timeout_s) as client:
-        items, err = await _fetch_html(client, keyword)
+        items, err, attempts = await _fetch_html_with_retry(client, keyword)
 
     if not items:
         return {
@@ -224,6 +296,7 @@ async def search_keyword(
             "total_listed": 0,
             "items": [],
             "error": err or "fetch failed",
+            "attempts": attempts,
         }
 
     items = items[:display]
@@ -233,6 +306,7 @@ async def search_keyword(
         "total_listed": len(items),
         "items": [it.as_dict() for it in items],
         "error": None,
+        "attempts": attempts,
     }
 
 

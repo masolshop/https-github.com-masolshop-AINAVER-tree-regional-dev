@@ -1039,8 +1039,11 @@ function BulkRegionTab({
   const [sigungu, setSigungu] = useState<string>('')
   const [text, setText] = useState<string>('선불폰')
   const [display, setDisplay] = useState<number>(10)
-  const [paceMs, setPaceMs] = useState<number>(500)
-  const [concurrency, setConcurrency] = useState<number>(5)
+  // [2026-05-18] 기본값 보수화 — 동시성 낮추고 호출 간격 늘려 네이버 빈 응답률 감소.
+  //   백엔드 search_keyword 가 자체 재시도(UA 로테이션+지터)를 가지고 있어,
+  //   설사 빈 응답이 와도 대부분 재시도에서 회수됨.
+  const [paceMs, setPaceMs] = useState<number>(700)
+  const [concurrency, setConcurrency] = useState<number>(3)
   const [useCache, setUseCache] = useState<boolean>(true)
 
   const [job, setJob] = useState<BulkJobStatus | null>(null)
@@ -1414,7 +1417,7 @@ function BulkRegionTab({
             동시 호출
             <input
               type="number" min={1} max={8} value={concurrency}
-              onChange={(e) => setConcurrency(parseInt(e.target.value || '5', 10))}
+              onChange={(e) => setConcurrency(parseInt(e.target.value || '3', 10))}
               className="w-14 border border-line rounded px-2 py-1"
             />
           </label>
@@ -1422,7 +1425,7 @@ function BulkRegionTab({
             호출 간격(ms)
             <input
               type="number" min={200} max={3000} step={100} value={paceMs}
-              onChange={(e) => setPaceMs(parseInt(e.target.value || '500', 10))}
+              onChange={(e) => setPaceMs(parseInt(e.target.value || '700', 10))}
               className="w-20 border border-line rounded px-2 py-1"
             />
           </label>
