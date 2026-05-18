@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>네이버 1페이지 키워드 발굴 PoC</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Apple SD Gothic Neo", "Pretendard", sans-serif; }
+    .pill { display:inline-flex; align-items:center; padding: 2px 8px; border-radius: 9999px; font-size: 11px; font-weight: 600; }
+    .pill-third { background:#fed7aa; color:#9a3412; }              /* 타지역 확정 070/흥신소 — 진한 주황 */
+    .pill-suspect { background:#fef9c3; color:#854d0e; }              /* 타지역 의심 (주소 단순) — 노랑 */
+    .pill-main { background:#bbf7d0; color:#065f46; }                /* 메인 — 녹색 */
+    .pill-unknown { background:#e5e7eb; color:#4b5563; }
+    .src-apollo { background:#dbeafe; color:#1e40af; }
+    .src-html { background:#fde68a; color:#92400e; }
+    .src-none { background:#fee2e2; color:#b91c1c; }
+  </style>
+</head>
+<body class="bg-slate-50 min-h-screen">
+  <div class="max-w-6xl mx-auto p-5 lg:p-8">
+    <header class="mb-6">
+      <h1 class="text-2xl lg:text-3xl font-bold text-slate-800">네이버 1페이지 키워드 발굴 PoC</h1>
+      <p class="mt-1 text-sm text-slate-500">
+        네이버 모바일 플레이스 1페이지에서 메인/타지역 플레이스를 자동 분류해
+        <strong>타지역 로직 키워드</strong>를 발굴합니다. (070 → 타지역, 흥신소 룰 적용)
+      </p>
+    </header>
+
+    <!-- 검색 카드 -->
+    <section class="bg-white rounded-2xl shadow-sm border border-slate-200 p-5 mb-6">
+      <div class="flex flex-col lg:flex-row gap-3">
+        <textarea id="kwInput" rows="3"
+          class="flex-1 border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-400 focus:outline-none"
+          placeholder="키워드를 한 줄에 하나씩 입력 (예: 선불폰 / 심부름센터 / 흥신소)"
+        >선불폰
+심부름센터
+흥신소</textarea>
+        <div class="flex flex-row lg:flex-col gap-2 lg:w-44">
+          <button id="btnRun" class="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-lg px-4 py-2 text-sm">
+            ▶ 분석 시작
+          </button>
+          <button id="btnXlsx" disabled class="flex-1 bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-300 text-white font-semibold rounded-lg px-4 py-2 text-sm">
+            ⬇ 엑셀 다운로드
+          </button>
+        </div>
+      </div>
+      <div class="mt-3 flex flex-wrap items-center gap-3 text-xs text-slate-600">
+        <label class="flex items-center gap-1.5">
+          가져올 개수
+          <input id="display" type="number" min="1" max="20" value="10"
+            class="w-16 border border-slate-300 rounded px-2 py-1" />
+        </label>
+        <label class="flex items-center gap-1.5">
+          호출 간격(ms)
+          <input id="pace" type="number" min="200" max="3000" step="100" value="500"
+            class="w-20 border border-slate-300 rounded px-2 py-1" />
+        </label>
+        <label class="flex items-center gap-1.5">
+          <input id="useCache" type="checkbox" checked /> 6시간 캐시 사용
+        </label>
+        <span id="status" class="ml-auto text-slate-500"></span>
+      </div>
+    </section>
+
+    <!-- 요약 카드 -->
+    <section id="summaryWrap" class="hidden grid grid-cols-2 lg:grid-cols-6 gap-3 mb-6">
+      <div class="bg-white rounded-xl border border-slate-200 p-4">
+        <div class="text-xs text-slate-500">분석 키워드</div>
+        <div id="kpiKw" class="text-2xl font-bold text-slate-800 mt-1">0</div>
+      </div>
+      <div class="bg-white rounded-xl border border-slate-200 p-4">
+        <div class="text-xs text-slate-500">타지역 키워드</div>
+        <div id="kpiTpKw" class="text-2xl font-bold text-orange-600 mt-1">0</div>
+      </div>
+      <div class="bg-white rounded-xl border border-slate-200 p-4">
+        <div class="text-xs text-slate-500">총 노출 플레이스</div>
+        <div id="kpiTotal" class="text-2xl font-bold text-slate-800 mt-1">0</div>
+      </div>
+      <div class="bg-white rounded-xl border border-slate-200 p-4">
+        <div class="text-xs text-slate-500">타지역 확정</div>
+        <div id="kpiTp" class="text-2xl font-bold text-orange-600 mt-1">0</div>
+      </div>
+      <div class="bg-white rounded-xl border border-slate-200 p-4">
+        <div class="text-xs text-slate-500">타지역 의심</div>
+        <div id="kpiSuspect" class="text-2xl font-bold text-yellow-600 mt-1">0</div>
+      </div>
+      <div class="bg-white rounded-xl border border-slate-200 p-4">
+        <div class="text-xs text-slate-500">메인 플레이스</div>
+        <div id="kpiMain" class="text-2xl font-bold text-emerald-600 mt-1">0</div>
+      </div>
+    </section>
+
+    <!-- 결과 -->
+    <section id="resultsWrap" class="space-y-6"></section>
+
+    <!-- 푸터 -->
+    <footer class="mt-12 text-center text-xs text-slate-400">
+      PoC v0.1 · GraphQL primary + HTML fallback · 메인/타지역 분류(070+흥신소 룰)
+    </footer>
+  </div>
+
+  <script>
+    const $ = (q) => document.querySelector(q);
+    const apiBase = "";  // 같은 호스트 (uvicorn) 라 상대 경로 사용
+    let lastResults = [];
+
+    function pillClassification(c) {
+      if (c === "third_party") return '<span class="pill pill-third">타지역</span>';
+      if (c === "third_party_suspect") return '<span class="pill pill-suspect">타지역(의심)</span>';
+      if (c === "main") return '<span class="pill pill-main">메인</span>';
+      return '<span class="pill pill-unknown">미상</span>';
+    }
+    function pillSource(s) {
+      const cls = s === "html_apollo" ? "src-apollo" : (s === "html" ? "src-html" : "src-none");
+      const label = s === "html_apollo" ? "apollo" : s;
+      return `<span class="pill ${cls}">${label}</span>`;
+    }
+    function escapeHtml(s) {
+      return (s || "").replace(/[&<>"']/g, (c) => ({
+        "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
+      }[c]));
+    }
+
+    async function runDiscover() {
+      const raw = $("#kwInput").value || "";
+      const keywords = raw.split(/[\n,]+/).map(s => s.trim()).filter(Boolean);
+      if (!keywords.length) {
+        alert("키워드를 1개 이상 입력하세요.");
+        return;
+      }
+      const display = parseInt($("#display").value || "10", 10);
+      const pace = parseInt($("#pace").value || "500", 10);
+      const useCache = $("#useCache").checked;
+
+      $("#btnRun").disabled = true;
+      $("#btnXlsx").disabled = true;
+      $("#status").textContent = `분석 중... (${keywords.length}개 키워드)`;
+      $("#resultsWrap").innerHTML = "";
+
+      try {
+        const resp = await fetch(`${apiBase}/api/keyword-discover/batch`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ keywords, display, pace_ms: pace, use_cache: useCache }),
+        });
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        const data = await resp.json();
+        lastResults = data.results || [];
+        renderResults(lastResults);
+        $("#btnXlsx").disabled = lastResults.length === 0;
+        $("#status").textContent = `완료 · ${lastResults.length}개 키워드 분석`;
+      } catch (e) {
+        $("#status").textContent = `실패: ${e.message}`;
+        alert(`요청 실패: ${e.message}`);
+      } finally {
+        $("#btnRun").disabled = false;
+      }
+    }
+
+    function renderResults(results) {
+      // KPI
+      const kwCount = results.length;
+      const tpKwCount = results.filter(r => (r.summary && r.summary.is_third_party_keyword)).length;
+      const totalItems = results.reduce((s, r) => s + ((r.items && r.items.length) || 0), 0);
+      const tpItems = results.reduce((s, r) => s + ((r.summary && r.summary.third_party_count) || 0), 0);
+      const susItems = results.reduce((s, r) => s + ((r.summary && r.summary.third_party_suspect_count) || 0), 0);
+      const mainItems = results.reduce((s, r) => s + ((r.summary && r.summary.main_count) || 0), 0);
+      $("#summaryWrap").classList.remove("hidden");
+      $("#kpiKw").textContent = kwCount;
+      $("#kpiTpKw").textContent = tpKwCount;
+      $("#kpiTotal").textContent = totalItems;
+      $("#kpiTp").textContent = tpItems;
+      $("#kpiSuspect").textContent = susItems;
+      $("#kpiMain").textContent = mainItems;
+
+      // 키워드별 상세 카드
+      const wrap = $("#resultsWrap");
+      wrap.innerHTML = "";
+      results.forEach((r) => {
+        const sm = r.summary || {};
+        const isTpKw = sm.is_third_party_keyword;
+        const card = document.createElement("section");
+        card.className = "bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden";
+        card.innerHTML = `
+          <div class="px-5 py-3 border-b border-slate-200 flex flex-wrap items-center gap-2 ${isTpKw ? 'bg-amber-50' : 'bg-slate-50'}">
+            <h2 class="font-bold text-slate-800 text-base">${escapeHtml(r.keyword)}</h2>
+            ${isTpKw ? '<span class="pill pill-third">타지역 키워드</span>' : ''}
+            ${pillSource(r.source)}
+            ${r.from_cache ? '<span class="pill pill-unknown">cache</span>' : ''}
+            <span class="text-xs text-slate-500 ml-auto">
+              총 ${sm.total || 0} · 타지역 ${sm.third_party_count || 0}
+              · 의심 ${sm.third_party_suspect_count || 0}
+              · 메인 ${sm.main_count || 0} · 비율 ${((sm.third_party_ratio || 0) * 100).toFixed(0)}%
+              ${r.elapsed_ms ? `· ${r.elapsed_ms}ms` : ''}
+            </span>
+          </div>
+          ${r.error ? `<div class="px-5 py-3 text-sm text-rose-700 bg-rose-50">⚠ ${escapeHtml(r.error)}</div>` : ''}
+          ${(!r.items || !r.items.length) ? '' : `
+          <div class="overflow-x-auto">
+            <table class="w-full text-sm">
+              <thead class="bg-slate-100 text-slate-600 text-xs">
+                <tr>
+                  <th class="px-3 py-2 text-left">순위</th>
+                  <th class="px-3 py-2 text-left">분류</th>
+                  <th class="px-3 py-2 text-left">상호</th>
+                  <th class="px-3 py-2 text-left">전화</th>
+                  <th class="px-3 py-2 text-left">카테고리</th>
+                  <th class="px-3 py-2 text-left">주소</th>
+                  <th class="px-3 py-2 text-left">Place ID</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${r.items.map((it) => `
+                  <tr class="border-t border-slate-100 hover:bg-slate-50">
+                    <td class="px-3 py-2 tabular-nums">${it.rank}</td>
+                    <td class="px-3 py-2">${pillClassification(it.classification)}</td>
+                    <td class="px-3 py-2 font-medium text-slate-800">${escapeHtml(it.name)}</td>
+                    <td class="px-3 py-2 font-mono text-xs">${escapeHtml(it.phone || '-')}</td>
+                    <td class="px-3 py-2 text-slate-600">${escapeHtml(it.category || '-')}</td>
+                    <td class="px-3 py-2 text-slate-500 text-xs">${escapeHtml(it.road_address || it.address || '-')}</td>
+                    <td class="px-3 py-2 font-mono text-xs">
+                      <a href="https://m.place.naver.com/place/${encodeURIComponent(it.place_id)}" target="_blank" class="text-blue-600 hover:underline">${escapeHtml(it.place_id)}</a>
+                    </td>
+                  </tr>
+                `).join("")}
+              </tbody>
+            </table>
+          </div>
+          `}
+        `;
+        wrap.appendChild(card);
+      });
+    }
+
+    function downloadXlsx() {
+      if (!lastResults.length) return;
+      // 시트 1: 키워드 요약
+      const summaryRows = lastResults.map(r => ({
+        키워드: r.keyword,
+        타지역키워드여부: r.summary?.is_third_party_keyword ? "Y" : "N",
+        총노출: r.summary?.total || 0,
+        타지역확정: r.summary?.third_party_count || 0,
+        타지역의심: r.summary?.third_party_suspect_count || 0,
+        메인: r.summary?.main_count || 0,
+        미상: r.summary?.unknown_count || 0,
+        타지역비율: ((r.summary?.third_party_ratio || 0) * 100).toFixed(1) + "%",
+        소스: r.source,
+        에러: r.error || "",
+        가져온시각: r.fetched_at || "",
+      }));
+      // 시트 2: 플레이스 상세
+      const detailRows = [];
+      for (const r of lastResults) {
+        for (const it of (r.items || [])) {
+          detailRows.push({
+            키워드: r.keyword,
+            순위: it.rank,
+            분류: it.classification === "third_party" ? "타지역확정"
+              : it.classification === "third_party_suspect" ? "타지역의심"
+              : it.classification === "main" ? "메인" : "미상",
+            상호: it.name,
+            전화: it.phone || "",
+            카테고리: it.category || "",
+            도로명주소: it.road_address || "",
+            지번주소: it.address || "",
+            영업상태: it.business_status || "",
+            네이버예약: it.naver_booking ? "Y" : "",
+            방문자리뷰: it.visitor_review_count ?? "",
+            블로그리뷰: it.blog_review_count ?? "",
+            PlaceID: it.place_id,
+            URL: `https://m.place.naver.com/place/${it.place_id}`,
+          });
+        }
+      }
+      const wb = XLSX.utils.book_new();
+      const ws1 = XLSX.utils.json_to_sheet(summaryRows);
+      const ws2 = XLSX.utils.json_to_sheet(detailRows);
+      ws1["!cols"] = [{wch:18},{wch:14},{wch:8},{wch:8},{wch:8},{wch:8},{wch:10},{wch:8},{wch:30},{wch:24}];
+      ws2["!cols"] = [{wch:14},{wch:6},{wch:8},{wch:24},{wch:16},{wch:18},{wch:36},{wch:36},{wch:10},{wch:10},{wch:10},{wch:10},{wch:14},{wch:48}];
+      XLSX.utils.book_append_sheet(wb, ws1, "키워드_요약");
+      XLSX.utils.book_append_sheet(wb, ws2, "플레이스_상세");
+      const today = new Date().toISOString().slice(0,10);
+      XLSX.writeFile(wb, `네이버_1페이지_키워드발굴_${today}.xlsx`);
+    }
+
+    $("#btnRun").addEventListener("click", runDiscover);
+    $("#btnXlsx").addEventListener("click", downloadXlsx);
+    $("#kwInput").addEventListener("keydown", (e) => {
+      if (e.ctrlKey && e.key === "Enter") { e.preventDefault(); runDiscover(); }
+    });
+  </script>
+</body>
+</html>

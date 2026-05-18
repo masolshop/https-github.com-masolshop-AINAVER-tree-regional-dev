@@ -1,0 +1,29 @@
+fastapi==0.115.5
+uvicorn[standard]==0.32.1
+sqlalchemy==2.0.36
+aiosqlite==0.20.0
+asyncpg==0.30.0
+pydantic==2.10.3
+pydantic-settings==2.6.1
+httpx==0.28.1
+python-multipart==0.0.20
+python-jose[cryptography]==3.3.0
+bcrypt==4.2.1
+openpyxl==3.1.5
+google-auth==2.36.0
+google-auth-httplib2==0.2.0
+google-api-python-client==2.151.0
+google-analytics-data==0.18.16
+google-auth-oauthlib==1.2.1
+requests==2.32.3
+email-validator==2.2.0
+APScheduler==3.11.2
+alembic==1.18.4
+passlib==1.7.4
+python-dotenv==1.0.1
+# ── DDoS / 브루트포스 2차 방어 (nginx 우회/내부 호출 보호) ──
+slowapi==0.1.9
+limits==3.13.0
+# ── 네이버 지도 SPA 렌더링 (captcha 우회용 headless Chromium) ──
+# 설치 후 반드시: `playwright install chromium && playwright install-deps chromium`
+playwright==1.49.0

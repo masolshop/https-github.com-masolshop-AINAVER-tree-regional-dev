@@ -1,0 +1,232 @@
+/* ============================================================
+   타지역서비스 실시간 노출 관리 솔루션 — 글로벌 스타일
+   디자인 토큰: tailwind.config.js
+   ============================================================ */
+
+/* Pretendard 한글 웹폰트 (CDN) */
+@import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable.min.css');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html, body {
+    background-color: #F4F6FA;
+    color: #1F2D4D;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+  }
+
+  body {
+    @apply font-sans;
+  }
+
+  /* 스크롤바 (모던, 미니멀) */
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: #C9D2E6;
+    border-radius: 999px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: #8FA0D6;
+  }
+}
+
+@layer components {
+  /* 워터마크 번호 (01, 02, 03 …) */
+  .watermark-number {
+    @apply text-watermark text-ink-watermark select-none pointer-events-none;
+  }
+
+  /* 모달 인풋 (어드민 폼) */
+  .modal-input {
+    @apply w-full px-3 py-2 rounded-md bg-white border border-border
+           text-text placeholder:text-text-muted
+           focus:outline-none focus:border-primary focus:bg-white
+           transition-all;
+  }
+
+  /* 카드 기본 */
+  .card-base {
+    @apply rounded-card shadow-card transition-all duration-200;
+  }
+
+  .card-white {
+    @apply card-base bg-bg-panel;
+  }
+
+  .card-subtle {
+    @apply card-base bg-bg-subtle;
+  }
+
+  .card-dark {
+    @apply card-base bg-brand-800 text-white shadow-card-dark;
+  }
+
+  .card-cta {
+    @apply card-base bg-brand-500 text-white;
+  }
+
+  /* CTA 버튼 (흰 바탕, 블루 텍스트) */
+  .btn-cta-white {
+    @apply inline-flex items-center gap-2 px-5 py-2.5 rounded-pill bg-white text-brand-700 font-semibold text-body shadow-sm hover:shadow-md transition-all;
+  }
+
+  /* 프라이머리 버튼 */
+  .btn-primary {
+    @apply inline-flex items-center gap-2 px-5 py-2.5 rounded-pill bg-brand-500 text-white font-semibold text-body hover:bg-brand-600 transition-colors;
+  }
+
+  /* 보조 버튼 */
+  .btn-secondary {
+    @apply inline-flex items-center gap-2 px-5 py-2.5 rounded-pill bg-bg-subtle text-ink font-semibold text-body hover:bg-brand-100 transition-colors;
+  }
+
+  /* 폼 인풋 (모달 등에서 사용) */
+  .rm-field-input {
+    @apply w-full px-3.5 py-2.5 rounded-xl bg-white border border-bg-subtle text-ink text-body-sm placeholder:text-ink-soft focus:border-brand-400 focus:ring-2 focus:ring-brand-100 focus:outline-none transition-colors;
+  }
+
+  /* 알림 채널 인풋 (Settings 탭) */
+  .rm-channel-input {
+    @apply w-full px-3 py-2 rounded-xl bg-bg-subtle/60 border border-transparent text-body-sm text-ink placeholder:text-ink-soft focus:outline-none focus:border-brand-300 focus:bg-white transition-colors;
+  }
+
+  /* 사이드바 메뉴 아이템 */
+  .sidebar-item {
+    @apply flex items-center gap-3 px-4 py-3 rounded-2xl text-[19px] text-ink-muted font-bold cursor-pointer transition-colors;
+  }
+  .sidebar-item:hover {
+    @apply bg-bg-subtle text-ink;
+  }
+  .sidebar-item.active {
+    @apply bg-brand-500 text-white shadow-card;
+  }
+}
+
+/* ============================================================
+   모바일 최적화 글로벌 규칙
+   ============================================================ */
+@layer utilities {
+  /* 가로 스크롤 절대 방지 (overflow-x: hidden) */
+  html, body {
+    overflow-x: hidden;
+    max-width: 100vw;
+  }
+
+  /* iOS Safari 줌 방지 (input/select/textarea 16px 미만 시 자동 줌) */
+  @media (max-width: 1023px) {
+    input,
+    select,
+    textarea {
+      font-size: 16px !important;
+    }
+  }
+
+  /* 모바일에서 큰 데스크탑 폰트 강제 축소 (text-h1, text-h2 등) */
+  @media (max-width: 640px) {
+    .text-h1 { font-size: 1.5rem !important; line-height: 2rem !important; }
+    .text-h2 { font-size: 1.25rem !important; line-height: 1.75rem !important; }
+    .text-h3 { font-size: 1.125rem !important; line-height: 1.5rem !important; }
+    .text-watermark { font-size: 2.5rem !important; line-height: 1 !important; }
+  }
+
+  /* 모바일에서 카드 min-height 완화 */
+  @media (max-width: 640px) {
+    .card-base { padding: 1rem !important; }
+  }
+
+  /* 모바일 터치 타겟 최소 크기 (44px) 보장 - 작은 버튼들 */
+  @media (max-width: 640px) {
+    button, a {
+      -webkit-tap-highlight-color: transparent;
+    }
+  }
+
+  /* 모바일에서 표(table) 가로 스크롤 가능 */
+  @media (max-width: 1023px) {
+    .table-scroll-mobile {
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
+    }
+  }
+}
+
+/* ============================================================
+   5대 솔루션 도구 페이지 본문 가독성 향상 (글자 크기 한 단계 ↑)
+   적용 방식: <body>에 'solution-tool-page' 클래스를 토글
+              → useBodyClass 훅이 페이지 마운트/언마운트 시 자동 부착
+   대상 페이지:
+     · /keyword-dna       (KeywordDna/index.tsx)
+     · /keyword           (Keyword/Discover.tsx)
+     · /competition       (Competition.tsx)
+     · /monitor           (Monitor/index.tsx + 하위 탭 전체)
+     · /auto-rank-check   (RankTracker.tsx — 타지역 순위 자동체크)
+   토큰(원본 → 강제 px):
+     text-xs       12 → 15
+     text-sm       14 → 17
+     text-base     16 → 19
+     text-caption  12 → 15
+     text-body-sm  13 → 16
+     text-body     14 → 17
+     text-lg       18 → 21
+     text-xl       20 → 23
+     text-h3       18 → 21
+   ============================================================ */
+body.solution-tool-page .text-xs        { font-size: 15px !important; line-height: 1.55 !important; }
+body.solution-tool-page .text-sm        { font-size: 17px !important; line-height: 1.6  !important; }
+body.solution-tool-page .text-base      { font-size: 19px !important; line-height: 1.65 !important; }
+body.solution-tool-page .text-caption   { font-size: 15px !important; line-height: 1.55 !important; }
+body.solution-tool-page .text-body-sm   { font-size: 16px !important; line-height: 1.6  !important; }
+body.solution-tool-page .text-body      { font-size: 17px !important; line-height: 1.65 !important; }
+body.solution-tool-page .text-lg        { font-size: 21px !important; line-height: 1.55 !important; }
+body.solution-tool-page .text-xl        { font-size: 23px !important; line-height: 1.5  !important; }
+body.solution-tool-page .text-h3        { font-size: 21px !important; line-height: 1.45 !important; }
+
+/* 인라인 px 폰트 (text-[11px] / text-[12px] / text-[13px])도 함께 보정 */
+body.solution-tool-page .text-\[11px\] { font-size: 14px !important; line-height: 1.55 !important; }
+body.solution-tool-page .text-\[12px\] { font-size: 15px !important; line-height: 1.55 !important; }
+body.solution-tool-page .text-\[13px\] { font-size: 16px !important; line-height: 1.6  !important; }
+
+/* 옵션 등 폼 컨트롤도 함께 강제 (Tailwind preflight가 input/select를 14px로 잡는 케이스 방지) */
+body.solution-tool-page select,
+body.solution-tool-page option,
+body.solution-tool-page input,
+body.solution-tool-page textarea,
+body.solution-tool-page button,
+body.solution-tool-page label  { font-size: inherit; }
+
+/* 이전 버전 호환: data-page 셀렉터도 유지 */
+[data-page="solution-tool"] .text-xs       { font-size: 15px !important; }
+[data-page="solution-tool"] .text-sm       { font-size: 17px !important; }
+[data-page="solution-tool"] .text-base     { font-size: 19px !important; }
+[data-page="solution-tool"] .text-caption  { font-size: 15px !important; }
+[data-page="solution-tool"] .text-body-sm  { font-size: 16px !important; }
+[data-page="solution-tool"] .text-body     { font-size: 17px !important; }
+[data-page="solution-tool"] .text-lg       { font-size: 21px !important; }
+[data-page="solution-tool"] .text-xl       { font-size: 23px !important; }
+[data-page="solution-tool"] .text-h3       { font-size: 21px !important; }
+
+/* 모바일에서는 한 단계만 살짝 줄이기 (레이아웃 안정 + 가독성 유지) */
+@media (max-width: 640px) {
+  body.solution-tool-page .text-xs       { font-size: 14px !important; }
+  body.solution-tool-page .text-sm       { font-size: 16px !important; }
+  body.solution-tool-page .text-base     { font-size: 18px !important; }
+  body.solution-tool-page .text-caption  { font-size: 14px !important; }
+  body.solution-tool-page .text-body-sm  { font-size: 15px !important; }
+  body.solution-tool-page .text-body     { font-size: 16px !important; }
+  body.solution-tool-page .text-lg       { font-size: 19px !important; }
+  body.solution-tool-page .text-xl       { font-size: 21px !important; }
+  body.solution-tool-page .text-h3       { font-size: 19px !important; }
+  body.solution-tool-page .text-\[11px\] { font-size: 13px !important; }
+  body.solution-tool-page .text-\[12px\] { font-size: 14px !important; }
+  body.solution-tool-page .text-\[13px\] { font-size: 15px !important; }
+}

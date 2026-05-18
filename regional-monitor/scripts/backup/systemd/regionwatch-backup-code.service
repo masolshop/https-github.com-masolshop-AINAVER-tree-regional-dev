@@ -1,0 +1,16 @@
+[Unit]
+Description=타지역서비스 — 코드 전체 스냅샷 (tar.gz + S3 stub)
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=ubuntu
+Group=ubuntu
+Environment=TZ=Asia/Seoul
+ExecStart=/bin/bash /opt/regionwatch/regional-monitor/scripts/backup/backup_code.sh
+StandardOutput=journal
+StandardError=journal
+TimeoutStartSec=15min
+
+[Install]
+WantedBy=multi-user.target

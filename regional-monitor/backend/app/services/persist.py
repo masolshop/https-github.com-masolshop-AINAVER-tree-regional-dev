@@ -1,0 +1,240 @@
+"""검증 결과 → DB 영속화 + ChangeEvent 자동 생성.
+
+verify_batch() 가 만든 raw dict 리스트를 받아:
+  1) DailyHealthCheck INSERT (검증 raw 결과 시계열)
+  2) RegisteredPlace.current_verdict / last_checked_at UPDATE
+  3) verdict 가 바뀌었으면 ChangeEvent INSERT  ← "변경 즉시 발견"의 핵심
+
+이 모듈은 라우터(/verify/live 수동 검증)와 스케줄러 둘 다에서 호출된다.
+"""
+from __future__ import annotations
+
+from datetime import datetime
+from app.core.time_utils import now_kst, to_kst, KST
+from typing import Iterable
+
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.models.check import ChangeEvent, DailyHealthCheck
+from app.models.place import RegisteredPlace
+from app.models.user import User
+
+
+# ──────────────────────────────────────────────────────────────
+# verdict → 사용자 향 의미
+# ──────────────────────────────────────────────────────────────
+
+# OK 와 비-OK 사이 전이 패턴
+_BAD_VERDICTS = {
+    "PHONE_MISMATCH",
+    "DONG_MISMATCH",
+    "NAME_MISMATCH",
+    "REGION_MISMATCH",
+    "DEAD",
+}
+
+
+def classify_event(
+    prev: str,
+    new: str,
+    detail: dict,
+    *,
+    trigger: str = "manual",
+    mode: str = "full",
+) -> tuple[str, str] | None:
+    """이전/현재 verdict 비교 → (event_type, summary). 변경 없으면 None.
+
+    event_type:
+      EXPOSURE_LOST  — OK → 비-OK (가장 중요)
+      RECOVERED      — 비-OK → OK
+      REGION_CHANGED — 시/도 단위 이동
+      DONG_CHANGED   — 동 변경
+      NAME_CHANGED   — 상호 변경
+      PAGE_DELETED   — 페이지 자체 삭제 (404)
+      OTHER_CHANGED  — 그 외 verdict 변경
+
+    trigger/mode:
+      자동(scheduler) + fast 의 부정확한 결과로 *_MISMATCH 가 'OK 회복' 또는
+      'DEAD 삭제' 이벤트로 잘못 발생하는 것을 차단한다.
+    """
+    if prev == new:
+        return None
+    # 첫 검증(이전이 PENDING/CHECKING)은 변경으로 보지 않음 — baseline 수립
+    if prev in {"PENDING", "CHECKING", ""}:
+        return None
+    # ⭐ PENDING 전환은 변경 이벤트로 보지 않음 — 네이버 응답 누락/429 throttle 등 일시 오류이며,
+    # 다음 회차에서 OK 또는 명확한 verdict로 회복될 가능성이 높음. 알림 노이즈 방지.
+    # (current_verdict 자체도 PENDING으로 덮어쓰지 않으므로 일관성 유지)
+    if new in {"PENDING", "CHECKING", ""}:
+        return None
+
+    # ⭐ 자동 + fast 가 *_MISMATCH 를 OK/DEAD 로 덮으려는 경우는 이벤트도 만들지 않음.
+    # persist_results 의 verdict 다운그레이드 가드와 짝을 이뤄, 잘못된 RECOVERED/PAGE_DELETED
+    # 이벤트가 알림으로 발송되는 것을 방지.
+    if trigger == "scheduler" and mode == "fast":
+        if prev in _BAD_VERDICTS and prev != "DEAD" and new in {"OK", "DEAD"}:
+            return None
+
+    actual_dong = (detail or {}).get("actual_dong") or ""
+    actual_name = (detail or {}).get("actual_name") or ""
+
+    # 가장 심각: 페이지 자체가 사라진 경우
+    if new == "DEAD":
+        return ("PAGE_DELETED", "네이버 플레이스 페이지가 삭제되었습니다.")
+
+    # 회복: 비-OK → OK
+    if prev in _BAD_VERDICTS and new == "OK":
+        return ("RECOVERED", "정상 노출로 회복되었습니다.")
+
+    # 노출 상실: OK → 비-OK
+    if prev == "OK" and new in _BAD_VERDICTS:
+        if new == "REGION_CHANGED" or new == "REGION_MISMATCH":
+            return ("REGION_CHANGED", f"시/도 단위로 노출 지역이 바뀌었습니다 ({actual_dong}).")
+        if new == "DONG_MISMATCH":
+            return ("DONG_CHANGED", f"노출 지역이 변경되었습니다 ({actual_dong}).")
+        if new == "NAME_MISMATCH":
+            return ("NAME_CHANGED", f"노출 상호가 변경되었습니다 ({actual_name}).")
+        return ("EXPOSURE_LOST", f"정상 노출이 깨졌습니다 ({new}).")
+
+    # 비-OK → 다른 비-OK (예: DONG_MISMATCH → REGION_MISMATCH)
+    if new == "REGION_MISMATCH":
+        return ("REGION_CHANGED", f"시/도 단위 변경이 감지되었습니다 ({actual_dong}).")
+    if new == "DONG_MISMATCH":
+        return ("DONG_CHANGED", f"노출 동이 변경되었습니다 ({actual_dong}).")
+    if new == "NAME_MISMATCH":
+        return ("NAME_CHANGED", f"노출 상호가 변경되었습니다 ({actual_name}).")
+
+    return ("OTHER_CHANGED", f"검증 상태가 {prev} → {new} 로 변경되었습니다.")
+
+
+# ──────────────────────────────────────────────────────────────
+# 영속화 메인
+# ──────────────────────────────────────────────────────────────
+
+
+async def persist_results(
+    db: AsyncSession,
+    results: Iterable[dict],
+    *,
+    trigger: str = "manual",
+    mode: str = "full",
+) -> dict:
+    """검증 결과를 DB에 반영.
+
+    Args:
+        trigger : 'manual' (사용자 수동 /verify/live) | 'scheduler' (자동 v1/v2)
+                  자동 + fast 의 부정확한 결과가 수동 정밀(MISMATCH/DEAD) 을
+                  덮어쓰지 못하도록 가드에 사용.
+        mode    : 'full' / 'fast' — 검증 정밀도. trigger 와 함께 가드 판단.
+
+    Returns:
+        {
+          "updated": N, "events": M, "history": K,
+          "new_events": [ChangeEvent, ...],   # ← notifier 가 사용 (commit 후에도 attach 상태)
+          "place_lookup": {place_id_ref: RegisteredPlace},
+        }
+    """
+    updated = 0
+    history_rows = 0
+    now = now_kst()
+    new_event_objs: list[ChangeEvent] = []
+    is_auto = trigger == "scheduler"
+    is_fast = mode == "fast"
+
+    # place_id_ref → RegisteredPlace 매핑 (1번 쿼리)
+    refs = [r["place_id_ref"] for r in results]
+    if not refs:
+        return {
+            "updated": 0, "events": 0, "history": 0,
+            "new_events": [], "place_lookup": {},
+        }
+
+    q = await db.execute(select(RegisteredPlace).where(RegisteredPlace.id.in_(refs)))
+    places = {p.id: p for p in q.scalars().all()}
+
+    for r in results:
+        place = places.get(r["place_id_ref"])
+        if place is None:
+            continue
+
+        prev = place.current_verdict or "PENDING"
+        new = r["verdict"]
+        detail = r.get("detail") or {}
+
+        # 1) DailyHealthCheck (시계열 raw)
+        # fast 모드에서 None인 match 필드는 False로 저장 (DB는 bool not null)
+        db.add(DailyHealthCheck(
+            place_id_ref=place.id,
+            alive=bool(detail.get("alive", False)),
+            phone_match=bool(detail.get("phone_match") or False),
+            dong_match=bool(detail.get("dong_match") or False),
+            name_match=bool(detail.get("name_match") or False),
+            actual_phone=detail.get("actual_phone"),
+            actual_dong=detail.get("actual_dong"),
+            actual_name=detail.get("actual_name"),
+            actual_address=detail.get("actual_address"),
+            verdict=new,
+            response_ms=r.get("response_ms", 0),
+            http_status=r.get("http_status", 0),
+            error=r.get("error"),
+            checked_at=now,
+        ))
+        history_rows += 1
+
+        # 2) ChangeEvent (verdict 변경 시)
+        evt = classify_event(prev, new, detail, trigger=trigger, mode=mode)
+        if evt:
+            event_type, summary = evt
+            ce = ChangeEvent(
+                place_id_ref=place.id,
+                event_type=event_type,
+                prev_verdict=prev,
+                new_verdict=new,
+                summary=summary,
+                detected_at=now,
+            )
+            db.add(ce)
+            new_event_objs.append(ce)
+
+        # 3) RegisteredPlace 갱신
+        # ⭐ PENDING(429 throttle 등 일시 오류)은 기존의 명확한 verdict를 덮어쓰지 않음.
+        # 예: 어제 OK였는데 오늘 429로 PENDING이면 OK 상태 유지 → 사용자에게 "검증 대기" 노출 안 함.
+        # 다음 사이클에서 확실한 결과(OK/DEAD/MISMATCH) 받으면 그때 갱신.
+        # DailyHealthCheck(시계열)에는 PENDING도 그대로 기록되어 throttle 추적 가능.
+        skip_overwrite = False
+        if new == "PENDING" and prev in {"OK", "DEAD", "PHONE_MISMATCH", "DONG_MISMATCH", "NAME_MISMATCH", "REGION_MISMATCH"}:
+            # 기존 verdict 유지, last_checked_at만 갱신
+            skip_overwrite = True
+
+        # ⭐ 자동(스케줄러)이 fast 모드로 부정확하게 명확한 *_MISMATCH 를 덮어쓰는 것 차단.
+        # fast 모드는 페이지 존재 유무만 보므로 전화/동/상호 불일치를 OK 또는 DEAD 로
+        # 잘못 판정한다. 수동 정밀(full)에서 받은 *_MISMATCH 결과를 자동 fast 가
+        # 다음 슬롯에 OK/DEAD 로 덮어쓰면 "이전 불일치 데이터가 사라지는" 문제 발생.
+        # 정책: 자동 + fast 는 prev 가 *_MISMATCH 이면 verdict 다운그레이드 금지.
+        if is_auto and is_fast and prev in _BAD_VERDICTS and prev != "DEAD":
+            if new in {"OK", "DEAD"}:
+                # 명확한 정밀 불일치 결과를 fast 결과로 덮지 않음.
+                # 변화는 다음 자동(full) 또는 수동 검증에서 반영.
+                skip_overwrite = True
+
+        if skip_overwrite:
+            place.last_checked_at = now
+        else:
+            place.current_verdict = new
+            place.last_checked_at = now
+        updated += 1
+
+    await db.commit()
+    # commit 후에도 notifier 가 ChangeEvent 의 notified_email/notified_slack 를
+    # 갱신할 수 있도록 같은 세션에 attach 된 상태로 반환.
+    return {
+        "updated": updated,
+        "events": len(new_event_objs),
+        "history": history_rows,
+        "new_events": new_event_objs,
+        "place_lookup": places,
+    }
+
+
+__all__ = ["persist_results", "classify_event"]

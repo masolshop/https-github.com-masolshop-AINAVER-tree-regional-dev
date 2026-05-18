@@ -1,0 +1,10 @@
+[Unit]
+Description=타지역서비스 — 일일 순위 자동체크 타이머 (매일 KST 02:00)
+
+[Timer]
+OnCalendar=*-*-* 02:00:00 Asia/Seoul
+Persistent=true
+Unit=regionwatch-rank-tracker.service
+
+[Install]
+WantedBy=timers.target

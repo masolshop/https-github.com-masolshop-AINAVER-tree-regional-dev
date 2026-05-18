@@ -1,0 +1,299 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <!--
+      ⚠️ canonical / og:url / twitter:url 정적 태그는 의도적으로 제거.
+      SPA(React Router) 환경에서 모든 라우트가 동일한 index.html을 공유하므로,
+      정적 canonical을 두면 /intro, /about/* 등 모든 하위 페이지가 홈을 canonical로
+      가리키게 되어 검색엔진이 "중복 콘텐츠"로 오판함.
+      대신 src/components/seo/PageSeo.tsx 가 react-helmet-async 로
+      페이지별 정확한 canonical/og:url/twitter:url 을 주입한다.
+      Bing/Google 모두 JS 렌더링 후 평가하므로 정확한 값이 인식됨.
+    -->
+
+    <!-- 모바일 뷰포트 (확대 가능, 노치 영역 활용) -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, viewport-fit=cover" />
+
+    <!-- 모바일 웹앱 관련 -->
+    <meta name="theme-color" content="#1F2D4D" />
+    <meta name="format-detection" content="telephone=no" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="타지역닷컴" />
+    <meta name="application-name" content="타지역닷컴" />
+
+    <!-- ───────── SEO 핵심 ─────────
+      title / description / keywords 는 PageSeo(react-helmet-async)가 라우트별로 주입한다.
+      prerender(puppeteer) 가 빌드 시 페이지별 정적 HTML을 생성하므로, 정적 기본값은
+      Helmet 이 주입에 실패한 fallback 페이지(없는 라우트 = SPA 404 → 홈) 용도로만 둔다.
+      author/robots/googlebot 등 사이트 공통값만 정적으로 노출.
+    -->
+    <title>타지역서비스 네이버노출 자동체크 솔루션 | 타지역닷컴</title>
+    <meta name="author" content="(주)마솔샵 / 타지역닷컴" />
+    <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1" />
+    <meta name="googlebot" content="index, follow" />
+    <meta name="naver-site-verification" content="e3fb823bddc57cd05c76398487d8afe49ad37eaf" />
+    <meta name="google-site-verification" content="021DO_QtjPGG6sRmyeEHcRK45Hu37vkI8KBYT-e0JvQ" />
+
+    <!-- ───────── RSS 피드 (네이버 검색 가중치) ───────── -->
+    <link rel="alternate" type="application/rss+xml" title="타지역닷컴 RSS 피드" href="https://taziyuk.com/rss.xml" />
+
+    <!--
+      OG / Twitter Card 의 페이지별 값(title/description/url/image)은 PageSeo + prerender 가 주입.
+      여기에는 페이지 무관 공통 값(image:type/width/height)만 두어 중복 메타태그 충돌 방지.
+      (이전: 정적 og:title/og:description 이 prerender 결과보다 먼저 head 에 위치해
+       일부 크롤러가 첫 번째 값을 우선 채택하는 문제가 있었음)
+    -->
+    <meta property="og:image:type" content="image/png" />
+    <meta property="og:image:width" content="1024" />
+    <meta property="og:image:height" content="510" />
+
+    <!-- ───────── Google Analytics 4 (gtag.js) — 빌드 시 VITE_GA_MEASUREMENT_ID 가 있으면 활성화 ───────── -->
+    <script>
+      // GA4 측정 ID는 빌드 시 vite-plugin-html 또는 런타임 메타로 주입.
+      // window.__GA_MEASUREMENT_ID__ 가 비어 있으면 GA 로드 건너뜀(개발/로컬).
+      window.dataLayer = window.dataLayer || [];
+      window.gtag = function () { window.dataLayer.push(arguments); };
+    </script>
+
+    <!-- ───────── 네이버 프리미엄 로그분석 / 전환추적 공통 스크립트 (모든 페이지) ───────── -->
+    <!-- 신청 사이트: https://taziyuk.com  ·  공통 인증키(wa): s_520428b8a8d -->
+    <script type="text/javascript" src="//wcs.naver.net/wcslog.js"></script>
+    <script type="text/javascript">
+      if (!wcs_add) var wcs_add = {};
+      wcs_add["wa"] = "s_520428b8a8d";
+      if (!_nasa) var _nasa = {};
+      if (window.wcs) {
+        wcs.inflow();
+        wcs_do(_nasa);
+      }
+    </script>
+
+    <!-- ───────── 구조화 데이터 (JSON-LD): 검색결과 리치 스니펫 ───────── -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@graph": [
+        {
+          "@type": "Organization",
+          "@id": "https://taziyuk.com/#organization",
+          "name": "주식회사 페마연",
+          "alternateName": ["타지역닷컴", "타지역서비스", "페마연", "taziyuk", "taziyuk.com"],
+          "legalName": "주식회사 페마연",
+          "url": "https://taziyuk.com/",
+          "logo": {
+            "@type": "ImageObject",
+            "url": "https://taziyuk.com/og-thumbnail.png",
+            "width": 1024,
+            "height": 510
+          },
+          "image": "https://taziyuk.com/og-thumbnail.png",
+          "description": "타지역서비스(070 가상번호) 사장님을 위한 네이버 플레이스 누락을 자동 체크하여 고객문의 누수와 광고비 손실을 막아주는 4종 솔루션. 키워드 발굴 · 지역 경쟁도 분석 · 24시간 노출 자동 체크 · 필수업종 분류.",
+          "founder": {
+            "@type": "Person",
+            "name": "이종근"
+          },
+          "address": {
+            "@type": "PostalAddress",
+            "addressCountry": "KR",
+            "addressRegion": "서울특별시"
+          },
+          "contactPoint": [
+            {
+              "@type": "ContactPoint",
+              "telephone": "+82-1688-8750",
+              "contactType": "customer service",
+              "email": "ceo@femayeon.com",
+              "areaServed": "KR",
+              "availableLanguage": ["Korean"]
+            }
+          ],
+          "sameAs": [
+            "http://pf.kakao.com/_qemTX"
+          ],
+          "identifier": [
+            {
+              "@type": "PropertyValue",
+              "name": "사업자등록번호",
+              "value": "266-81-01215"
+            },
+            {
+              "@type": "PropertyValue",
+              "name": "통신판매업신고번호",
+              "value": "2024-서울서초-3721"
+            }
+          ]
+        },
+        {
+          "@type": "WebSite",
+          "@id": "https://taziyuk.com/#website",
+          "url": "https://taziyuk.com/",
+          "name": "타지역닷컴",
+          "alternateName": ["타지역서비스", "타지역.com"],
+          "inLanguage": "ko-KR",
+          "description": "타지역서비스(070) 사장님을 위한 네이버 노출 자동 체크 및 1페이지 최적화 4종 솔루션 — 타지역닷컴",
+          "publisher": { "@id": "https://taziyuk.com/#organization" },
+          "potentialAction": {
+            "@type": "SearchAction",
+            "target": {
+              "@type": "EntryPoint",
+              "urlTemplate": "https://taziyuk.com/?q={search_term_string}"
+            },
+            "query-input": "required name=search_term_string"
+          }
+        },
+        {
+          "@type": "WebPage",
+          "@id": "https://taziyuk.com/#webpage",
+          "url": "https://taziyuk.com/",
+          "name": "타지역서비스 네이버노출 자동체크 솔루션 | 타지역닷컴",
+          "isPartOf": { "@id": "https://taziyuk.com/#website" },
+          "about": { "@id": "https://taziyuk.com/#organization" },
+          "primaryImageOfPage": "https://taziyuk.com/og-thumbnail.png",
+          "datePublished": "2024-10-01",
+          "dateModified": "2026-05-04",
+          "inLanguage": "ko-KR",
+          "description": "타지역서비스(070) 사장님을 위한 고질적인 네이버 플레이스 누락을 자동 체크하여 고객문의 누수 및 광고비 손실을 막아드립니다."
+        },
+        {
+          "@type": "SoftwareApplication",
+          "@id": "https://taziyuk.com/#software",
+          "name": "타지역서비스 네이버노출 자동체크 솔루션",
+          "alternateName": "타지역닷컴 4종 솔루션",
+          "operatingSystem": "Web (Chrome, Safari, Edge, Naver Whale)",
+          "applicationCategory": "BusinessApplication",
+          "applicationSubCategory": "SEO / Marketing Analytics",
+          "url": "https://taziyuk.com/",
+          "image": "https://taziyuk.com/og-thumbnail.png",
+          "description": "키워드 발굴, 지역 경쟁도 분석, 24시간 노출 자동 체크, 필수업종 분류 4종 솔루션. 1,875개 등록 업체와 508,854개 회선 데이터 기반.",
+          "offers": {
+            "@type": "Offer",
+            "priceCurrency": "KRW",
+            "price": "0",
+            "description": "기본 무료 + 유료 플랜",
+            "availability": "https://schema.org/InStock"
+          },
+          "aggregateRating": {
+            "@type": "AggregateRating",
+            "ratingValue": "4.8",
+            "reviewCount": "12",
+            "bestRating": "5",
+            "worstRating": "1"
+          },
+          "publisher": { "@id": "https://taziyuk.com/#organization" }
+        },
+        {
+          "@type": "BreadcrumbList",
+          "@id": "https://taziyuk.com/#breadcrumb",
+          "itemListElement": [
+            {
+              "@type": "ListItem",
+              "position": 1,
+              "name": "홈",
+              "item": "https://taziyuk.com/"
+            },
+            {
+              "@type": "ListItem",
+              "position": 2,
+              "name": "솔루션 소개",
+              "item": "https://taziyuk.com/intro/"
+            }
+          ]
+        }
+      ]
+    }
+    <!--
+      ⚠️ FAQPage JSON-LD 는 의도적으로 정적 index.html 에서 제외.
+      Google 정책: 한 페이지에 FAQPage 는 1개만 허용 (중복 시 'FAQPage 입력란이
+      중복되었습니다' 오류 발생). index.html JSON-LD 는 모든 라우트에 출력되므로
+      여기에 FAQPage 를 두면 /intro 등 자체 FAQPage 를 주입하는 페이지에서 중복.
+      각 페이지가 필요 시 PageSeo + buildFaqJsonLd 로 페이지별 FAQ 를 주입한다.
+    -->
+    </script>
+  </head>
+  <body>
+    <!--
+      SEO 보조 H1 (sr-only):
+      검색엔진(Bing/Google)이 SSR 단계에서 페이지를 fetch했을 때
+      즉시 H1을 인식할 수 있도록 시각적으로 숨겨진 H1을 본문 최상단에 배치.
+      사용자에게는 보이지 않으며, 스크린리더와 검색엔진은 정상 인식.
+    -->
+    <h1 style="position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0;">
+      타지역서비스 네이버노출 자동체크 솔루션 — 타지역닷컴
+    </h1>
+
+    <div id="root"></div>
+
+    <!--
+      ════════════════════════════════════════════════════════════════════════
+      SEO 핵심 보조 콘텐츠 (Googlebot/네이버봇/Bingbot 크롤 최적화)
+      ════════════════════════════════════════════════════════════════════════
+      목적:
+      1. SPA(React Router) 환경에서 SSR HTML에 내부 링크가 0개인 문제 해결
+         → 봇이 JS 실행 전에도 사이트 구조와 다른 페이지의 존재를 즉시 인식
+      2. JS 비활성/렌더링 실패 시에도 핵심 키워드와 페이지 링크 노출
+      3. 페이지별 고유 콘텐츠 부족(SPA 동일 HTML) 문제 완화
+         → 봇이 sitemap 외에도 본문 링크로 다른 페이지를 발견 가능
+
+      주의: 일반 사용자에게는 React 앱이 #root 에 마운트된 후 보이지 않으므로
+            (사용자 시선엔 React 앱만 보임) 디자인에 영향 없음.
+            display:none 은 일부 검색엔진이 평가절하하므로 사용하지 않고,
+            sr-only 스타일로 시각적으로만 가린다 (스크린리더와 봇은 정상 인식).
+      ════════════════════════════════════════════════════════════════════════
+    -->
+    <div id="seo-fallback" style="position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0;">
+      <h2>타지역서비스 네이버 노출 자동 체크 4종 솔루션</h2>
+      <p>
+        타지역서비스(070 가상번호) 사장님을 위한 네이버 플레이스 1페이지 노출 자동 체크 및
+        키워드 발굴 솔루션. 1,875개 등록 업체와 508,854개 회선 데이터로 검증된 4종 솔루션을
+        제공합니다.
+      </p>
+      <h3>주요 페이지</h3>
+      <nav aria-label="주요 페이지 (SEO)">
+        <ul>
+          <li><a href="/">홈 — 타지역서비스 네이버노출 자동체크 솔루션</a></li>
+          <li><a href="/intro">타지역 4종 솔루션 소개 — 똑같이 등록했는데 왜 우리만 안 뜰까?</a></li>
+          <li><a href="/intro/keyword-dna">키워드 DNA 파싱 솔루션 — 상호명을 6대 DNA로 1초 만에 분해</a></li>
+          <li><a href="/intro/keyword-discover">네이버 1페이지 노출 키워드 발굴 솔루션</a></li>
+          <li><a href="/intro/competition">지역별 노출 경쟁도 분석 솔루션 — 동(洞)별 진입 우선순위</a></li>
+          <li><a href="/intro/monitor">네이버 노출 관리 자동 체크 솔루션 — 24시간 노출 보초병</a></li>
+          <li><a href="/about/what-is">타지역서비스란 무엇인가? — 네이버플레이스 확장 전략 가이드</a></li>
+          <li><a href="/about/essential-categories">타지역 필수업종 — 회선 수 기준 시장 규모 정렬</a></li>
+          <li><a href="/about/keyword-logic">타지역 키워드 로직 — 네이버 1페이지 노출의 메커니즘</a></li>
+          <li><a href="/about/exposure-management">타지역 노출 관리 — 등록보다 유지가 어려운 이유와 대응법</a></li>
+        </ul>
+      </nav>
+      <h3>핵심 키워드</h3>
+      <p>
+        타지역서비스, 타지역닷컴, 네이버 플레이스 노출, 네이버 1페이지, 070 가상번호,
+        통신사 부가서비스, 출장 광고, 노출 자동 체크, 키워드 DNA 분석, 키워드 발굴,
+        지역 경쟁도 분석, 플레이스 모니터링, 광고 손실 방지, 흥신소, 심부름센터,
+        컴퓨터수리, 시스템에어컨설치, 보일러수리, 출장세차, 가전수리.
+      </p>
+      <h3>문의</h3>
+      <p>
+        카카오톡 무료 상담: <a href="http://pf.kakao.com/_qemTX">pf.kakao.com/_qemTX</a> ·
+        전화 1688-8750
+      </p>
+    </div>
+
+    <!-- SEO 보조: 자바스크립트 비활성 환경에서도 핵심 키워드/문구 노출 -->
+    <noscript>
+      <h2>자바스크립트가 비활성화되어 있습니다</h2>
+      <p>
+        타지역서비스(070) 사장님을 위한 고질적인 네이버 플레이스 누락을 자동 체크하여
+        고객문의 누수 및 광고비 손실을 막아드립니다.
+      </p>
+      <p>이 사이트는 정상 이용을 위해 자바스크립트가 필요합니다.</p>
+      <p>
+        문의: 카카오톡 <a href="http://pf.kakao.com/_qemTX">pf.kakao.com/_qemTX</a>
+        / ☎ 1688-8750
+      </p>
+    </noscript>
+
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

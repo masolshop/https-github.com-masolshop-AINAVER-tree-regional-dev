@@ -1,0 +1,1073 @@
+"""APScheduler 기반 자동 검증 스케줄러.
+
+전략 v2 (2026-04-29 도입 → 2026-05-01 단독 본가동) — 한국 시간(KST) 기준 15분 슬롯 분산:
+  · 매 15분 정각마다(00, 15, 30, 45) 깨어남 → 하루 96회
+  · slot_index = (KST hour * 4) + (KST minute // 15)
+  · User.verify_slot_15m == 현재 slot_index 인 사용자만 후보
+  · 추가로 verify_frequency 주기(daily/every3d/every5d/weekly/paused) 충족 검사
+  · 사용자 분산: 가입 시 균등 해시 (id × 7919) mod 96
+  · 부하 예상 (1만 사용자, 평균 5건):
+      슬롯당 ~104명 × 5 = 520건 / 15분 → 0.6 RPS  (네이버 안전)
+
+스케줄러 통합 (2026-05-01):
+  · v2 (96슬롯, 15분) 가 모든 회원 등록 070 의 자동 검증을 단독 담당.
+  · v1 (24슬롯, hourly) 트리거는 기본 OFF (KEEP_V1_SCHEDULER=false).
+    필요 시 KEEP_V1_SCHEDULER=true 로 임시 부활 가능 (롤백 안전망).
+  · VERIFY_SCHEDULER_V2_DRY_RUN 기본값 false — v2 가 실제 검증 수행.
+  · 슈퍼어드민 /admin/schedule 에서 회원별 slot/주기를 단일 화면으로 관리.
+
+⚠️ 시간대 정책:
+  · DB 저장은 KST (now_kst), 비교 기준은 모두 KST
+  · "내 검증 슬롯: 슬롯 50" = KST 12:30 시작
+
+처리 흐름 (v2 본가동 시):
+  1) verify_slot_15m == 현재 slot AND is_due_for_run() == True 사용자 조회
+  2) 그 사용자들의 RegisteredPlace 일괄 조회 (chunked)
+  3) verify_batch(concurrency=1, pace=500ms) 로 검증
+  4) persist_results() + ChangeEvent + DailyHealthCheck 기록
+  5) User.last_auto_run_at 갱신 + VerifyScheduleLog status='executed'
+  6) 슬롯당 14분 상한 — 다음 슬롯과 겹침 방지
+"""
+from __future__ import annotations
+
+import asyncio
+import logging
+import os as _os
+from datetime import datetime, timezone, timedelta
+from app.core.time_utils import now_kst, to_kst, KST
+from typing import Sequence
+
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from apscheduler.triggers.cron import CronTrigger
+from sqlalchemy import select, func as _f
+
+from app.core.config import settings
+from app.core.database import AsyncSessionLocal
+from app.models.user import User
+from app.models.place import RegisteredPlace
+from app.models.check import VerificationRun
+from app.models.verify_schedule_log import VerifyScheduleLog
+from app.services.verifier import verify_batch
+from app.services.persist import persist_results
+from app.services.notifier import notify_user_events
+from app.services.schedule_assigner import (
+    SLOT_COUNT_15M,
+    is_due_for_run,
+)
+
+
+log = logging.getLogger("scheduler")
+# uvicorn 환경에서는 root logger가 WARNING이라 log.info 가 안 보임 → 강제 INFO
+log.setLevel(logging.INFO)
+if not log.handlers:
+    _h = logging.StreamHandler()
+    _h.setFormatter(logging.Formatter("%(asctime)s [%(name)s] %(levelname)s: %(message)s"))
+    log.addHandler(_h)
+    log.propagate = False
+# apscheduler 자체 로그도 살림 (잡 트리거 흔적 추적용)
+logging.getLogger("apscheduler").setLevel(logging.INFO)
+logging.getLogger("apscheduler.scheduler").setLevel(logging.INFO)
+logging.getLogger("apscheduler.executors.default").setLevel(logging.INFO)
+
+
+def _print(msg: str) -> None:
+    """uvicorn stdout 직접 출력 (logging 설정과 무관하게 항상 보이도록)."""
+    print(f"[scheduler] {msg}", flush=True)
+
+
+# ──────────────────────────────────────────────────────────────
+# 시간대
+# ──────────────────────────────────────────────────────────────
+KST = timezone(timedelta(hours=9))
+
+
+def kst_now() -> datetime:
+    """현재 KST 시각 (timezone-aware)."""
+    return datetime.now(KST)
+
+
+def kst_hour() -> int:
+    """현재 KST 시각의 hour (0~23). [DEPRECATED — v1 호환 유지]"""
+    return kst_now().hour
+
+
+def kst_slot_15m() -> int:
+    """현재 KST 시각의 15분 슬롯 번호 (0~95).
+
+    slot = (hour × 4) + (minute // 15)
+    예: 03:30 → 14, 12:45 → 51, 23:45 → 95
+    """
+    n = kst_now()
+    return (n.hour * 4) + (n.minute // 15)
+
+
+# ──────────────────────────────────────────────────────────────
+# 튜닝 파라미터
+# ──────────────────────────────────────────────────────────────
+#
+# 자동 검증 정책 (2026-04-29 정밀 검증 전환):
+#   "등록검증 정밀검증으로 했는데 자동검증체크로 하다보니 이전 불일치 데이타가 사라져."
+#   → fast 모드는 페이지 존재 유무(=DEAD/OK)만 보고 전화/동/상호 불일치를 잡지 못해
+#     수동 정밀검증의 *_MISMATCH 결과를 OK 또는 잘못된 DEAD 로 덮어쓰는 문제 발생.
+#   → 자동도 full 모드로 전환하여 등록검증과 동일한 전화/동/로/리 풀 검증 수행.
+#
+#   - 모드: full (전화 + 동/로/리 풀 검증 — 등록검증과 동일)
+#   - 속도:
+#       · 자동 full: concurrency=1 (직렬) + pace 700ms
+#         → 296건 ≈ (700ms 응답 + 700ms 페이스) × 296 ≈ 약 7분
+#         → 슬롯 14분 예산 안에서 충분, 네이버 IP throttle 위험 낮음
+#   - 사용자 간에도 USER_CHUNK_SIZE=20 으로 좁혀 동시 부하 추가 완화.
+#
+# 추가 보호장치 (persist.py):
+#   자동 검증의 결과가 수동 정밀검증의 명확한 *_MISMATCH 를 덮어쓰지 못하도록,
+#   자동 trigger 시 verdict 다운그레이드(MISMATCH → OK 또는 MISMATCH → DEAD)를 차단.
+#
+# v2 (2026-04-29):
+#   슬롯당 14분 상한 + 96슬롯 분산 → 같은 슬롯에 들어오는 회원은 평균 (총회원수/96).
+# ──────────────────────────────────────────────────────────────
+
+# 자동 검증 모드 (fast / full) — 정밀 검증으로 전환 (2026-04-29)
+AUTO_VERIFY_MODE = _os.environ.get("AUTO_VERIFY_MODE", "full").lower()
+if AUTO_VERIFY_MODE not in ("fast", "full"):
+    AUTO_VERIFY_MODE = "full"
+
+# 사용자당 동시 검증 수 (자동) — 직렬(1), 정확도 최우선
+PER_USER_CONCURRENCY = 1
+
+# 요청 간 페이스 (ms) — full 모드는 응답 시간이 길어 700ms 로 상향
+AUTO_PACE_MS = int(_os.environ.get("AUTO_PACE_MS", "700" if AUTO_VERIFY_MODE == "full" else "500"))
+
+# 사용자 처리 청크 크기 (메모리 + 네이버 부하 분산)
+USER_CHUNK_SIZE = 20
+
+# 재시도 백오프 (초)
+RETRY_BACKOFF_SEC = [30, 120, 600]
+
+# 슬롯 1회 처리시간 상한 (초). 14분 = 다음 15분 슬롯과 1분 여유.
+SLOT_TIME_BUDGET_SEC = 14 * 60
+
+
+# ──────────────────────────────────────────────────────────────
+# 적응형 페이싱 — 차단율(429+403) 기반 자동 페이스 조정
+# ──────────────────────────────────────────────────────────────
+# 정책:
+#   · 최근 10분 차단율(429+403) 측정
+#   · ≥10% : 페이스 2배 (위험)
+#   · ≥5%  : 페이스 1.5배 (경계)
+#   · <5%  : 기본 페이스 (정상)
+#   · 최소 200ms ~ 최대 5000ms 클램프
+#
+# 매 슬롯 진입 시 1회 계산 → 해당 슬롯 동안 고정 사용 (안정성)
+# ──────────────────────────────────────────────────────────────
+
+ADAPTIVE_PACE_ENABLED: bool = (
+    _os.environ.get("ADAPTIVE_PACE_ENABLED", "true").lower() in ("1", "true", "yes")
+)
+ADAPTIVE_PACE_MIN_MS = 200
+ADAPTIVE_PACE_MAX_MS = 5000
+ADAPTIVE_WINDOW_SEC = 600  # 최근 10분
+
+
+def get_adaptive_pace_ms(base_pace_ms: int = AUTO_PACE_MS) -> tuple[int, dict]:
+    """최근 10분 차단율 기반 적응형 페이스 계산.
+
+    Returns:
+        (pace_ms, stats_dict)
+        stats_dict: {block_rate, total, blocked_429, blocked_403, multiplier, level}
+    """
+    if not ADAPTIVE_PACE_ENABLED:
+        return base_pace_ms, {"adaptive": False, "block_rate": 0.0, "multiplier": 1.0, "level": "off"}
+
+    try:
+        # place_id_checker 의 메트릭 카운터 활용
+        from app.services.place_id_checker import get_block_stats
+        stats = get_block_stats(window_sec=ADAPTIVE_WINDOW_SEC)
+    except Exception:
+        return base_pace_ms, {"adaptive": False, "block_rate": 0.0, "multiplier": 1.0, "level": "error"}
+
+    rate = float(stats.get("block_rate", 0.0))
+    total = int(stats.get("total", 0))
+
+    # 표본이 너무 적으면(예: 직전 슬롯이 비어있던 신규 가동) 적응 보류
+    if total < 20:
+        return base_pace_ms, {
+            "adaptive": True,
+            "block_rate": rate,
+            "total": total,
+            "multiplier": 1.0,
+            "level": "warmup",
+            **stats,
+        }
+
+    if rate >= 0.10:
+        mult = 2.0
+        level = "danger"
+    elif rate >= 0.05:
+        mult = 1.5
+        level = "warn"
+    else:
+        mult = 1.0
+        level = "ok"
+
+    pace = int(round(base_pace_ms * mult))
+    pace = max(ADAPTIVE_PACE_MIN_MS, min(ADAPTIVE_PACE_MAX_MS, pace))
+    return pace, {
+        "adaptive": True,
+        "block_rate": rate,
+        "multiplier": mult,
+        "level": level,
+        **stats,
+    }
+
+# dry-run 모드 — True 면 실제 검증 안 하고 VerifyScheduleLog 만 기록
+# (2026-05-01) 스케줄러 통합: 기본값 false 로 전환 — v2 가 단독 본가동.
+VERIFY_SCHEDULER_V2_DRY_RUN: bool = (
+    _os.environ.get("VERIFY_SCHEDULER_V2_DRY_RUN", "false").lower() in ("1", "true", "yes")
+)
+
+
+# ──────────────────────────────────────────────────────────────
+# 사용자별 검증 락 — 수동(/verify/live) 과 자동(스케줄러) 의 동시 실행 방지
+# 같은 user 에 대해 manual + auto 가 동시에 verify_batch 를 호출하면:
+#   · 같은 phone→place_id 추출 단계가 중복 호출되어 네이버 429/403 차단 발생
+#   · DailyHealthCheck 동시 INSERT 로 race condition 발생
+#   · 수동 진행률 100% 후 자동 결과로 verdict 가 덮여 사용자 혼란
+# 해결: app.api.verify._get_user_lock 와 같은 락 객체를 공유.
+# 락이 잡혀 있으면 자동 검증은 즉시 건너뛰고 다음 슬롯에서 재시도.
+# ──────────────────────────────────────────────────────────────
+
+
+def _get_shared_user_lock(user_id: int) -> asyncio.Lock:
+    """수동 검증과 동일한 per-user lock 반환 (app.api.verify 공유)."""
+    # 지연 import — 순환 의존성 회피
+    from app.api.verify import _get_user_lock as _manual_lock_factory
+    return _manual_lock_factory(user_id)
+
+
+# ──────────────────────────────────────────────────────────────
+# 슬롯 검증 — 사용자 1명 단위
+# ──────────────────────────────────────────────────────────────
+
+
+async def _verify_user_places(
+    user_id: int,
+    place_ids: Sequence[int],
+    attempt: int = 0,
+) -> dict:
+    """단일 사용자의 등록 070 일괄 검증.
+
+    실패 시(네트워크/DB) 지수 백오프로 재시도.
+    수동 검증이 동시 진행 중이면 락 획득에 실패하여 즉시 skip 반환.
+    """
+    # 수동 검증과 락 공유 — 같은 사용자에 대한 동시 실행 차단
+    lock = _get_shared_user_lock(user_id)
+    if lock.locked():
+        log.info(
+            "auto-verify skipped user=%d (manual verify in progress) places=%d",
+            user_id, len(place_ids),
+        )
+        return {
+            "updated": 0, "events": 0, "history": 0,
+            "user_id": user_id,
+            "places": len(place_ids),
+            "elapsed_ms": 0,
+            "skipped": "manual_in_progress",
+        }
+    try:
+        async with lock:
+            return await _verify_user_places_locked(user_id, place_ids, attempt)
+    except Exception:
+        raise
+
+
+async def _verify_user_places_locked(
+    user_id: int,
+    place_ids: Sequence[int],
+    attempt: int = 0,
+) -> dict:
+    """실제 검증 본체 (락 획득 후 호출)."""
+    try:
+        async with AsyncSessionLocal() as db:
+            q = await db.execute(
+                select(RegisteredPlace).where(RegisteredPlace.id.in_(place_ids))
+            )
+            places = list(q.scalars().all())
+            if not places:
+                return {"updated": 0, "events": 0, "history": 0}
+
+            import time as _time
+            _t0 = _time.perf_counter()
+            # 적응형 페이스 — 최근 10분 차단율(429/403) 기반 자동 조정
+            pace_ms, pace_stats = get_adaptive_pace_ms(AUTO_PACE_MS)
+            if pace_stats.get("level") in ("warn", "danger"):
+                log.warning(
+                    "[adaptive-pace] user=%d level=%s block_rate=%.2f%% pace %dms→%dms (×%.1f) "
+                    "[10m: 200=%d / 429=%d / 403=%d]",
+                    user_id, pace_stats["level"], pace_stats["block_rate"] * 100,
+                    AUTO_PACE_MS, pace_ms, pace_stats["multiplier"],
+                    pace_stats.get("ok", 0), pace_stats.get("blocked_429", 0),
+                    pace_stats.get("blocked_403", 0),
+                )
+            results = await verify_batch(
+                places,
+                concurrency=PER_USER_CONCURRENCY,
+                mode=AUTO_VERIFY_MODE,
+                pace_ms=pace_ms,
+            )
+            elapsed_ms = int((_time.perf_counter() - _t0) * 1000)
+            stats = await persist_results(
+                db, results, trigger="scheduler", mode=AUTO_VERIFY_MODE,
+            )
+
+            # ── 알림 발송 (best-effort, ChangeEvent 가 있을 때만) ──
+            # 변화가 없어도 매일 1회 자동 검증 결과 요약 메일을 발송한다.
+            # (notifier 가 events 빈 리스트 + run_summary 로 "정상 운영" 리포트를 생성)
+            new_events = stats.pop("new_events", []) or []
+            place_lookup = stats.pop("place_lookup", {}) or {}
+            if settings.NOTIFY_ENABLED and len(results) > 0:
+                try:
+                    user = await db.get(User, user_id)
+                    if user is not None:
+                        ok_n = sum(1 for r in results if str(r["verdict"]).endswith("OK"))
+                        dead_n = sum(1 for r in results if str(r["verdict"]).endswith("DEAD"))
+                        pending_n = sum(1 for r in results if str(r["verdict"]).endswith("PENDING"))
+                        mismatch_n = sum(
+                            1 for r in results
+                            if str(r["verdict"]).endswith(("PHONE_MISMATCH", "DONG_MISMATCH",
+                                                            "NAME_MISMATCH", "REGION_MISMATCH"))
+                        )
+                        run_summary = {
+                            "total": len(results),
+                            "ok": ok_n,
+                            "dead": dead_n,
+                            "mismatch": mismatch_n,
+                            "pending": pending_n,
+                            "elapsed_ms": elapsed_ms,
+                            "mode": AUTO_VERIFY_MODE,
+                            "trigger": "scheduler",
+                        }
+                        notif_stats = await notify_user_events(
+                            db, user, new_events,
+                            place_lookup=place_lookup,
+                            run_summary=run_summary,
+                        )
+                        stats["email_sent"] = notif_stats.get("email_sent", 0)
+                        stats["slack_sent"] = notif_stats.get("slack_sent", 0)
+                except Exception as e:                                          # noqa: BLE001
+                    log.warning("notify failed user=%d err=%s", user_id, e)
+
+            stats["user_id"] = user_id
+            stats["places"] = len(places)
+            stats["elapsed_ms"] = elapsed_ms
+            return stats
+
+    except Exception as e:
+        log.warning(
+            "verify failed user=%d attempt=%d/%d err=%s",
+            user_id, attempt + 1, len(RETRY_BACKOFF_SEC) + 1, e,
+        )
+        if attempt < len(RETRY_BACKOFF_SEC):
+            await asyncio.sleep(RETRY_BACKOFF_SEC[attempt])
+            # 이미 같은 함수 안(락 보유 상태)에서 재시도 — 락 재획득 시도하지 않음
+            return await _verify_user_places_locked(user_id, place_ids, attempt + 1)
+        log.error("verify gave up for user=%d places=%d err=%s",
+                  user_id, len(place_ids), e)
+        return {"updated": 0, "events": 0, "history": 0,
+                "user_id": user_id, "error": str(e), "elapsed_ms": 0}
+
+
+# ──────────────────────────────────────────────────────────────
+# VerifyScheduleLog 기록 (dry-run / 본가동 공통)
+# ──────────────────────────────────────────────────────────────
+
+
+async def _log_schedule_entry(
+    *,
+    db,
+    user_id: int,
+    slot_index: int,
+    scheduled_at: datetime,
+    frequency: str,
+    places_checked: int,
+    elapsed_ms: int,
+    status: str,
+    note: str | None,
+    dry_run: bool,
+) -> None:
+    """VerifyScheduleLog 1행 추가 (best-effort, 호출자가 commit)."""
+    db.add(VerifyScheduleLog(
+        user_id=user_id,
+        slot_index=slot_index,
+        scheduled_at=scheduled_at,
+        frequency=frequency,
+        places_checked=places_checked,
+        elapsed_ms=elapsed_ms,
+        status=status,
+        note=note,
+        dry_run=dry_run,
+    ))
+
+
+# ──────────────────────────────────────────────────────────────
+# v2 메인 — 15분 슬롯 검증
+# ──────────────────────────────────────────────────────────────
+
+
+async def run_slot_15m_verification(
+    slot_index: int | None = None,
+    *,
+    dry_run: bool | None = None,
+) -> dict:
+    """현재 KST 15분 슬롯의 사용자들 처리.
+
+    Args:
+        slot_index : 0~95. None 이면 현재 KST 슬롯.
+        dry_run    : True 면 기록만 하고 실제 검증 안 함.
+                     None 이면 환경변수 VERIFY_SCHEDULER_V2_DRY_RUN 따름.
+
+    Returns:
+        {
+          "slot": int, "scheduled_at": datetime, "dry_run": bool,
+          "candidates": int,        # 슬롯에 묶인 active 회원 수
+          "due": int,               # 주기 충족 회원 수
+          "skipped_frequency": int, # 주기 미충족
+          "skipped_paused": int,
+          "executed": int,          # 실제 검증 수행
+          "places_total": int,
+          "elapsed_ms": int,
+        }
+    """
+    started_at = now_kst()
+    started_ts = started_at.timestamp()
+    slot = slot_index if slot_index is not None else kst_slot_15m()
+    is_dry_run = dry_run if dry_run is not None else VERIFY_SCHEDULER_V2_DRY_RUN
+
+    if not (0 <= slot < SLOT_COUNT_15M):
+        log.warning("invalid slot_index=%d, fallback to current", slot)
+        slot = kst_slot_15m()
+
+    _print(f"[v2] slot {slot}/{SLOT_COUNT_15M} (KST) triggered at {started_at} dry_run={is_dry_run}")
+    log.info("=== v2 slot %d (dry_run=%s) started ===", slot, is_dry_run)
+
+    summary = {
+        "slot": slot,
+        "scheduled_at": started_at,
+        "dry_run": is_dry_run,
+        "candidates": 0,
+        "due": 0,
+        "skipped_frequency": 0,
+        "skipped_paused": 0,
+        "skipped_incomplete": 0,
+        "skipped_blocked": 0,
+        "skipped_manual": 0,  # 수동 검증 진행 중이라 자동이 양보한 회원 수
+        "executed": 0,
+        "failed": 0,
+        "places_total": 0,
+        "elapsed_ms": 0,
+    }
+
+    # 1) 슬롯에 묶인 사용자 + 주기 판정
+    async with AsyncSessionLocal() as db:
+        # 슬롯 매칭 회원 전체 (paused·blocked 도 일단 가져와서 로그 기록)
+        q_users = await db.execute(
+            select(User).where(User.verify_slot_15m == slot)
+        )
+        candidates = list(q_users.scalars().all())
+        summary["candidates"] = len(candidates)
+
+        if not candidates:
+            elapsed_ms = int((now_kst() - started_at).total_seconds() * 1000)
+            summary["elapsed_ms"] = elapsed_ms
+            _print(f"[v2] slot {slot}: no candidates")
+            return summary
+
+        # 주기 판정 → due / skipped 분류
+        due_users: list[User] = []
+        skipped_logs: list[tuple[int, str, str, str]] = []  # (uid, freq, status, note)
+        for u in candidates:
+            ok, reason = is_due_for_run(u, now_ts=started_ts)
+            if ok:
+                due_users.append(u)
+                continue
+            # 사유별 카운트
+            if reason == "blocked":
+                summary["skipped_blocked"] += 1
+                status = "skipped_blocked"
+            elif reason == "skipped_incomplete":
+                summary["skipped_incomplete"] += 1
+                status = "skipped_incomplete"
+            elif reason == "skipped_paused":
+                summary["skipped_paused"] += 1
+                status = "skipped_paused"
+            elif reason == "skipped_frequency":
+                summary["skipped_frequency"] += 1
+                status = "skipped_frequency"
+            else:
+                status = "skipped_other"
+            skipped_logs.append((u.id, u.verify_frequency or "every3d", status, reason))
+
+        summary["due"] = len(due_users)
+
+        # 스킵 로그 일괄 INSERT (dry-run 무관 — 항상 기록)
+        for uid, freq, status, note in skipped_logs:
+            await _log_schedule_entry(
+                db=db, user_id=uid, slot_index=slot, scheduled_at=started_at,
+                frequency=freq, places_checked=0, elapsed_ms=0,
+                status=status, note=note, dry_run=is_dry_run,
+            )
+        await db.commit()
+
+        if not due_users:
+            elapsed_ms = int((now_kst() - started_at).total_seconds() * 1000)
+            summary["elapsed_ms"] = elapsed_ms
+            _print(f"[v2] slot {slot}: 0 due (candidates={len(candidates)}, "
+                   f"freq_skip={summary['skipped_frequency']}, "
+                   f"paused={summary['skipped_paused']}, "
+                   f"blocked={summary['skipped_blocked']}, "
+                   f"incomplete={summary['skipped_incomplete']})")
+            log.info("v2 slot %d: 0 due, %s", slot, summary)
+            return summary
+
+        # 2) 등록 매핑
+        user_ids = [u.id for u in due_users]
+        q_places = await db.execute(
+            select(RegisteredPlace.id, RegisteredPlace.user_id)
+            .where(RegisteredPlace.user_id.in_(user_ids))
+        )
+        rows = q_places.all()
+
+    by_user: dict[int, list[int]] = {}
+    for pid, uid in rows:
+        by_user.setdefault(uid, []).append(pid)
+
+    user_jobs: list[tuple[User, list[int]]] = [
+        (u, by_user.get(u.id, [])) for u in due_users
+    ]
+    total_places = sum(len(pids) for _, pids in user_jobs)
+    summary["places_total"] = total_places
+
+    _print(f"[v2] slot {slot}: due={len(due_users)} users / {total_places} places "
+           f"(dry_run={is_dry_run})")
+
+    # 3) dry-run 이면 실제 검증 안 하고 기록만 ───────────────
+    if is_dry_run:
+        async with AsyncSessionLocal() as db:
+            for u, pids in user_jobs:
+                await _log_schedule_entry(
+                    db=db, user_id=u.id, slot_index=slot, scheduled_at=started_at,
+                    frequency=u.verify_frequency or "every3d",
+                    places_checked=len(pids), elapsed_ms=0,
+                    status="dry_run_recorded",
+                    note=f"would verify {len(pids)} places",
+                    dry_run=True,
+                )
+            await db.commit()
+        summary["executed"] = 0  # dry-run 은 executed 0
+        elapsed_ms = int((now_kst() - started_at).total_seconds() * 1000)
+        summary["elapsed_ms"] = elapsed_ms
+        _print(f"[v2] slot {slot} DRY-RUN done: {summary}")
+        log.info("=== v2 slot %d DRY-RUN done: %s ===", slot, summary)
+        return summary
+
+    # 4) 본가동 — 청크 단위로 실제 검증, 슬롯 시간 예산 초과 시 중단 ───
+    executed = 0
+    failed = 0
+    per_user_results: dict[int, dict] = {}
+
+    for i in range(0, len(user_jobs), USER_CHUNK_SIZE):
+        # 시간 예산 초과 검사 (다음 슬롯 진입 전 종료)
+        elapsed_sec = (now_kst() - started_at).total_seconds()
+        if elapsed_sec >= SLOT_TIME_BUDGET_SEC:
+            remaining = len(user_jobs) - i
+            log.warning("v2 slot %d budget exceeded — %d users skipped", slot, remaining)
+            _print(f"[v2] slot {slot}: TIME BUDGET EXCEEDED, {remaining} users skipped")
+            # 남은 회원은 skipped_budget 으로 기록
+            async with AsyncSessionLocal() as db:
+                for u, pids in user_jobs[i:]:
+                    await _log_schedule_entry(
+                        db=db, user_id=u.id, slot_index=slot, scheduled_at=started_at,
+                        frequency=u.verify_frequency or "every3d",
+                        places_checked=0, elapsed_ms=0,
+                        status="skipped_budget",
+                        note="slot time budget exceeded",
+                        dry_run=False,
+                    )
+                await db.commit()
+            break
+
+        chunk = user_jobs[i : i + USER_CHUNK_SIZE]
+        chunk_pairs = [(u.id, pids) for u, pids in chunk if pids]
+        if not chunk_pairs:
+            # 등록 0건인 회원 — 로그만 남김
+            async with AsyncSessionLocal() as db:
+                for u, _ in chunk:
+                    await _log_schedule_entry(
+                        db=db, user_id=u.id, slot_index=slot, scheduled_at=started_at,
+                        frequency=u.verify_frequency or "every3d",
+                        places_checked=0, elapsed_ms=0,
+                        status="executed",
+                        note="no places",
+                        dry_run=False,
+                    )
+                # last_auto_run_at 갱신 — 등록 0이라도 주기 카운트는 진행
+                from sqlalchemy import update
+                await db.execute(
+                    update(User).where(User.id.in_([u.id for u, _ in chunk]))
+                    .values(last_auto_run_at=now_kst())
+                )
+                await db.commit()
+            executed += len(chunk)
+            continue
+
+        results = await asyncio.gather(
+            *(_verify_user_places(uid, pids) for uid, pids in chunk_pairs),
+            return_exceptions=False,
+        )
+        skipped_manual_uids: set[int] = set()
+        for r in results:
+            uid = r.get("user_id")
+            if uid is not None:
+                per_user_results[uid] = r
+            if r.get("skipped") == "manual_in_progress":
+                if uid is not None:
+                    skipped_manual_uids.add(uid)
+                summary["skipped_manual"] += 1
+            elif r.get("error"):
+                failed += 1
+            else:
+                executed += 1
+
+        # 처리 후: VerifyScheduleLog 본가동 기록 + last_auto_run_at 갱신
+        async with AsyncSessionLocal() as db:
+            from sqlalchemy import update
+            now_ts_after = now_kst()
+            for u, pids in chunk:
+                r = per_user_results.get(u.id, {})
+                err = r.get("error")
+                if u.id in skipped_manual_uids:
+                    # 수동 검증과 충돌 → 자동 양보. last_auto_run_at 미갱신
+                    # → 다음 슬롯에서 재진입 가능.
+                    await _log_schedule_entry(
+                        db=db, user_id=u.id, slot_index=slot, scheduled_at=started_at,
+                        frequency=u.verify_frequency or "every3d",
+                        places_checked=0,
+                        elapsed_ms=0,
+                        status="skipped_manual",
+                        note="manual verify in progress — yielded",
+                        dry_run=False,
+                    )
+                    continue
+                await _log_schedule_entry(
+                    db=db, user_id=u.id, slot_index=slot, scheduled_at=started_at,
+                    frequency=u.verify_frequency or "every3d",
+                    places_checked=len(pids),
+                    elapsed_ms=int(r.get("elapsed_ms") or 0),
+                    status="failed" if err else "executed",
+                    note=str(err)[:200] if err else None,
+                    dry_run=False,
+                )
+            # 성공/실패 모두 last_auto_run_at 갱신 (실패해도 다음 주기까지는 대기)
+            ran_uids = [u.id for u, _ in chunk if u.id not in skipped_manual_uids]
+            if ran_uids:
+                await db.execute(
+                    update(User).where(User.id.in_(ran_uids))
+                    .values(last_auto_run_at=now_ts_after)
+                )
+            await db.commit()
+
+    summary["executed"] = executed
+    summary["failed"] = failed
+
+    # 5) VerificationRun 기록 (본가동만 — dry-run 은 verification_run 안 만듦)
+    try:
+        async with AsyncSessionLocal() as db:
+            for u, pids in user_jobs:
+                if u.id not in per_user_results:
+                    continue
+                vq = await db.execute(
+                    select(RegisteredPlace.current_verdict, _f.count(RegisteredPlace.id))
+                    .where(RegisteredPlace.user_id == u.id)
+                    .group_by(RegisteredPlace.current_verdict)
+                )
+                v_map = {str(k): v for k, v in vq.all()}
+
+                def _v(name: str) -> int:
+                    return v_map.get(name, 0) + v_map.get(f"VerdictKind.{name}", 0)
+
+                ok_n = _v("OK")
+                dead_n = _v("DEAD")
+                pend_n = _v("PENDING")
+                mismatch_n = (
+                    _v("PHONE_MISMATCH") + _v("DONG_MISMATCH")
+                    + _v("NAME_MISMATCH") + _v("REGION_MISMATCH")
+                )
+                user_total = sum(v_map.values())
+                dead_n = dead_n + mismatch_n
+                user_events = per_user_results[u.id].get("events", 0)
+                user_elapsed = int(per_user_results[u.id].get("elapsed_ms") or 0)
+                db.add(VerificationRun(
+                    user_id=u.id,
+                    trigger="scheduler",
+                    mode=AUTO_VERIFY_MODE,
+                    slot_hour=slot // 4,  # v1 호환 — slot_hour 는 0~23
+                    total_count=user_total,
+                    ok_count=ok_n,
+                    dead_count=dead_n,
+                    pending_count=pend_n,
+                    events_count=user_events,
+                    elapsed_ms=user_elapsed,
+                    started_at=started_at,
+                ))
+            await db.commit()
+    except Exception as e:                                                  # noqa: BLE001
+        log.warning("verification_run insert failed: %s", e)
+
+    elapsed_ms = int((now_kst() - started_at).total_seconds() * 1000)
+    summary["elapsed_ms"] = elapsed_ms
+    _print(f"[v2] slot {slot} done: {summary}")
+    log.info("=== v2 slot %d done: %s ===", slot, summary)
+    return summary
+
+
+# ──────────────────────────────────────────────────────────────
+# v1 (DEPRECATED) — 시간(0~23) 슬롯 + verify_slot 사용
+# dry-run 기간(1주일) 동안 실제 검증을 담당. v2 본가동 시 제거 예정.
+# ──────────────────────────────────────────────────────────────
+
+
+async def _record_run(
+    *,
+    user_id: int,
+    trigger: str,
+    mode: str,
+    slot_hour: int,
+    started_at: datetime,
+    total: int,
+    ok: int,
+    dead: int,
+    pending: int,
+    events: int,
+    elapsed_ms: int,
+) -> None:
+    """VerificationRun 1행 INSERT (best-effort)."""
+    try:
+        async with AsyncSessionLocal() as db:
+            db.add(VerificationRun(
+                user_id=user_id,
+                trigger=trigger,
+                mode=mode,
+                slot_hour=slot_hour,
+                total_count=total,
+                ok_count=ok,
+                dead_count=dead,
+                pending_count=pending,
+                events_count=events,
+                elapsed_ms=elapsed_ms,
+                started_at=started_at,
+            ))
+            await db.commit()
+    except Exception as e:                                                  # noqa: BLE001
+        log.warning("record_run failed user=%d err=%s", user_id, e)
+
+
+async def run_slot_verification(slot_hour: int | None = None) -> dict:
+    """[DEPRECATED — v1] 현재 KST hour 슬롯의 사용자들 검증.
+
+    dry-run 기간 동안 실제 검증을 담당. v2 본가동 시 이 함수와 hourly 트리거 제거.
+    """
+    started_at = now_kst()
+    slot = slot_hour if slot_hour is not None else kst_hour()
+
+    _print(f"[v1] slot {slot} (KST) verification triggered at {started_at}")
+    log.info("=== v1 slot %d (KST) verification started ===", slot)
+
+    async with AsyncSessionLocal() as db:
+        q_users = await db.execute(
+            select(User.id)
+            .where(User.verify_slot == slot)
+            .where(User.is_profile_complete.is_(True))
+        )
+        user_ids = [row[0] for row in q_users.all()]
+
+        if not user_ids:
+            _print(f"[v1] slot {slot}: no users (skip)")
+            log.info("v1 slot %d: no users", slot)
+            return {
+                "slot": slot, "users": 0, "places": 0,
+                "events": 0, "elapsed_ms": 0,
+            }
+
+        q_places = await db.execute(
+            select(RegisteredPlace.id, RegisteredPlace.user_id)
+            .where(RegisteredPlace.user_id.in_(user_ids))
+        )
+        rows = q_places.all()
+
+    by_user: dict[int, list[int]] = {}
+    for pid, uid in rows:
+        by_user.setdefault(uid, []).append(pid)
+
+    user_jobs: list[tuple[int, list[int]]] = [
+        (uid, pids) for uid, pids in by_user.items() if pids
+    ]
+    total_places = sum(len(pids) for _, pids in user_jobs)
+
+    if not user_jobs:
+        _print(f"[v1] slot {slot}: {len(user_ids)} users but 0 places")
+        return {
+            "slot": slot, "users": len(user_ids), "places": 0,
+            "events": 0, "elapsed_ms": 0,
+        }
+
+    _print(f"[v1] slot {slot}: processing {len(user_jobs)} users / {total_places} places")
+
+    total_events = 0
+    total_updated = 0
+    per_user_results: list[dict] = []
+    for i in range(0, len(user_jobs), USER_CHUNK_SIZE):
+        chunk = user_jobs[i : i + USER_CHUNK_SIZE]
+        results = await asyncio.gather(
+            *(_verify_user_places(uid, pids) for uid, pids in chunk),
+            return_exceptions=False,
+        )
+        for r in results:
+            total_events += r.get("events", 0)
+            total_updated += r.get("updated", 0)
+            per_user_results.append(r)
+
+    elapsed_ms = int((now_kst() - started_at).total_seconds() * 1000)
+    summary = {
+        "slot": slot,
+        "users": len(user_jobs),
+        "places": total_places,
+        "updated": total_updated,
+        "events": total_events,
+        "elapsed_ms": elapsed_ms,
+    }
+
+    # VerificationRun 기록
+    try:
+        async with AsyncSessionLocal() as db:
+            for uid, pids in user_jobs:
+                vq = await db.execute(
+                    select(RegisteredPlace.current_verdict, _f.count(RegisteredPlace.id))
+                    .where(RegisteredPlace.user_id == uid)
+                    .group_by(RegisteredPlace.current_verdict)
+                )
+                v_map = {str(k): v for k, v in vq.all()}
+
+                def _v(name: str) -> int:
+                    return v_map.get(name, 0) + v_map.get(f"VerdictKind.{name}", 0)
+
+                ok_n = _v("OK")
+                dead_n = _v("DEAD")
+                pend_n = _v("PENDING")
+                mismatch_n = (
+                    _v("PHONE_MISMATCH") + _v("DONG_MISMATCH")
+                    + _v("NAME_MISMATCH") + _v("REGION_MISMATCH")
+                )
+                user_total = sum(v_map.values())
+                dead_n = dead_n + mismatch_n
+                user_events = next(
+                    (r.get("events", 0) for r in per_user_results if r.get("user_id") == uid),
+                    0,
+                )
+                db.add(VerificationRun(
+                    user_id=uid,
+                    trigger="scheduler",
+                    mode=AUTO_VERIFY_MODE,
+                    slot_hour=slot,
+                    total_count=user_total,
+                    ok_count=ok_n,
+                    dead_count=dead_n,
+                    pending_count=pend_n,
+                    events_count=user_events,
+                    elapsed_ms=elapsed_ms,
+                    started_at=started_at,
+                ))
+            await db.commit()
+    except Exception as e:                                                  # noqa: BLE001
+        log.warning("v1 verification_run insert failed: %s", e)
+
+    _print(f"[v1] slot {slot} done: {summary}")
+    log.info("=== v1 slot %d done: %s ===", slot, summary)
+    return summary
+
+
+# ──────────────────────────────────────────────────────────────
+# Scheduler 라이프사이클
+# ──────────────────────────────────────────────────────────────
+
+_scheduler: AsyncIOScheduler | None = None
+
+
+# ──────────────────────────────────────────────────────────────
+# 자동 검증 주기 (KST)
+# ──────────────────────────────────────────────────────────────
+# 스케줄러 통합 (2026-05-01) — 기본 동작:
+#   · v2 트리거(15분 슬롯, 96회/일) — 본가동, 모든 회원 자동 검증 단독 담당
+#   · v1 트리거(hourly, 24회/일) — 기본 OFF (KEEP_V1_SCHEDULER=false)
+#   · 필요 시 환경변수로 v1 임시 부활(KEEP_V1_SCHEDULER=true) 또는
+#     v2 안전모드 복귀(VERIFY_SCHEDULER_V2_DRY_RUN=true) 가능.
+# ──────────────────────────────────────────────────────────────
+
+AUTO_VERIFY_SCHEDULE = _os.environ.get("AUTO_VERIFY_SCHEDULE", "hourly").lower()
+# (2026-05-01) 스케줄러 통합 — v1(hourly) 트리거 기본 OFF, v2(15분) 만 본가동.
+KEEP_V1_SCHEDULER: bool = (
+    _os.environ.get("KEEP_V1_SCHEDULER", "false").lower() in ("1", "true", "yes")
+)
+
+
+def _build_v1_trigger() -> CronTrigger:
+    """v1 (hourly/daily/every3d/every5d) 트리거."""
+    tz = "Asia/Seoul"
+    if AUTO_VERIFY_SCHEDULE == "daily":
+        return CronTrigger(minute=0, timezone=tz)
+    if AUTO_VERIFY_SCHEDULE == "every3d":
+        return CronTrigger(day="1,4,7,10,13,16,19,22,25,28", hour=3, minute=0, timezone=tz)
+    if AUTO_VERIFY_SCHEDULE == "every5d":
+        return CronTrigger(day="1,6,11,16,21,26", hour=3, minute=0, timezone=tz)
+    return CronTrigger(minute=0, timezone=tz)
+
+
+def _build_v2_trigger() -> CronTrigger:
+    """v2 — 매 15분 정각 (00, 15, 30, 45)."""
+    return CronTrigger(minute="0,15,30,45", timezone="Asia/Seoul")
+
+
+def start_scheduler() -> AsyncIOScheduler:
+    """앱 시작 시 호출. 이미 시작돼 있으면 그대로 반환.
+
+    Jobs (2026-05-01 통합 후):
+      · slot_verification_v2  — 15분 슬롯 (기본 본가동, dry-run OFF)
+      · slot_verification     — 시간 슬롯 [v1, 기본 OFF; KEEP_V1_SCHEDULER=true 일 때만]
+    """
+    global _scheduler
+    if _scheduler and _scheduler.running:
+        return _scheduler
+
+    sched = AsyncIOScheduler(timezone="Asia/Seoul")
+
+    # v2 트리거 — 항상 등록 (dry-run 모드면 기록만 남김)
+    sched.add_job(
+        run_slot_15m_verification,
+        trigger=_build_v2_trigger(),
+        id="slot_verification_v2",
+        name=f"slot v2 (15min, dry_run={VERIFY_SCHEDULER_V2_DRY_RUN}, KST)",
+        replace_existing=True,
+        max_instances=1,
+        coalesce=True,
+        misfire_grace_time=300,    # 5분 이내 늦은 실행은 OK
+    )
+
+    # v1 트리거 — 환경변수로 끌 수 있게 (v2 본가동 후 OFF)
+    #
+    # 2026-05-03: 운영 DB(verification_runs) 분석 결과 KEEP_V1_SCHEDULER=false
+    # 임에도 v1 가 동작하여 회원 1명이 하루 2회(verify_slot=10 → KST 10:00,
+    # verify_slot_15m=84 → KST 21:00) 검증되는 사고가 확인됨.
+    # 원인: 이전 인스턴스에서 등록된 'slot_verification' 잡이 메모리 잔존.
+    # 대책: v1 OFF 면 같은 id 의 잡을 명시적으로 제거 (혹시 모를 잔존 차단).
+    if KEEP_V1_SCHEDULER:
+        sched.add_job(
+            run_slot_verification,
+            trigger=_build_v1_trigger(),
+            id="slot_verification",
+            name=f"slot v1 ({AUTO_VERIFY_SCHEDULE}, KST)",
+            replace_existing=True,
+            max_instances=1,
+            coalesce=True,
+            misfire_grace_time=600,
+        )
+        log.warning(
+            "scheduler: v1 (slot_verification, %s) ENABLED — KEEP_V1_SCHEDULER=true. "
+            "주의: v2 와 동시 동작 시 회원당 하루 2회 검증됩니다.",
+            AUTO_VERIFY_SCHEDULE,
+        )
+    else:
+        # v1 잡이 어떤 경로로든 등록돼 있으면 제거 (안전장치)
+        try:
+            existing = sched.get_job("slot_verification")
+            if existing is not None:
+                sched.remove_job("slot_verification")
+                log.warning("scheduler: v1 (slot_verification) 잔존 잡 제거 완료")
+        except Exception as _e:  # noqa: BLE001
+            log.debug("scheduler: v1 잡 제거 시도 중 무시 가능한 오류: %s", _e)
+        log.info("scheduler: v1 (slot_verification) DISABLED — v2 단독 본가동")
+
+    # 주간 리포트 — 매주 월요일 09:00 KST
+    # · 활성 회원 중 7일 활동(신규/미포함/변경/미노출/고객요청 변경)이 있는 회원에게만 발송
+    # · 가입 이메일(To) + notify_emails(Cc 영업관리자/고객 담당者)
+    # · WEEKLY_REPORT_ENABLED=false 면 잡 등록 자체 스킵 (운영 토글)
+    try:
+        from app.core.config import settings as _settings
+        if getattr(_settings, "WEEKLY_REPORT_ENABLED", True):
+            from app.services.weekly_report import run_weekly_report
+            sched.add_job(
+                run_weekly_report,
+                trigger=CronTrigger(day_of_week="mon", hour=9, minute=0, timezone="Asia/Seoul"),
+                id="weekly_report",
+                name="weekly report (Mon 09:00 KST)",
+                replace_existing=True,
+                max_instances=1,
+                coalesce=True,
+                misfire_grace_time=3600,
+            )
+            log.info("scheduler: weekly_report registered (Mon 09:00 KST)")
+        else:
+            log.info("scheduler: weekly_report skipped (WEEKLY_REPORT_ENABLED=false)")
+    except Exception as e:  # noqa: BLE001
+        log.warning("scheduler: weekly_report registration failed: %s", e)
+
+    sched.start()
+    _scheduler = sched
+    log.info(
+        "scheduler started — v2(dry_run=%s, every 15min) + v1(%s, keep=%s) "
+        "mode=%s concurrency=%d pace=%dms",
+        VERIFY_SCHEDULER_V2_DRY_RUN, AUTO_VERIFY_SCHEDULE, KEEP_V1_SCHEDULER,
+        AUTO_VERIFY_MODE, PER_USER_CONCURRENCY, AUTO_PACE_MS,
+    )
+    _print(f"v2 dry_run={VERIFY_SCHEDULER_V2_DRY_RUN}, "
+           f"v1 keep={KEEP_V1_SCHEDULER}, schedule={AUTO_VERIFY_SCHEDULE}")
+    return sched
+
+
+def stop_scheduler() -> None:
+    """앱 종료 시 호출."""
+    global _scheduler
+    if _scheduler and _scheduler.running:
+        _scheduler.shutdown(wait=False)
+        log.info("scheduler stopped")
+    _scheduler = None
+
+
+def get_next_run_at() -> datetime | None:
+    """다음 실행 예정 시각 (마이페이지 노출용).
+
+    v1 트리거가 살아있으면 v1 시각을 우선 반환 (사용자 verify_slot 매일 N시 표기 호환).
+    v1 이 꺼졌으면 v2 의 다음 슬롯 시각.
+    """
+    if not _scheduler:
+        return None
+    job = _scheduler.get_job("slot_verification") if KEEP_V1_SCHEDULER else None
+    if job is None:
+        job = _scheduler.get_job("slot_verification_v2")
+    return job.next_run_time if job else None
+
+
+def get_v2_dry_run() -> bool:
+    """현재 v2 dry-run 모드 여부."""
+    return VERIFY_SCHEDULER_V2_DRY_RUN
+
+
+__all__ = [
+    "run_slot_verification",
+    "run_slot_15m_verification",
+    "start_scheduler",
+    "stop_scheduler",
+    "get_next_run_at",
+    "get_v2_dry_run",
+    "kst_slot_15m",
+    "VERIFY_SCHEDULER_V2_DRY_RUN",
+    "KEEP_V1_SCHEDULER",
+    "SLOT_TIME_BUDGET_SEC",
+]

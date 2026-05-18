@@ -1,0 +1,32 @@
+# Dependencies
+node_modules/
+*/node_modules/
+.pnpm-store/
+
+# Build outputs
+dist/
+build/
+*.tsbuildinfo
+
+# Environment
+.env
+.env.local
+
+# Editor
+.vscode/
+.idea/
+.DS_Store
+
+# Python
+backend/__pycache__/
+backend/**/__pycache__/
+backend/.venv/
+backend/venv/
+*.pyc
+
+# DB files (dev SQLite)
+backend/*.db
+backend/*.db-journal
+
+# Logs
+*.log

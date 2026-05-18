@@ -1,0 +1,20 @@
+[Unit]
+Description=타지역서비스 — 일일 순위 자동체크 배치 (rank_tracker_job)
+After=network-online.target postgresql.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=ubuntu
+Group=ubuntu
+Environment=TZ=Asia/Seoul
+Environment=PYTHONUNBUFFERED=1
+WorkingDirectory=/opt/regionwatch/regional-monitor/backend
+EnvironmentFile=-/opt/regionwatch/regional-monitor/backend/.env
+ExecStart=/opt/regionwatch/regional-monitor/backend/venv/bin/python -m app.jobs.rank_tracker_job
+StandardOutput=journal
+StandardError=journal
+TimeoutStartSec=2h
+
+[Install]
+WantedBy=multi-user.target

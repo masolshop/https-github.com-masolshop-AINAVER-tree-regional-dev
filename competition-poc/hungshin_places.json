@@ -1,0 +1,37 @@
+[
+  {
+    "name": "<mark>흥신소</mark>",
+    "addr": "서울 중구 을지로1가",
+    "phone": "070-8925-8717",
+    "category": "심부름센터",
+    "has_bunji": true
+  },
+  {
+    "name": "<mark>흥신소</mark>",
+    "addr": "서울 중구 을지로1가",
+    "phone": "070-8164-4243",
+    "category": "경호,보안",
+    "has_bunji": true
+  },
+  {
+    "name": "<mark>흥신소</mark>",
+    "addr": "서울 중구 소공동",
+    "phone": "070-8922-6076",
+    "category": "심부름센터",
+    "has_bunji": false
+  },
+  {
+    "name": "심부름센터24시<mark>흥신소</mark>탐정사무소",
+    "addr": "서울 중구 태평로1가",
+    "phone": "070-8124-7802",
+    "category": "심부름센터",
+    "has_bunji": true
+  },
+  {
+    "name": "현대탐정<mark>흥신소</mark>불륜증거,미행,사람찾기,심부름",
+    "addr": "서울 중구 을지로1가",
+    "phone": "070-4529-4382",
+    "category": "심부름센터",
+    "has_bunji": true
+  }
+]

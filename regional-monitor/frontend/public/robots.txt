@@ -1,0 +1,96 @@
+# ============================================================
+# 타지역닷컴 (taziyuk.com) — robots.txt
+# 검색엔진 크롤링 규칙 정의
+# ============================================================
+
+# ── 일반 검색엔진: 전체 색인 허용 ──
+User-agent: *
+Allow: /
+Disallow: /admin
+Disallow: /admin/
+Disallow: /reset-password
+Disallow: /api/
+Disallow: /auth/
+Disallow: /*?token=
+Disallow: /*?reset=
+
+# ── 네이버 검색 (Yeti) ──
+User-agent: Yeti
+Allow: /
+Disallow: /admin
+Disallow: /admin/
+Disallow: /reset-password
+Disallow: /api/
+Disallow: /auth/
+Crawl-delay: 1
+
+# ── 네이버 모바일 (Yeti-Mobile) ──
+User-agent: Yeti-Mobile
+Allow: /
+Disallow: /admin
+Disallow: /admin/
+Disallow: /api/
+
+# ── 구글 검색 ──
+User-agent: Googlebot
+Allow: /
+Disallow: /admin
+Disallow: /admin/
+Disallow: /reset-password
+Disallow: /api/
+Disallow: /auth/
+
+User-agent: Googlebot-Image
+Allow: /
+
+User-agent: Googlebot-Mobile
+Allow: /
+Disallow: /admin
+Disallow: /api/
+
+# ── 다음 / 카카오 검색 ──
+User-agent: Daum
+Allow: /
+Disallow: /admin
+Disallow: /api/
+
+User-agent: Daumoa
+Allow: /
+Disallow: /admin
+Disallow: /api/
+
+# ── 빙 검색 ──
+User-agent: Bingbot
+Allow: /
+Disallow: /admin
+Disallow: /api/
+
+# ── 악성 스크래퍼 / AI 무단 학습 차단 ──
+User-agent: AhrefsBot
+Disallow: /
+
+User-agent: SemrushBot
+Disallow: /
+
+User-agent: MJ12bot
+Disallow: /
+
+User-agent: DotBot
+Disallow: /
+
+User-agent: GPTBot
+Disallow: /
+
+User-agent: ClaudeBot
+Disallow: /
+
+User-agent: anthropic-ai
+Disallow: /
+
+User-agent: CCBot
+Disallow: /
+
+# ── 사이트맵 / RSS ──
+Sitemap: https://taziyuk.com/sitemap.xml
+Sitemap: https://taziyuk.com/rss.xml
+Host: https://taziyuk.com
