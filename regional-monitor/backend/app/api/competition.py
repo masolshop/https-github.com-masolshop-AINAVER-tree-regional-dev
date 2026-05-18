@@ -84,8 +84,84 @@ class PreciseScanRequest(BaseModel):
 
 
 # ── helpers ────────────────────────────────────────────────
-def _summary_payload(buckets: dict[str, dict]) -> dict[str, Any]:
-    """동별 버킷에서 KPI/등급분포/정렬된 행 추출."""
+def _short_sido(sido: str) -> str:
+    """'서울특별시' → '서울', '강원특별자치도' → '강원' 등 시·도 짧은 이름.
+
+    네이버 카드 텍스트의 주소는 짧은 이름으로 노출되므로 비교 시 정규화.
+    빈 문자열 입력 시 빈 문자열 반환.
+    """
+    s = (sido or "").strip()
+    if not s:
+        return ""
+    return (
+        s.replace("특별자치도", "")
+         .replace("특별자치시", "")
+         .replace("특별시", "")
+         .replace("광역시", "")
+         .replace("도", "")
+         .strip()
+        or s
+    )
+
+
+def _filter_buckets_by_region(
+    buckets: dict[str, dict],
+    *,
+    filter_sido: str = "",
+    filter_sigungu: str = "",
+) -> tuple[dict[str, dict], int]:
+    """사용자가 선택한 시·도/시군구와 일치하지 않는 버킷을 제외.
+
+    카드 텍스트의 주소는 시·도가 짧은 이름("서울")으로 들어오므로
+    filter_sido 도 짧은 이름으로 정규화해 비교한다.
+    filter_sigungu 는 풀네임 그대로 비교 — 카드 주소 역시 풀네임으로 옴
+    ("서울 서초구 잠원동"). 두 토큰 시군구("수원시 영통구") 도 동일.
+
+    빈 필터(filter_sido="" 또는 filter_sigungu="") 는 해당 차원 검사 생략.
+
+    반환: (필터링된 buckets, 제외된 동 수)
+    """
+    if not filter_sido and not filter_sigungu:
+        return buckets, 0
+
+    target_sido = _short_sido(filter_sido)
+    target_sigungu = (filter_sigungu or "").strip()
+
+    kept: dict[str, dict] = {}
+    excluded = 0
+    for key, b in buckets.items():
+        b_sido = (b.get("sido") or "").strip()
+        b_sigungu = (b.get("sigungu") or "").strip()
+
+        # 시·도 검사 — 카드는 짧은 이름이므로 양쪽 다 짧게 비교.
+        if target_sido:
+            if _short_sido(b_sido) != target_sido and b_sido != target_sido:
+                excluded += 1
+                continue
+        # 시군구 검사 — 풀네임 vs 풀네임 (또는 둘 다 짧음). 빈 시군구는 무시.
+        if target_sigungu:
+            if b_sigungu != target_sigungu:
+                excluded += 1
+                continue
+        kept[key] = b
+
+    return kept, excluded
+
+
+def _summary_payload(
+    buckets: dict[str, dict],
+    *,
+    filter_sido: str = "",
+    filter_sigungu: str = "",
+) -> dict[str, Any]:
+    """동별 버킷에서 KPI/등급분포/정렬된 행 추출.
+
+    filter_sido / filter_sigungu 가 주어지면 일치하지 않는 버킷은 제외하고
+    제외 수를 응답에 포함 — 사용자 선택 외 지역 데이터 누수를 막는다.
+    """
+    buckets, excluded = _filter_buckets_by_region(
+        buckets, filter_sido=filter_sido, filter_sigungu=filter_sigungu,
+    )
     rows = list(buckets.values())
     # 타지역수 desc → 메인수 desc → 동 이름 asc
     rows.sort(key=lambda b: (-b["other"], -b["main"], b["dong"]))
@@ -102,6 +178,7 @@ def _summary_payload(buckets: dict[str, dict]) -> dict[str, Any]:
             "main_count": total_main,
             "place_count": total_other + total_main,
         },
+        "filtered_out_dongs": excluded,
     }
 
 
@@ -184,7 +261,14 @@ async def comp_scan_fast(
 
     enrich(all_items)
     buckets = aggregate_by_dong(all_items)
-    payload = _summary_payload(buckets)
+    # scope 별 필터 — sigungu 모드면 시군구 일치, sido 모드면 시도 일치만 통과.
+    # nationwide 는 전체 — 필터 없음.
+    if req.scope == "sigungu":
+        payload = _summary_payload(buckets, filter_sido=req.sido, filter_sigungu=req.sigungu)
+    elif req.scope == "sido":
+        payload = _summary_payload(buckets, filter_sido=req.sido)
+    else:
+        payload = _summary_payload(buckets)
 
     elapsed_ms = int((time.time() - started) * 1000)
     return {
@@ -253,7 +337,17 @@ class _Job:
         if include_results:
             enrich(self.items)
             buckets = aggregate_by_dong(self.items)
-            d.update(_summary_payload(buckets))
+            # scope 별 필터 — 사용자가 명시한 시·도/시군구 외 결과는 제외.
+            # 정밀모드는 항상 sigungu 또는 sido scope.
+            if self.scope == "sigungu":
+                payload = _summary_payload(
+                    buckets, filter_sido=self.sido, filter_sigungu=self.sigungu,
+                )
+            elif self.scope == "sido":
+                payload = _summary_payload(buckets, filter_sido=self.sido)
+            else:
+                payload = _summary_payload(buckets)
+            d.update(payload)
         return d
 
 
@@ -316,19 +410,36 @@ async def comp_scan_precise(
     if req.sido not in tree:
         raise HTTPException(status_code=400, detail=f"알 수 없는 시도: {req.sido}")
 
+    # 쿼리 강화 — 네이버가 동 이름만으로는 동명이인 동을 다른 시군구에서 잡아오는
+    # 경우가 많아(예: "신원동 시스템에어컨설치" → 화성/광주 신원동), 시군구·시도
+    # 토큰을 함께 보내 의도를 명확히 한다. 집계 단계의 _filter_buckets_by_region
+    # 와 이중 방어.
+    sido_short = _short_sido(req.sido)
     queries: list[tuple[str, str, str, str]] = []
     if req.scope == "sigungu":
         if req.sigungu not in tree[req.sido]:
             raise HTTPException(status_code=400, detail=f"알 수 없는 시군구: {req.sigungu}")
+        # 시군구는 두 토큰("수원시 영통구") 일 수도 있으므로 마지막 토큰만 사용
+        # (네이버 검색은 마지막 토큰 매칭이 가장 강함).
+        sg_token = req.sigungu.split()[-1] if req.sigungu else req.sigungu
         for d in list_dong(req.sido, req.sigungu):
-            # '부강면 갈산리' 같은 두 토큰 동도 그대로 사용
-            token = d.split()[-1] if d else d
-            queries.append((req.sido, req.sigungu, d, f"{token} {keyword}"))
+            # '부강면 갈산리' 같은 두 토큰 동도 마지막 토큰 사용
+            dong_token = d.split()[-1] if d else d
+            queries.append(
+                (req.sido, req.sigungu, d, f"{sg_token} {dong_token} {keyword}")
+            )
     else:  # sido
         for sg, dongs in tree[req.sido].items():
+            sg_token = sg.split()[-1] if sg else sg
             for d in dongs:
-                token = d.split()[-1] if d else d
-                queries.append((req.sido, sg, d, f"{token} {keyword}"))
+                dong_token = d.split()[-1] if d else d
+                # sido scope 는 시·도 짧은 이름 + 시군구 + 동 모두 포함
+                q = (
+                    f"{sg_token} {dong_token} {keyword}"
+                    if sg_token
+                    else f"{sido_short} {dong_token} {keyword}"
+                )
+                queries.append((req.sido, sg, d, q))
 
     if not queries:
         raise HTTPException(status_code=400, detail="대상 동/리가 없습니다.")
