@@ -79,7 +79,14 @@ LI_WAIT_MS = 10_000  # li.VLTHu 첫 등장 대기 (ms)
 #                 즉 "최근 60초 내에 약한 실패가 연속 12회" 가 되어야 OPEN.
 #                 띄엄띄엄 실패하거나, 사이에 1건이라도 성공하면 카운터 리셋.
 #   on_success 가 한 번이라도 호출되면 두 카운터 모두 즉시 0 으로.
-CB_STRONG_THRESHOLD = 3            # 강한 신호: 연속 3회면 즉시 OPEN
+CB_STRONG_THRESHOLD = 6            # 강한 신호: 윈도 내 6회면 OPEN
+                                   # (2026-05-18 완화 — 3→6. 큰 잡(케이엘공조 1244
+                                   #  places)에서 짧은 부하 spike 에 일시 429 가 띄엄띄엄
+                                   #  3회만 떠도 즉시 OPEN 으로 빠져 잡 전체가 멈춤.
+                                   #  60초 윈도 (아래) 와 함께 적용해서, "정말로 짧은
+                                   #  시간에 강한 신호가 다발" 인 진짜 차단만 잡는다.)
+CB_STRONG_WINDOW_SEC = 60.0        # 강한 신호의 연속성 윈도. 마지막 strong 실패와
+                                   # 60초 이상 떨어져 있으면 카운터 리셋.
 CB_WEAK_THRESHOLD = 25             # 약한 신호: 윈도 내 25회 누적이어야 OPEN
                                    # (2026-05-16 3차 완화 — 12→25. rerun-out-of-range
                                    #  잡에서 외곽 키워드의 goto/no_list_items 일시 실패가
@@ -156,6 +163,7 @@ class _CircuitBreaker:
 
     def __init__(self) -> None:
         self._strong_fail = 0
+        self._last_strong_fail_at: float = 0.0  # 2026-05-18 — strong 시간 윈도 추적
         self._weak_fail = 0
         self._last_weak_fail_at: float = 0.0
         self._opened_at: float = 0.0
@@ -175,6 +183,7 @@ class _CircuitBreaker:
 
     def on_success(self) -> None:
         self._strong_fail = 0
+        self._last_strong_fail_at = 0.0
         self._weak_fail = 0
         self._last_weak_fail_at = 0.0
         if self._state in ("OPEN", "HALF_OPEN"):
@@ -199,16 +208,29 @@ class _CircuitBreaker:
             return
 
         if kind == "strong":
-            self._strong_fail += 1
+            # [2026-05-18] strong 에도 시간 윈도 적용. 마지막 strong 실패와 60초
+            # 이상 떨어져 있으면 카운터 리셋 — "정말로 짧은 시간에 다발" 일 때만 OPEN.
+            now = time.monotonic()
+            if (
+                self._last_strong_fail_at > 0
+                and now - self._last_strong_fail_at > CB_STRONG_WINDOW_SEC
+            ):
+                # 윈도 밖 → 카운터 리셋하고 새로 시작 (현재 실패는 1로 카운트)
+                self._strong_fail = 1
+            else:
+                self._strong_fail += 1
+            self._last_strong_fail_at = now
+
             if self._strong_fail >= CB_STRONG_THRESHOLD and self._state == "CLOSED":
                 self._state = "OPEN"
-                self._opened_at = time.monotonic()
+                self._opened_at = now
                 self._last_open_reason = (
-                    f"strong: {self._strong_fail} consecutive rate-limit/5xx signals"
+                    f"strong: {self._strong_fail} rate-limit/5xx signals within "
+                    f"{CB_STRONG_WINDOW_SEC:.0f}s window"
                 )
                 log.warning(
-                    "naver_map circuit breaker → OPEN (strong, %d consecutive, cooldown=%ds)",
-                    self._strong_fail, CB_COOLDOWN_SEC,
+                    "naver_map circuit breaker → OPEN (strong, %d failures in %.0fs window, cooldown=%ds)",
+                    self._strong_fail, CB_STRONG_WINDOW_SEC, CB_COOLDOWN_SEC,
                 )
             return
 

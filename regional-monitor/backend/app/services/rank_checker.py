@@ -510,8 +510,9 @@ async def _touch_existing_history(
     place_pk: int,
     keyword: str,
     check_date: date_cls,
+    fallback_dong: str = "",
 ) -> None:
-    """회로차단으로 단락된 셀의 기존 historic row 를 가볍게 'touch'.
+    """회로차단으로 단락된 셀에 PlaceRankHistory row 를 보장.
 
     [목적]
       circuit_skipped 셀은 네이버 호출 자체가 차단되어 새 rank 데이터가 없다.
@@ -519,12 +520,18 @@ async def _touch_existing_history(
       의 DISTINCT row 수를 세므로, 이 셀에 어떤 row 도 없으면 진행률 막대가
       해당 비율만큼 영원히 못 채워져 사용자에게 "X건에서 멈춤" 으로 보인다.
 
-    [정책]
-      · 이전 check_date 에 같은 (place_pk, keyword) historic row 가 존재하면
-        그 row 를 그대로 두고, **오늘 날짜에 동일 rank/out_of_range 를 복사한 row**
-        를 생성한다 (또는 이미 있으면 checked_at 만 갱신).
-        → 진행률은 100% 까지 도달하고, 실제 rank 값은 마지막으로 검증된 값을 유지.
-      · 신규 셀(historic row 가 전혀 없는 셀) 은 touch 하지 않음 — 가짜 데이터 회피.
+    [정책 — 2026-05-18 v2: 신규 셀도 빈 row 생성]
+      · 오늘 날짜에 같은 (place_pk, keyword) row 가 있으면 checked_at 만 갱신.
+      · 이전 check_date 에 historic row 가 있으면 그 값을 오늘 날짜로 복사
+        (rank/out_of_range 유지 → 매트릭스에 마지막 알려진 값 표시).
+      · historic row 도 없는 신규 셀은 **빈 row** (rank=NULL, out_of_range=False)
+        를 새로 만든다. 사용자 화면에 "—" 로 표시되지만 진행률은 1씩 올라가고,
+        다음 자동 실행 (회로 복구 후) 이 같은 셀을 다시 시도할 때 _persist_outcome
+        의 UPSERT 가 정상적으로 덮어쓴다. 이전 정책 (신규 셀 무시) 은 케이엘공조
+        처럼 큰 잡(1244 places × 2 kw = 2488 cells) 에서 회로차단이 도중 OPEN
+        되면 미검증 셀이 영구 빈칸으로 남는 문제를 일으켰다.
+      · fallback_dong: 신규 셀일 때 사용할 dong 문자열. 워커가 자기 작업의
+        dong 변수를 그대로 넘긴다. 비어있으면 "(circuit_skipped)" 자리표시자 사용.
     """
     # 1) 오늘 날짜에 이미 row 가 있으면 checked_at 만 갱신
     today_q = await db.execute(
@@ -551,19 +558,34 @@ async def _touch_existing_history(
         .limit(1)
     )
     prev = prev_q.scalar_one_or_none()
-    if prev is None:
-        # 신규 셀 — 가짜 데이터 회피, touch 하지 않음.
+    if prev is not None:
+        db.add(PlaceRankHistory(
+            place_pk=place_pk,
+            check_date=check_date,
+            keyword=keyword,
+            dong=prev.dong,
+            rank=prev.rank,
+            out_of_range=prev.out_of_range,
+            total_results=prev.total_results,
+            rank_delta=0,  # 직전 row 와 동일 값 복사이므로 delta 0
+            checked_at=now_kst(),
+        ))
         return
 
+    # 3) historic row 도 없는 신규 셀 — 빈 row 를 만든다 (rank=NULL).
+    #    [2026-05-18] 큰 잡에서 회로차단 중간 OPEN 으로 미검증 셀이 영구 빈칸으로
+    #    남던 문제를 해결. UNIQUE(place_pk, check_date, keyword) 위배 가능성은
+    #    (1) 항목 자체가 없음을 위에서 확인했으므로 0.
+    #    dong 컬럼은 NOT NULL 이라 값이 필요 — fallback_dong 우선, 없으면 자리표시자.
     db.add(PlaceRankHistory(
         place_pk=place_pk,
         check_date=check_date,
         keyword=keyword,
-        dong=prev.dong,
-        rank=prev.rank,
-        out_of_range=prev.out_of_range,
-        total_results=prev.total_results,
-        rank_delta=0,  # 직전 row 와 동일 값 복사이므로 delta 0
+        dong=(fallback_dong or "(circuit_skipped)"),
+        rank=None,
+        out_of_range=False,
+        total_results=None,
+        rank_delta=None,
         checked_at=now_kst(),
     ))
 
@@ -777,6 +799,30 @@ async def _run_rank_check_tasks(
                 if not bypass_circuit_breaker and is_circuit_open():
                     stats["processed"] += 1
                     stats["circuit_skipped"] += 1
+                    # [2026-05-18] 사전체크 단락 시에도 touch 를 호출해서 빈 row 보장.
+                    # 이전엔 단순 return → 큰 잡(케이엘공조 1244 places) 에서 회로차단
+                    # 도중 OPEN 되면 미검증 셀이 영구 빈칸으로 남음. 이제는 row 가
+                    # 만들어지므로 다음 자동 실행이 _persist_outcome UPSERT 로 덮어씀.
+                    try:
+                        async with AsyncSessionLocal() as wdb:
+                            try:
+                                await _touch_existing_history(
+                                    wdb, pk, keyword, check_date,
+                                    fallback_dong=dong,
+                                )
+                                await wdb.commit()
+                            except Exception as inner:  # noqa: BLE001
+                                log.exception(
+                                    "pre-check circuit_skipped touch failed (inner): %s", inner
+                                )
+                                try:
+                                    await wdb.rollback()
+                                except Exception:  # noqa: BLE001
+                                    pass
+                    except Exception as touch_err:  # noqa: BLE001
+                        log.exception(
+                            "pre-check circuit_skipped touch session failed: %s", touch_err
+                        )
                     # pace 도 의미 없으니 즉시 다음 worker 에게 슬롯 양보
                     return
 
@@ -843,7 +889,8 @@ async def _run_rank_check_tasks(
                         async with AsyncSessionLocal() as wdb:
                             try:
                                 await _touch_existing_history(
-                                    wdb, outcome.place_pk, outcome.keyword, check_date
+                                    wdb, outcome.place_pk, outcome.keyword, check_date,
+                                    fallback_dong=outcome.dong or dong,
                                 )
                                 await wdb.commit()
                             except Exception as inner:  # noqa: BLE001

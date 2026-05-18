@@ -292,7 +292,6 @@ export default function RankTracker() {
       // - 한 청크당 N건 (네이버 호출량 = N × 키워드수). 30건이면 평균 ~150 쿼리 / ~20초 내외.
       // - 사용자가 단일 행 검증을 누르면 (1건) 청크 분할 없음 → 즉시 처리.
       const CHUNK_SIZE = 30
-      const CHUNK_COOLDOWN_MS = 1500
       const POLL_INTERVAL_MS = 3000
       const POLL_TIMEOUT_MS = 5 * 60 * 1000 // 5분 (안전장치)
 
@@ -307,6 +306,22 @@ export default function RankTracker() {
           chunks.push(ids.slice(i, i + CHUNK_SIZE))
         }
       }
+
+      // [2026-05-18] 잡 크기에 비례한 동적 cooldown.
+      //   배경: 케이엘공조(1244 places) 같은 큰 잡은 짧은 시간에 호출이 몰려
+      //         Naver 가 일시 차단 → 회로차단 OPEN. 296 places 정도는 문제 없음.
+      //   정책: 1244 places ÷ 30 ≈ 42 청크. cooldown 10초면 42 × 10 = 420초 추가
+      //         (전체 잡 시간 약 +7분) — Naver 호출 RPS 가 절반으로 낮아져 차단 회피.
+      //   임계값은 청크 수 기준 (place 수 ÷ CHUNK_SIZE).
+      //     · ≤10 청크 (≤300 places, 렉카 케이스): 1.5초 (기존 유지)
+      //     · ≤20 청크 (≤600 places): 4초
+      //     · ≤40 청크 (≤1200 places): 7초
+      //     · >40 청크 (1200+ places, 케이엘공조 케이스): 10초
+      let CHUNK_COOLDOWN_MS: number
+      if (chunks.length <= 10) CHUNK_COOLDOWN_MS = 1500
+      else if (chunks.length <= 20) CHUNK_COOLDOWN_MS = 4000
+      else if (chunks.length <= 40) CHUNK_COOLDOWN_MS = 7000
+      else CHUNK_COOLDOWN_MS = 10000
 
       const totalChunks = chunks.length
       setManualLocal(true)
