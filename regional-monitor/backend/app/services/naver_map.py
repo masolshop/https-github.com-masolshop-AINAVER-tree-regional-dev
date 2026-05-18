@@ -399,6 +399,48 @@ _EXTRACT_JS = r"""
         return KNOWN_CATEGORY_SUFFIXES.some((suf) => s === suf || s.endsWith(suf));
     }
 
+    // ── Apollo state 에서 place_id 별 주소 lookup (competition 솔루션용).
+    //    모바일 라우트에도 __APOLLO_STATE__ 가 존재하며 각 엔티티에 address/
+    //    roadAddress 가 들어 있는 경우가 많다. 키 prefix 는 시기/카테고리에
+    //    따라 다르므로 다중 prefix 후보를 모두 시도.
+    //    RankTracker 에는 영향 없음 (address 필드를 사용하지 않음).
+    const apollo = (typeof window !== 'undefined' && window.__APOLLO_STATE__) ? window.__APOLLO_STATE__ : null;
+    const APOLLO_KEY_PREFIXES = [
+        'PlaceListBusinessesItem:',
+        'PlaceSummary:',
+        'RestaurantListSummary:',
+        'HairshopListSummary:',
+        'BeautyServiceSummary:',
+        'AccommodationListSummary:',
+        'Business:',
+    ];
+    function lookupApolloEntity(pid) {
+        if (!apollo || !pid) return null;
+        for (const pref of APOLLO_KEY_PREFIXES) {
+            const ent = apollo[pref + pid];
+            if (ent) return ent;
+        }
+        // fallback: scan all keys ending with ':<pid>' once (cheap — Apollo는 보통 < 200 keys)
+        const suffix = ':' + pid;
+        for (const k of Object.keys(apollo)) {
+            if (k.endsWith(suffix)) {
+                const ent = apollo[k];
+                if (ent && typeof ent === 'object') return ent;
+            }
+        }
+        return null;
+    }
+    function extractAddressFromEntity(ent) {
+        if (!ent) return { address: '', roadAddress: '' };
+        // 다양한 표기 후보 — Apollo 스키마 변화에 대응
+        const addr = ent.address || ent.fullAddress || ent.commonAddress || ent.jibunAddress || '';
+        const road = ent.roadAddress || ent.newAddress || '';
+        return {
+            address: typeof addr === 'string' ? addr : '',
+            roadAddress: typeof road === 'string' ? road : '',
+        };
+    }
+
     const out = [];
     lis.forEach((li, idx) => {
         // place_id 추출 — /place/{id}, /restaurant/{id}, /hairshop/{id}
@@ -464,15 +506,26 @@ _EXTRACT_JS = r"""
             }
         }
 
+        // ── 4차 보조: Apollo state lookup 으로 address/roadAddress 채움.
+        //    competition 솔루션이 동/리 prefix 매칭에 사용 — RankTracker 는 무시.
+        const apolloEnt = lookupApolloEntity(pid);
+        const { address: apolloAddr, roadAddress: apolloRoad } = extractAddressFromEntity(apolloEnt);
+
         out.push({
             idx,
             id: pid,
             name,
             category,
             isAd,
+            address: apolloAddr,
+            roadAddress: apolloRoad,
         });
     });
-    return { items: out, total: lis.length };
+    return {
+        items: out,
+        total: lis.length,
+        apolloLoaded: apollo != null,
+    };
 };
 """
 
@@ -545,8 +598,12 @@ async def shutdown_browser() -> None:
 def _to_map_place(it: dict) -> MapPlace:
     """DOM extract dict → MapPlace.
 
-    모바일 라우트는 phone/address/좌표를 DOM 에 노출하지 않으므로 빈값으로 둔다.
+    모바일 라우트는 phone/좌표를 DOM 에 노출하지 않으므로 빈값으로 둔다.
     rank_checker 는 place_id 매칭만 보고, 나머지 필드는 RegisteredPlace 에서 가져오므로 OK.
+
+    address/road_address 는 _EXTRACT_JS 의 4차 보조(Apollo state lookup) 에서
+    채워지면 그 값을 사용한다 — competition 솔루션(/competition)에서 동/리 prefix
+    매칭을 위해 필요. Apollo 가 비어있으면 그대로 빈 문자열.
     """
     return MapPlace(
         place_id=str(it.get("id") or ""),
@@ -554,8 +611,8 @@ def _to_map_place(it: dict) -> MapPlace:
         category=str(it.get("category") or ""),
         phone="",
         virtual_phone="",
-        address="",
-        road_address="",
+        address=str(it.get("address") or ""),
+        road_address=str(it.get("roadAddress") or ""),
         latitude=None,
         longitude=None,
     )
@@ -665,6 +722,19 @@ async def _do_search(query: str) -> MapSearchResult:
                 error="empty_items",
                 elapsed_ms=int((time.time() - t0) * 1000),
             )
+
+        # ── 진단 로그 (competition 솔루션 address lookup 모니터링용).
+        #    Apollo 비로드 / address 채움률 0% 등을 한 줄 INFO 로 남겨
+        #    Lightsail 에서 grep 으로 빠르게 가시화.
+        try:
+            apollo_loaded = bool((data or {}).get("apolloLoaded"))
+            with_addr = sum(1 for it in items_raw if (it.get("address") or "").strip())
+            log.info(
+                "naver_map.extract q=%r items=%d apollo_loaded=%s with_address=%d",
+                q, len(items_raw), apollo_loaded, with_addr,
+            )
+        except Exception:  # noqa: BLE001
+            pass
 
         # 광고 필터 — DOM "광고" 텍스트 마커. organic 만 DOM 순서대로 top N.
         organic: list[MapPlace] = []
